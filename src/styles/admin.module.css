@@ -707,6 +707,100 @@
   font-weight: 700;
 }
 
+.essayList {
+  display: grid;
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.essayCard {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface-soft) 84%, var(--surface));
+}
+
+.essayMeta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.essayMeta strong {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.essayMeta span {
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.essayBlock {
+  display: grid;
+  gap: 5px;
+}
+
+.essayLabel {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.essayBlock p {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.essayGrade {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.essayGrade label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.essayGrade input {
+  width: 140px;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--input);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.essayGrade input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px var(--ring);
+}
+
 .tableWrap {
   overflow-x: auto;
   border: 1px solid var(--border);

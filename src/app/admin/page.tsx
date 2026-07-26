@@ -9,6 +9,7 @@ import {
   BarChart3,
   BookOpenCheck,
   CalendarClock,
+  ClipboardCheck,
   DoorOpen,
   Download,
   FilePenLine,
@@ -245,6 +246,32 @@ const emptyRoomForm: RoomFormState = {
   startsAt: '',
   endsAt: '',
   status: 'draft',
+};
+
+type PendingEssayRecord = {
+  answer_id: string;
+  session_id: string;
+  student_name: string | null;
+  room_name: string | null;
+  subject_name: string | null;
+  display_no: string | null;
+  max_points: number | string;
+  question_content: string;
+  student_answer: string | null;
+  earned_points: number | string | null;
+  submitted_at: string | null;
+};
+
+type PendingEssay = {
+  answerId: string;
+  studentName: string;
+  roomName: string;
+  subjectName: string;
+  displayNo: string;
+  maxPoints: number;
+  questionContent: string;
+  studentAnswer: string;
+  submittedAt: string | null;
 };
 
 const keyStatusLabels: Record<ExamKeyStatus, KeyStatusLabel> = {
@@ -576,6 +603,20 @@ function mapBlueprint(record: BlueprintRecord): BlueprintOption {
   };
 }
 
+function mapPendingEssay(record: PendingEssayRecord): PendingEssay {
+  return {
+    answerId: record.answer_id,
+    studentName: record.student_name?.trim() || 'Chưa cập nhật',
+    roomName: record.room_name?.trim() || '—',
+    subjectName: record.subject_name?.trim() || '—',
+    displayNo: record.display_no ?? '?',
+    maxPoints: toFiniteNumber(record.max_points) ?? 0,
+    questionContent: record.question_content ?? '',
+    studentAnswer: record.student_answer?.trim() || '',
+    submittedAt: record.submitted_at,
+  };
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const hasConfiguredSupabase = hasSupabaseEnv();
@@ -613,6 +654,11 @@ export default function AdminPage() {
   const [roomForm, setRoomForm] = useState<RoomFormState>(emptyRoomForm);
   const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
   const [isSavingRoom, setIsSavingRoom] = useState(false);
+  const [pendingEssays, setPendingEssays] = useState<PendingEssay[]>([]);
+  const [isLoadingEssays, setIsLoadingEssays] = useState(false);
+  const [essaysFeedback, setEssaysFeedback] = useState('');
+  const [essayScores, setEssayScores] = useState<Record<string, string>>({});
+  const [gradingId, setGradingId] = useState<string | null>(null);
 
   // Guard: kiểm tra role admin/teacher, redirect nếu không có quyền
   useEffect(() => {
@@ -761,6 +807,24 @@ export default function AdminPage() {
     }
   }, [hasConfiguredSupabase]);
 
+  const loadPendingEssays = useCallback(async () => {
+    if (!hasConfiguredSupabase) return;
+
+    setIsLoadingEssays(true);
+    setEssaysFeedback('');
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase.rpc('get_pending_essays', { p_limit: 500 });
+      if (error) throw error;
+      setPendingEssays(((data ?? []) as unknown as PendingEssayRecord[]).map(mapPendingEssay));
+    } catch (error) {
+      setEssaysFeedback(getAdminDataErrorMessage(error));
+    } finally {
+      setIsLoadingEssays(false);
+    }
+  }, [hasConfiguredSupabase]);
+
   useEffect(() => {
     if (!hasConfiguredSupabase) return;
 
@@ -769,10 +833,18 @@ export default function AdminPage() {
       void loadKeyManagement();
       void loadExamResults();
       void loadRooms();
+      void loadPendingEssays();
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
-  }, [hasConfiguredSupabase, loadAdminCatalog, loadKeyManagement, loadExamResults, loadRooms]);
+  }, [
+    hasConfiguredSupabase,
+    loadAdminCatalog,
+    loadKeyManagement,
+    loadExamResults,
+    loadRooms,
+    loadPendingEssays,
+  ]);
 
   const filteredStudents = useMemo(() => {
     const nextSearch = searchTerm.trim().toLowerCase();
@@ -1017,6 +1089,45 @@ export default function AdminPage() {
       await loadRooms();
     } catch (error) {
       setRoomsFeedback(getRoomErrorMessage(error));
+    }
+  };
+
+  const handleGradeEssay = async (essay: PendingEssay) => {
+    if (!hasConfiguredSupabase) return;
+
+    const raw = (essayScores[essay.answerId] ?? '').trim().replace(',', '.');
+    const points = Number(raw);
+    if (raw === '' || !Number.isFinite(points) || points < 0) {
+      setEssaysFeedback('Nhập điểm hợp lệ (số ≥ 0).');
+      return;
+    }
+    if (points > essay.maxPoints) {
+      setEssaysFeedback(`Điểm không được vượt quá ${essay.maxPoints}.`);
+      return;
+    }
+
+    setGradingId(essay.answerId);
+    setEssaysFeedback('');
+
+    try {
+      const { error } = await createClient().rpc('grade_essay_answer', {
+        p_answer_id: essay.answerId,
+        p_points: points,
+      });
+      if (error) throw error;
+
+      setEssaysFeedback(`Đã chấm ${essay.studentName}: ${points}/${essay.maxPoints} điểm.`);
+      setEssayScores((current) => {
+        const next = { ...current };
+        delete next[essay.answerId];
+        return next;
+      });
+      await loadPendingEssays();
+      await loadExamResults();
+    } catch (error) {
+      setEssaysFeedback(getAdminDataErrorMessage(error));
+    } finally {
+      setGradingId(null);
     }
   };
 
@@ -1331,6 +1442,7 @@ export default function AdminPage() {
           <a href="#rooms"><DoorOpen size={18} /> Phòng thi</a>
           <a href="#subjects"><BookOpenCheck size={18} /> Môn học</a>
           <a href="#keys"><KeyRound size={18} /> Quản lý key</a>
+          <a href="#grading"><ClipboardCheck size={18} /> Chấm tự luận</a>
           <a href="#students"><Users size={18} /> Học viên</a>
         </nav>
         <button className={styles.backButton} type="button" onClick={() => router.push('/subjects', { transitionTypes: ['nav-back'] })}>
@@ -2059,6 +2171,77 @@ export default function AdminPage() {
               </tbody>
             </table>
           </div>
+        </section>
+
+        <section id="grading" className={styles.panel}>
+          <div className={styles.panelHeader}>
+            <div>
+              <h2>Chấm tự luận</h2>
+              <p>Câu tự luận đã nộp đang chờ chấm tay. Chấm xong tổng điểm phiên tự cập nhật.</p>
+            </div>
+            <button
+              className="btn outline small"
+              type="button"
+              onClick={loadPendingEssays}
+              disabled={isLoadingEssays || !hasConfiguredSupabase}
+            >
+              <RefreshCw size={15} />
+              Tải lại
+            </button>
+          </div>
+
+          {essaysFeedback ? <p className={styles.feedback}>{essaysFeedback}</p> : null}
+
+          {pendingEssays.length === 0 ? (
+            <div className={styles.list}>
+              <div className={styles.emptyCell}>
+                {isLoadingEssays ? 'Đang tải bài tự luận...' : 'Không có bài tự luận nào chờ chấm.'}
+              </div>
+            </div>
+          ) : (
+            <div className={styles.essayList}>
+              {pendingEssays.map((essay) => (
+                <article key={essay.answerId} className={styles.essayCard}>
+                  <div className={styles.essayMeta}>
+                    <strong>{essay.studentName}</strong>
+                    <span>{essay.subjectName} · {essay.roomName} · Câu {essay.displayNo}</span>
+                  </div>
+                  <div className={styles.essayBlock}>
+                    <span className={styles.essayLabel}>Đề bài</span>
+                    <p>{essay.questionContent}</p>
+                  </div>
+                  <div className={styles.essayBlock}>
+                    <span className={styles.essayLabel}>Bài làm</span>
+                    <p>{essay.studentAnswer || '(Thí sinh không trả lời)'}</p>
+                  </div>
+                  <div className={styles.essayGrade}>
+                    <label>
+                      Điểm (tối đa {essay.maxPoints})
+                      <input
+                        type="number"
+                        min={0}
+                        max={essay.maxPoints}
+                        step="0.25"
+                        value={essayScores[essay.answerId] ?? ''}
+                        onChange={(event) =>
+                          setEssayScores((current) => ({ ...current, [essay.answerId]: event.target.value }))
+                        }
+                        placeholder="0"
+                      />
+                    </label>
+                    <button
+                      className="btn"
+                      type="button"
+                      onClick={() => handleGradeEssay(essay)}
+                      disabled={gradingId === essay.answerId || !hasConfiguredSupabase}
+                    >
+                      {gradingId === essay.answerId ? 'Đang lưu...' : 'Lưu điểm'}
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
         </section>
 
         <section id="students" className={styles.panel}>
