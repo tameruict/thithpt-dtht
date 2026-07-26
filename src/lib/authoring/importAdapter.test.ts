@@ -130,4 +130,35 @@ describe('buildAuthoringDsl round-trip', () => {
     expect(parsed.questions).toHaveLength(1);
     expect(parsed.questions[0].type).toBe('multiple_choice');
   });
+
+  it('essay có rubric round-trip giữ đúng tiêu chí', () => {
+    const doc: ImportDocument = {
+      source: { subjectCode: 'NGUVAN' },
+      questions: [
+        {
+          type: 'essay',
+          no: 1,
+          difficulty: 3,
+          content: 'Phân tích nhân vật trong đoạn trích.',
+          rubric: [
+            { title: 'Mở bài', points: 1, description: 'Giới thiệu vấn đề.' },
+            { title: 'Thân bài', points: 2 },
+          ],
+        },
+      ],
+    };
+    const dsl = buildAuthoringDsl(doc);
+    const parsed = parseAuthoringSource(dsl, 'paper');
+
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.questions).toHaveLength(1);
+
+    const essay = parsed.questions[0];
+    expect(essay.type).toBe('essay');
+    expect(essay.rubric).toHaveLength(2);
+    expect(essay.rubric[0].title).toBe('Mở bài');
+    expect(essay.rubric[0].points).toBe(1);
+    expect(essay.rubric[0].description).toContain('Giới thiệu');
+    expect(essay.rubric[1].points).toBe(2);
+  });
 });

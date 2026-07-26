@@ -9,7 +9,9 @@ import {
   ChevronDown,
   FilePlus2,
   ImagePlus,
+  ListPlus,
   PanelLeftClose,
+  PenLine,
   Plus,
   Send,
   ShieldCheck,
@@ -27,14 +29,17 @@ import {
 } from 'react';
 import {
   getQuestionMetadataAtPosition,
+  getQuestionRangeAtPosition,
   parseAuthoringSource,
 } from '@/lib/authoring/parser';
 import { getAuthoringTemplate } from '@/lib/authoring/templates';
 import type {
   AuthoringKnowledgeField,
   AuthoringMode,
+  AuthoringQuestion,
   AuthoringWorkspaceData,
 } from '@/lib/authoring/types';
+import QuestionFormModal from './QuestionFormModal';
 import QuestionRenderer, {
   MathText,
   type RenderableQuestion,
@@ -134,6 +139,11 @@ export default function AuthoringWorkspace({ initialData }: Props) {
   const [showImage, setShowImage] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
   const [imageError, setImageError] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [formInitial, setFormInitial] = useState<AuthoringQuestion | null>(null);
+  const [formTarget, setFormTarget] = useState<{ start: number; end: number } | null>(
+    null,
+  );
   const [showKnowledgeCreate, setShowKnowledgeCreate] = useState(false);
   const [cursorPosition, setCursorPosition] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
@@ -384,6 +394,42 @@ export default function AuthoringWorkspace({ initialData }: Props) {
     editorRef.current?.insertText(snippet);
   };
 
+  const openCreateForm = () => {
+    setFormInitial(null);
+    setFormTarget(null);
+    setShowForm(true);
+  };
+
+  const openEditForm = () => {
+    const range = getQuestionRangeAtPosition(source, cursorPosition);
+    if (!range) {
+      setFeedback('Đặt con trỏ vào trong câu hỏi cần sửa bằng form.');
+      return;
+    }
+    const single = parseAuthoringSource(
+      source.slice(range.start, range.end),
+      'question',
+    );
+    const question = single.questions[0] ?? null;
+    if (!question) {
+      setFeedback('Không đọc được câu tại con trỏ (cú pháp chưa hợp lệ).');
+      return;
+    }
+    setFormInitial(question);
+    setFormTarget({ start: range.start, end: range.end });
+    setShowForm(true);
+  };
+
+  const handleFormSubmit = (dsl: string) => {
+    if (formTarget) {
+      editorRef.current?.replaceRange(formTarget.start, formTarget.end, dsl);
+    } else {
+      editorRef.current?.insertText(`${dsl}\n\n`);
+    }
+    setShowForm(false);
+    setFeedback('');
+  };
+
   const selectDocument = (documentId: string) => {
     const nextDocument = documents.find((document) => document.id === documentId);
     if (!nextDocument) return;
@@ -478,6 +524,21 @@ export default function AuthoringWorkspace({ initialData }: Props) {
               {mode === 'paper' ? 'Cả đề' : 'Từng câu'}
               <ChevronDown size={14} />
             </div>
+            <button
+              type="button"
+              className={styles.formButton}
+              disabled={publishedCurrent}
+              onClick={openCreateForm}
+            >
+              <ListPlus size={16} /> Thêm câu (form)
+            </button>
+            <button
+              type="button"
+              disabled={publishedCurrent}
+              onClick={openEditForm}
+            >
+              <PenLine size={16} /> Sửa câu (form)
+            </button>
             <button
               type="button"
               disabled={publishedCurrent}
@@ -749,6 +810,15 @@ Nội dung lựa chọn
             </button>
           </form>
         </div>
+      ) : null}
+
+      {showForm ? (
+        <QuestionFormModal
+          initial={formInitial}
+          knowledgeFields={subjectKnowledgeFields}
+          onClose={() => setShowForm(false)}
+          onSubmit={handleFormSubmit}
+        />
       ) : null}
 
       {showImage ? (

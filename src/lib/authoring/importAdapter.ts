@@ -17,6 +17,7 @@ import type {
   ImportImage,
   ImportOption,
   ImportQuestion,
+  ImportRubricItem,
   ImportStatement,
 } from './importSchema';
 
@@ -30,6 +31,15 @@ function statementLabel(item: ImportStatement, index: number): string {
 
 function imageMacro(image: ImportImage): string {
   return `\\image[alt={${image.alt}}]{${image.url}}`;
+}
+
+function rubricBlock(item: ImportRubricItem): string {
+  const title = (item.title ?? '').trim();
+  const description = (item.description ?? '').toString().trim();
+  const lines = [`\\begin{rubric}[title={${title}},points=${item.points}]`];
+  if (description) lines.push(description);
+  lines.push('\\end{rubric}');
+  return lines.join('\n');
 }
 
 function imagesFor(question: ImportQuestion, target: string): ImportImage[] {
@@ -106,6 +116,11 @@ export function buildQuestionDsl(question: ImportQuestion): string {
       lines.push('');
       lines.push(`\\answer{${answerText}}`);
     }
+  }
+
+  for (const item of question.rubric ?? []) {
+    lines.push('');
+    lines.push(rubricBlock(item));
   }
 
   const explanation = question.explanation?.trim();

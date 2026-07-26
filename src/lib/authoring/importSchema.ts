@@ -44,6 +44,12 @@ export interface ImportStatement {
   correct: boolean;
 }
 
+export interface ImportRubricItem {
+  title: string;
+  points: number;
+  description?: string | null;
+}
+
 export interface ImportQuestion {
   part?: ImportPart;
   no?: number;
@@ -57,6 +63,7 @@ export interface ImportQuestion {
   trueFalseItems?: ImportStatement[];
   answer?: string | number | null;
   explanation?: string | null;
+  rubric?: ImportRubricItem[];
   images?: ImportImage[];
 }
 

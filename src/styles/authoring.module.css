@@ -557,7 +557,8 @@
 }
 
 .modal input,
-.modal select {
+.modal select,
+.modal textarea {
   width: 100%;
   padding: 11px 12px;
   border: 1px solid #dac9d2;
@@ -565,6 +566,171 @@
   color: var(--ink);
   background: #fff;
   font: inherit;
+}
+
+.modalWide {
+  width: min(760px, 100%);
+}
+
+.formTextarea {
+  min-height: 64px;
+  font-family: var(--font-mono), monospace;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.formRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.formSection {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #ecdfe6;
+  border-radius: var(--radius-md);
+  background: #fbf6f9;
+}
+
+.formSectionHead,
+.imageFieldHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #624e58;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.rowList {
+  display: grid;
+  gap: 8px;
+}
+
+.optionRow,
+.rubricRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.optionRow > input,
+.rubricRow > input:first-child {
+  flex: 1;
+}
+
+.modal .correctToggle {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid #dac9d2;
+  border-radius: var(--radius-md);
+  background: #fff;
+  cursor: pointer;
+}
+
+.correctToggle input {
+  width: auto;
+}
+
+.correctToggle span {
+  font-weight: 800;
+}
+
+.statementLabel {
+  min-width: 26px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.modal .tfSelect {
+  width: auto;
+  min-width: 84px;
+}
+
+.modal .pointsInput {
+  width: 96px;
+  flex: 0 0 auto;
+}
+
+.rowRemove {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #f0d3db;
+  border-radius: var(--radius-md);
+  color: #b42318;
+  background: #fff;
+  cursor: pointer;
+}
+
+.rowRemove:disabled {
+  color: #cbb8c0;
+  cursor: not-allowed;
+}
+
+.addRowButton {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 7px 11px;
+  border: 1px dashed #d3a7bd;
+  border-radius: var(--radius-md);
+  color: var(--pink);
+  background: #fff;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.imageField {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #ecdfe6;
+  border-radius: var(--radius-md);
+}
+
+.imagePreview {
+  max-height: 160px;
+  max-width: 100%;
+  border-radius: var(--radius-md);
+  object-fit: contain;
+  justify-self: start;
+}
+
+.modal .uploadLabel {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 11px 12px;
+  border: 1px solid #dac9d2;
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.textButton {
+  border: 0;
+  color: var(--pink);
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.formButton {
+  color: #fff !important;
+  background: var(--pink) !important;
+  border-color: var(--pink) !important;
 }
 
 .modeChoices {

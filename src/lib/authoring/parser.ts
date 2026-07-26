@@ -196,6 +196,25 @@ export function getQuestionMetadataAtPosition(
   };
 }
 
+export type QuestionRangeAtPosition = {
+  index: number;
+  start: number;
+  end: number;
+};
+
+/** Trả về vị trí (offset) khối \begin{question}...\end{question} chứa con trỏ. */
+export function getQuestionRangeAtPosition(
+  source: string,
+  position: number,
+): QuestionRangeAtPosition | null {
+  const blocks = extractEnvironments(source, 'question');
+  const index = blocks.findIndex(
+    (block) => position >= block.start && position <= block.end,
+  );
+  if (index < 0) return null;
+  return { index, start: blocks[index].start, end: blocks[index].end };
+}
+
 export function updateQuestionMetadataAtPosition(
   source: string,
   position: number,
