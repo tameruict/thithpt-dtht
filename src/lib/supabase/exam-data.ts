@@ -1,7 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-type MaybeArray<T> = T | T[] | null | undefined;
-
 type PublishedRoomRecord = {
   id: string;
   code: string;
@@ -27,58 +25,49 @@ type SubjectRecord = {
   is_active: boolean;
 };
 
-type QuestionOptionRecord = {
+/* Hình dạng JSON câu hỏi do RPC get_active_exam_session_full trả về (đã phẳng, không
+ * lồng như PostgREST embed). KHÔNG có đáp án đúng — đang làm bài. */
+type RpcSessionQuestionRecord = {
   id: string;
-  seq: number;
-  label: string;
-  content: string;
-  image_url: string | null;
-  image_alt_text: string | null;
-};
-
-type TrueFalseItemRecord = {
-  id: string;
-  seq: number;
-  label: string | null;
-  content: string;
-};
-
-type QuestionAssetRecord = {
-  kind: string;
-  url: string;
-  alt_text: string | null;
-  display_order: number;
-};
-
-type QuestionRecord = {
-  id: string;
+  question_seq: number;
+  display_no: string | null;
+  max_points: number | string;
+  question_id: string;
   code: string;
   type: ExamQuestionType;
   content: string;
   image_url: string | null;
-  question_options?: QuestionOptionRecord[] | null;
-  question_true_false_items?: TrueFalseItemRecord[] | null;
-  question_assets?: QuestionAssetRecord[] | null;
+  image_alt_text: string | null;
+  options:
+    | {
+        id: string;
+        seq: number;
+        label: string;
+        content: string;
+        image_url: string | null;
+        image_alt_text: string | null;
+      }[]
+    | null;
+  true_false_items:
+    | { id: string; seq: number; label: string | null; content: string }[]
+    | null;
 };
 
-type SessionQuestionRecord = {
-  id: string;
-  question_seq: number;
-  display_no: string | null;
-  max_points: number;
-  questions: MaybeArray<QuestionRecord>;
-};
-
-type SessionRecord = {
-  id: string;
-  status: string;
-  attempt_number: number;
-  started_at: string;
-  due_at: string | null;
-  submitted_at: string | null;
-  score: number | null;
-  max_score: number;
-  exam_room_id: string;
+type RpcExamSessionPayload = {
+  session: {
+    id: string;
+    status: string;
+    attempt_number: number;
+    started_at: string;
+    due_at: string | null;
+    submitted_at: string | null;
+    score: number | string | null;
+    max_score: number | string;
+    exam_room_id: string;
+  } | null;
+  room: PublishedRoomRecord | null;
+  questions: RpcSessionQuestionRecord[] | null;
+  answers: SessionAnswerRecord[] | null;
 };
 
 type SessionAnswerRecord = {
@@ -178,11 +167,6 @@ export type ExamSessionData = {
   answers: ExamSessionAnswer[];
 };
 
-function one<T>(value: MaybeArray<T>): T | null {
-  if (Array.isArray(value)) return value[0] ?? null;
-  return value ?? null;
-}
-
 /**
  * Trích thông báo lỗi từ mọi dạng error.
  *
@@ -195,6 +179,9 @@ export function getSupabaseErrorMessage(error: unknown, fallback: string): strin
   if (error instanceof Error) return error.message;
   if (error && typeof error === 'object') {
     const candidate = error as { message?: unknown; code?: unknown };
+    if (candidate.code === '42501') {
+      return 'Phiên đăng nhập không còn quyền lưu bài. Vui lòng tải lại trang để tiếp tục.';
+    }
     if (typeof candidate.message === 'string' && candidate.message.length > 0) {
       return typeof candidate.code === 'string' && candidate.code.length > 0
         ? `${candidate.message} (${candidate.code})`
@@ -222,43 +209,36 @@ function mapRoom(record: PublishedRoomRecord): ExamRoomSummary {
   };
 }
 
-function mapQuestion(record: SessionQuestionRecord): ExamSessionQuestion | null {
-  const question = one(record.questions);
-  if (!question) return null;
-  const primaryImage = [...(question.question_assets ?? [])]
-    .filter((asset) => asset.kind === 'image')
-    .sort((a, b) => a.display_order - b.display_order)
-    .find((asset) => !question.image_url || asset.url === question.image_url);
-
+function mapRpcSessionQuestion(
+  record: RpcSessionQuestionRecord,
+): ExamSessionQuestion {
+  // RPC đã sắp options/true_false_items theo seq và câu hỏi theo question_seq,
+  // nên không cần sort lại ở client.
   return {
     id: record.id,
     number: record.question_seq,
     displayNo: record.display_no ?? String(record.question_seq),
     maxPoints: Number(record.max_points),
-    questionId: question.id,
-    code: question.code,
-    type: question.type,
-    content: question.content,
-    imageUrl: question.image_url,
-    imageAltText: primaryImage?.alt_text ?? null,
-    options: [...(question.question_options ?? [])]
-      .sort((a, b) => a.seq - b.seq)
-      .map((option) => ({
-        id: option.id,
-        seq: option.seq,
-        label: option.label,
-        content: option.content,
-        imageUrl: option.image_url,
-        imageAltText: option.image_alt_text,
-      })),
-    trueFalseItems: [...(question.question_true_false_items ?? [])]
-      .sort((a, b) => a.seq - b.seq)
-      .map((item) => ({
-        id: item.id,
-        seq: item.seq,
-        label: item.label,
-        content: item.content,
-      })),
+    questionId: record.question_id,
+    code: record.code,
+    type: record.type,
+    content: record.content,
+    imageUrl: record.image_url,
+    imageAltText: record.image_alt_text,
+    options: (record.options ?? []).map((option) => ({
+      id: option.id,
+      seq: option.seq,
+      label: option.label,
+      content: option.content,
+      imageUrl: option.image_url,
+      imageAltText: option.image_alt_text,
+    })),
+    trueFalseItems: (record.true_false_items ?? []).map((item) => ({
+      id: item.id,
+      seq: item.seq,
+      label: item.label,
+      content: item.content,
+    })),
   };
 }
 
@@ -302,30 +282,68 @@ export function questionTypeLabel(type: ExamQuestionType) {
   }
 }
 
-export async function fetchPublishedRooms(
+/* ─── Cache nhẹ cho dữ liệu tham chiếu gần-tĩnh ───────────────────────────
+ * Danh sách môn thi + phòng đã mở giống nhau cho mọi người dùng và đổi rất
+ * hiếm. Cache trong bộ nhớ tab ~60s để các lần điều hướng sau dùng lại, đồng
+ * thời gộp các lần gọi trùng đang bay (in-flight stampede). KHÔNG dùng cho dữ
+ * liệu cá nhân (profile, phiên thi) — những thứ đó vẫn gọi trực tiếp. */
+const REFERENCE_TTL_MS = 60_000;
+
+type ReferenceCacheEntry = { promise: Promise<unknown>; expires: number };
+const referenceCache = new Map<string, ReferenceCacheEntry>();
+
+function cachedReference<T>(
+  key: string,
+  loader: () => Promise<T>,
+  ttlMs = REFERENCE_TTL_MS,
+): Promise<T> {
+  const now = Date.now();
+  const hit = referenceCache.get(key);
+  if (hit && hit.expires > now) {
+    return hit.promise as Promise<T>;
+  }
+
+  const promise = loader().catch((error) => {
+    // Không cache lỗi: gỡ entry để lần sau thử lại.
+    if (referenceCache.get(key)?.promise === promise) {
+      referenceCache.delete(key);
+    }
+    throw error;
+  });
+
+  referenceCache.set(key, { promise, expires: now + ttlMs });
+  return promise;
+}
+
+/** Xóa cache dữ liệu tham chiếu — gọi khi đăng xuất / vừa đổi môn-phòng. */
+export function clearReferenceCache() {
+  referenceCache.clear();
+}
+
+const PUBLISHED_ROOM_COLUMNS = [
+  'id',
+  'code',
+  'name',
+  'duration_minutes',
+  'status',
+  'price_vnd',
+  'total_attempts_default',
+  'starts_at',
+  'ends_at',
+  'published_at',
+  'blueprint_code',
+  'blueprint_name',
+  'subject_code',
+  'subject_name',
+].join(',');
+
+async function loadPublishedRooms(
   supabase: SupabaseClient,
   subjectCode?: string,
-) {
+): Promise<ExamRoomSummary[]> {
   let query = supabase
     .from('v_exam_rooms_full')
-    .select(
-      [
-        'id',
-        'code',
-        'name',
-        'duration_minutes',
-        'status',
-        'price_vnd',
-        'total_attempts_default',
-        'starts_at',
-        'ends_at',
-        'published_at',
-        'blueprint_code',
-        'blueprint_name',
-        'subject_code',
-        'subject_name',
-      ].join(','),
-    )
+    .select(PUBLISHED_ROOM_COLUMNS)
     .eq('status', 'published')
     .order('subject_name', { ascending: true })
     .order('published_at', { ascending: false });
@@ -340,36 +358,118 @@ export async function fetchPublishedRooms(
   return ((data ?? []) as unknown as PublishedRoomRecord[]).map(mapRoom);
 }
 
-export async function fetchSubjectsWithRoomCounts(supabase: SupabaseClient) {
-  const [subjectsResult, rooms] = await Promise.all([
-    supabase
-      .from('subjects')
-      .select(
-        'code,name,default_duration_minutes,is_compulsory,is_active',
-      )
-      .eq('is_active', true)
-      .order('is_compulsory', { ascending: false })
-      .order('name', { ascending: true }),
-    fetchPublishedRooms(supabase),
-  ]);
+export function fetchPublishedRooms(
+  supabase: SupabaseClient,
+  subjectCode?: string,
+): Promise<ExamRoomSummary[]> {
+  const key = `rooms:${subjectCode ? subjectCode.toUpperCase() : 'all'}`;
+  return cachedReference(key, () => loadPublishedRooms(supabase, subjectCode));
+}
 
-  if (subjectsResult.error) throw subjectsResult.error;
+type SubjectBase = Omit<SubjectSummary, 'openRoomCount'>;
 
+function mapSubjectBase(record: SubjectRecord): SubjectBase {
+  return {
+    code: record.code,
+    name: record.name,
+    defaultDurationMinutes: record.default_duration_minutes,
+    isCompulsory: record.is_compulsory,
+    isActive: record.is_active,
+  };
+}
+
+/** Đếm số phòng đã mở cho từng môn (dùng chung 1 mảng rooms, không query lại). */
+function attachRoomCounts(
+  subjectBases: SubjectBase[],
+  rooms: ExamRoomSummary[],
+): SubjectSummary[] {
   const roomCounts = new Map<string, number>();
   rooms.forEach((room) => {
     roomCounts.set(room.subjectCode, (roomCounts.get(room.subjectCode) ?? 0) + 1);
   });
 
-  return ((subjectsResult.data ?? []) as unknown as SubjectRecord[]).map(
-    (subject): SubjectSummary => ({
-      code: subject.code,
-      name: subject.name,
-      defaultDurationMinutes: subject.default_duration_minutes,
-      isCompulsory: subject.is_compulsory,
-      isActive: subject.is_active,
-      openRoomCount: roomCounts.get(subject.code) ?? 0,
-    }),
-  );
+  return subjectBases.map((subject) => ({
+    ...subject,
+    openRoomCount: roomCounts.get(subject.code) ?? 0,
+  }));
+}
+
+async function loadActiveSubjects(
+  supabase: SupabaseClient,
+): Promise<SubjectBase[]> {
+  const { data, error } = await supabase
+    .from('subjects')
+    .select('code,name,default_duration_minutes,is_compulsory,is_active')
+    .eq('is_active', true)
+    .order('is_compulsory', { ascending: false })
+    .order('name', { ascending: true });
+
+  if (error) throw error;
+
+  return ((data ?? []) as unknown as SubjectRecord[]).map(mapSubjectBase);
+}
+
+/**
+ * Tải MỘT lần cả môn thi và phòng đã mở, rồi tính số phòng/môn ngay trên
+ * client. Dùng cho các đường đi cần dữ liệu môn+phòng (đã cache 60s). Trang
+ * /subjects nay gọi fetchSubjectsDashboard (gộp luôn profile + phiên dở vào 1
+ * RPC); hàm này giữ lại cho các consumer khác.
+ */
+export async function fetchSubjectsAndRooms(
+  supabase: SupabaseClient,
+): Promise<{ subjects: SubjectSummary[]; rooms: ExamRoomSummary[] }> {
+  const [subjectBases, rooms] = await Promise.all([
+    cachedReference('subjects:active', () => loadActiveSubjects(supabase)),
+    fetchPublishedRooms(supabase),
+  ]);
+
+  return { subjects: attachRoomCounts(subjectBases, rooms), rooms };
+}
+
+export type SubjectsDashboard = {
+  subjects: SubjectSummary[];
+  rooms: ExamRoomSummary[];
+  role: string | null;
+  activeSession: ActiveSessionInfo | null;
+};
+
+/**
+ * Gộp toàn bộ dữ liệu trang /subjects vào 1 round-trip qua RPC
+ * get_subjects_dashboard: môn đang mở + phòng đã publish (dùng chung để đếm
+ * phòng/môn) + profile của người gọi (lấy role) + phiên đang làm dở. Trước đây
+ * trang bắn 3-4 request song song tới Supabase (Mumbai); nay chỉ 1.
+ */
+export async function fetchSubjectsDashboard(
+  supabase: SupabaseClient,
+): Promise<SubjectsDashboard> {
+  const { data, error } = await supabase.rpc('get_subjects_dashboard');
+  if (error) throw error;
+  if (!data || typeof data !== 'object') {
+    throw new Error('Không tải được dữ liệu trang môn thi.');
+  }
+
+  const payload = data as {
+    subjects: SubjectRecord[] | null;
+    rooms: PublishedRoomRecord[] | null;
+    profile: { role?: string | null } | null;
+    active_session: Record<string, unknown> | null;
+  };
+
+  const subjectBases = (payload.subjects ?? []).map(mapSubjectBase);
+  const rooms = (payload.rooms ?? []).map(mapRoom);
+
+  return {
+    subjects: attachRoomCounts(subjectBases, rooms),
+    rooms,
+    role: payload.profile?.role ?? null,
+    activeSession: mapActiveSession(payload.active_session),
+  };
+}
+
+/** @deprecated Dùng fetchSubjectsAndRooms để khỏi fetch rooms 2 lần. */
+export async function fetchSubjectsWithRoomCounts(supabase: SupabaseClient) {
+  const { subjects } = await fetchSubjectsAndRooms(supabase);
+  return subjects;
 }
 
 export async function fetchSubjectWithRooms(
@@ -436,113 +536,52 @@ export async function fetchExamRoomById(
   return data ? mapRoom(data as unknown as PublishedRoomRecord) : null;
 }
 
+/**
+ * Tải toàn bộ dữ liệu 1 phiên thi qua RPC get_active_exam_session_full: session +
+ * room + câu hỏi + đáp án đã chọn của chính thí sinh, GỘP trong 1 round-trip.
+ * Trước đây hàm này chạy 3 chặng nối tiếp tới Supabase (Mumbai): lấy session ->
+ * lấy questions+room -> lấy answers. RPC không lộ đáp án đúng (đang làm bài).
+ */
 export async function fetchExamSessionData(
   supabase: SupabaseClient,
   sessionId: string,
 ): Promise<ExamSessionData> {
-  const sessionResult = await supabase
-    .from('exam_sessions')
-    .select(
-      'id,status,attempt_number,started_at,due_at,submitted_at,score,max_score,exam_room_id',
-    )
-    .eq('id', sessionId)
-    .maybeSingle();
-
-  if (sessionResult.error) throw sessionResult.error;
-  if (!sessionResult.data) {
+  const { data, error } = await supabase.rpc('get_active_exam_session_full', {
+    p_session_id: sessionId,
+  });
+  if (error) throw error;
+  if (!data || typeof data !== 'object') {
     throw new Error('Không tìm thấy phiên thi trong cơ sở dữ liệu.');
   }
 
-  const session = sessionResult.data as unknown as SessionRecord;
-  // Fetch questions và room song song — cả 2 đều có session_id và exam_room_id
-  const [questionResult, room] = await Promise.all([
-    supabase
-      .from('exam_session_questions')
-      .select(
-        `
-        id,
-        question_seq,
-        display_no,
-        max_points,
-        questions (
-          id,
-          code,
-          type,
-          content,
-          image_url,
-          question_assets (
-            kind,
-            url,
-            alt_text,
-            display_order
-          ),
-          question_options!question_options_question_id_fkey (
-            id,
-            seq,
-            label,
-            content,
-            image_url,
-            image_alt_text
-          ),
-          question_true_false_items (
-            id,
-            seq,
-            label,
-            content
-          )
-        )
-      `,
-      )
-      .eq('session_id', sessionId)
-      .order('question_seq', { ascending: true }),
-    fetchExamRoomById(supabase, session.exam_room_id).catch(() => null),
-  ]);
-
-  if (questionResult.error) throw questionResult.error;
-
-  const questions = ((questionResult.data ?? []) as unknown as SessionQuestionRecord[])
-    .map(mapQuestion)
-    .filter((question): question is ExamSessionQuestion => Boolean(question));
-
-  const answerResult =
-    questions.length > 0
-      ? await supabase
-          .from('session_answers')
-          .select(
-            'session_question_id,answer_json,selected_option_id,short_answer_text,is_correct,earned_points',
-          )
-          .in(
-            'session_question_id',
-            questions.map((question) => question.id),
-          )
-      : { data: [], error: null };
-
-  if (answerResult.error) throw answerResult.error;
+  const payload = data as RpcExamSessionPayload;
+  const s = payload.session;
+  if (!s) {
+    throw new Error('Không tìm thấy phiên thi trong cơ sở dữ liệu.');
+  }
 
   return {
     session: {
-      id: session.id,
-      status: session.status,
-      attemptNumber: session.attempt_number,
-      startedAt: session.started_at,
-      dueAt: session.due_at,
-      submittedAt: session.submitted_at,
-      score: session.score,
-      maxScore: session.max_score,
-      examRoomId: session.exam_room_id,
+      id: s.id,
+      status: s.status,
+      attemptNumber: s.attempt_number,
+      startedAt: s.started_at,
+      dueAt: s.due_at,
+      submittedAt: s.submitted_at,
+      score: s.score === null || s.score === undefined ? null : Number(s.score),
+      maxScore: Number(s.max_score),
+      examRoomId: s.exam_room_id,
     },
-    room,
-    questions,
-    answers: ((answerResult.data ?? []) as unknown as SessionAnswerRecord[]).map(
-      (answer) => ({
-        sessionQuestionId: answer.session_question_id,
-        answerJson: answer.answer_json,
-        selectedOptionId: answer.selected_option_id,
-        shortAnswerText: answer.short_answer_text,
-        isCorrect: answer.is_correct,
-        earnedPoints: answer.earned_points,
-      }),
-    ),
+    room: payload.room ? mapRoom(payload.room) : null,
+    questions: (payload.questions ?? []).map(mapRpcSessionQuestion),
+    answers: (payload.answers ?? []).map((answer) => ({
+      sessionQuestionId: answer.session_question_id,
+      answerJson: answer.answer_json,
+      selectedOptionId: answer.selected_option_id,
+      shortAnswerText: answer.short_answer_text,
+      isCorrect: answer.is_correct,
+      earnedPoints: answer.earned_points,
+    })),
   };
 }
 
@@ -553,41 +592,28 @@ export type SessionAnswerInput = {
   answerJson: Record<string, unknown>;
 };
 
-/** Lấy id học sinh hiện tại 1 lần (tránh getUser mỗi lần lưu đáp án). */
-export async function getCurrentStudentId(
-  supabase: SupabaseClient,
-): Promise<string> {
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-  if (error) throw error;
-  if (!user) throw new Error('Phiên đăng nhập đã hết hạn.');
-  return user.id;
-}
-
 /**
- * Lưu NHIỀU đáp án trong 1 upsert (tiết kiệm DB: gom buffer rồi flush gộp thay
- * vì ghi mỗi thao tác). studentId truyền sẵn để không gọi getUser mỗi lần.
+ * Lưu nhiều đáp án trong một RPC. student_id được lấy từ auth.uid() ở Postgres,
+ * không nhận từ client, nên payload luôn khớp với RLS của phiên đang làm.
  */
 export async function saveSessionAnswers(
   supabase: SupabaseClient,
-  studentId: string,
+  sessionId: string,
   rows: SessionAnswerInput[],
 ) {
   if (rows.length === 0) return;
 
   const payload = rows.map((row) => ({
     session_question_id: row.sessionQuestionId,
-    student_id: studentId,
     selected_option_id: row.selectedOptionId ?? null,
     short_answer_text: row.shortAnswerText ?? null,
     answer_json: row.answerJson,
   }));
 
-  const { error } = await supabase
-    .from('session_answers')
-    .upsert(payload, { onConflict: 'session_question_id' });
+  const { error } = await supabase.rpc('save_session_answers', {
+    p_session_id: sessionId,
+    p_answers: payload,
+  });
 
   if (error) throw error;
 }
@@ -602,19 +628,11 @@ export type ActiveSessionInfo = {
   dueAt: string | null;
 };
 
-/**
- * Phiên thi đang dang dở (còn giờ) của học sinh hiện tại, để hiển thị banner
- * "Tiếp tục bài thi". RPC tự kết thúc các phiên đã quá hạn trước khi trả về.
- */
-export async function getActiveSession(
-  supabase: SupabaseClient,
-): Promise<ActiveSessionInfo | null> {
-  const { data, error } = await supabase.rpc('get_active_session');
-  if (error) throw error;
-  if (!data || typeof data !== 'object') return null;
-
-  const record = data as Record<string, unknown>;
-  if (!record.session_id) return null;
+/** Map JSON phiên-đang-dở (từ get_active_session / get_subjects_dashboard). */
+function mapActiveSession(
+  record: Record<string, unknown> | null | undefined,
+): ActiveSessionInfo | null {
+  if (!record || typeof record !== 'object' || !record.session_id) return null;
 
   return {
     sessionId: String(record.session_id),
@@ -625,6 +643,18 @@ export async function getActiveSession(
     startedAt: String(record.started_at),
     dueAt: (record.due_at as string | null) ?? null,
   };
+}
+
+/**
+ * Phiên thi đang dang dở (còn giờ) của học sinh hiện tại, để hiển thị banner
+ * "Tiếp tục bài thi". RPC tự kết thúc các phiên đã quá hạn trước khi trả về.
+ */
+export async function getActiveSession(
+  supabase: SupabaseClient,
+): Promise<ActiveSessionInfo | null> {
+  const { data, error } = await supabase.rpc('get_active_session');
+  if (error) throw error;
+  return mapActiveSession(data as Record<string, unknown> | null);
 }
 
 /* ─── Xem lại bài làm (sau khi phiên kết thúc, kèm đáp án đúng) ─────────── */
@@ -741,7 +771,15 @@ export async function fetchSessionReview(
   const { data, error } = await supabase.rpc('get_session_review', {
     p_session_id: sessionId,
   });
-  if (error) throw error;
+  if (error) {
+    const message = getSupabaseErrorMessage(error, '');
+    if (message.includes('ACTIVE_EXAM_IN_PROGRESS')) {
+      throw new Error(
+        'Bạn đang có một phiên làm bài chưa kết thúc. Đáp án và lời giải sẽ được mở lại sau khi bạn nộp bài hoặc hết giờ.',
+      );
+    }
+    throw error;
+  }
   if (!data || typeof data !== 'object') {
     throw new Error('Không tải được kết quả phiên thi.');
   }

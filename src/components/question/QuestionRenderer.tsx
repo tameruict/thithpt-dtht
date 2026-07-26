@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import type { ClipboardEvent, FocusEvent, KeyboardEvent } from 'react';
 import katex from 'katex';
 import type { ExamQuestionType } from '@/lib/supabase/exam-data';
 import styles from '@/styles/question-renderer.module.css';
@@ -45,6 +46,145 @@ type QuestionRendererProps = {
   onTextChange?: (value: string) => void;
   onTextBlur?: () => void;
 };
+
+const SHORT_ANSWER_LENGTH = 4;
+const SHORT_ANSWER_DIGIT = /^\d$/;
+
+export function normalizeShortAnswer(value: string): string {
+  let result = '';
+
+  for (const character of value.replaceAll('.', ',')) {
+    if (SHORT_ANSWER_DIGIT.test(character)) {
+      result += character;
+    } else if (character === '-' && result.length === 0) {
+      result += character;
+    } else if (character === ',' && !result.includes(',')) {
+      result += character;
+    }
+
+    if (result.length === SHORT_ANSWER_LENGTH) break;
+  }
+
+  return result;
+}
+
+export function serializeShortAnswerForScoring(value: string): string {
+  return normalizeShortAnswer(value).replace(',', '.');
+}
+
+function ShortAnswerInput({
+  value,
+  disabled,
+  onChange,
+  onBlur,
+}: {
+  value: string;
+  disabled: boolean;
+  onChange?: (value: string) => void;
+  onBlur?: () => void;
+}) {
+  const groupRef = useRef<HTMLDivElement>(null);
+  const inputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const normalizedValue = normalizeShortAnswer(value);
+  const characters = normalizedValue.split('');
+
+  const focusCell = (index: number) => {
+    inputRefs.current[Math.max(0, Math.min(index, SHORT_ANSWER_LENGTH - 1))]?.focus();
+  };
+
+  const commitCharacters = (nextCharacters: string[], nextFocusIndex?: number) => {
+    onChange?.(normalizeShortAnswer(nextCharacters.join('')));
+    if (nextFocusIndex !== undefined) {
+      requestAnimationFrame(() => focusCell(nextFocusIndex));
+    }
+  };
+
+  const insertAt = (index: number, rawValue: string) => {
+    const insertion = normalizeShortAnswer(rawValue);
+    const nextCharacters = [...characters];
+    const insertionIndex = Math.min(index, nextCharacters.length);
+
+    if (!insertion) {
+      if (index < nextCharacters.length) nextCharacters.splice(index, 1);
+      commitCharacters(nextCharacters);
+      return;
+    }
+
+    nextCharacters.splice(insertionIndex, index < nextCharacters.length ? 1 : 0, ...insertion);
+    commitCharacters(
+      nextCharacters,
+      Math.min(insertionIndex + insertion.length, SHORT_ANSWER_LENGTH - 1),
+    );
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>, index: number) => {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      focusCell(index - 1);
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      focusCell(index + 1);
+    } else if (event.key === 'Backspace' && !characters[index] && index > 0) {
+      event.preventDefault();
+      const nextCharacters = [...characters];
+      nextCharacters.splice(index - 1, 1);
+      commitCharacters(nextCharacters, index - 1);
+    } else if (event.key === 'Delete' && characters[index]) {
+      event.preventDefault();
+      const nextCharacters = [...characters];
+      nextCharacters.splice(index, 1);
+      commitCharacters(nextCharacters, index);
+    }
+  };
+
+  const handlePaste = (event: ClipboardEvent<HTMLInputElement>, index: number) => {
+    event.preventDefault();
+    insertAt(index, event.clipboardData.getData('text'));
+  };
+
+  const handleBlur = (event: FocusEvent<HTMLInputElement>) => {
+    if (!groupRef.current?.contains(event.relatedTarget as Node | null)) {
+      onBlur?.();
+    }
+  };
+
+  return (
+    <div className={styles.shortAnswerBlock}>
+      <div
+        ref={groupRef}
+        className={styles.shortAnswerGrid}
+        role="group"
+        aria-label="Đáp án trả lời ngắn gồm 4 ô"
+      >
+        {Array.from({ length: SHORT_ANSWER_LENGTH }, (_, index) => (
+          <input
+            key={index}
+            ref={(element) => {
+              inputRefs.current[index] = element;
+            }}
+            className={styles.shortAnswerCell}
+            value={characters[index] ?? ''}
+            disabled={disabled}
+            inputMode="decimal"
+            maxLength={1}
+            autoComplete="off"
+            aria-label={`Ô đáp án ${index + 1}`}
+            onFocus={(event) => event.currentTarget.select()}
+            onChange={(event) => insertAt(index, event.target.value)}
+            onKeyDown={(event) => handleKeyDown(event, index)}
+            onPaste={(event) => handlePaste(event, index)}
+            onBlur={handleBlur}
+          />
+        ))}
+      </div>
+      {!disabled ? (
+        <p className={styles.shortAnswerHint}>
+          Tối đa 4 ký tự. Phần thập phân dùng dấu phẩy (,).
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 export function MathText({ value }: { value: string }) {
   const parts = useMemo(() => {
@@ -240,13 +380,11 @@ export default function QuestionRenderer({
       ) : null}
 
       {showAnswer && question.type === 'short_answer' ? (
-        <input
-          className={styles.textAnswer}
+        <ShortAnswerInput
           value={textValue}
           disabled={!onTextChange}
-          onChange={(event) => onTextChange?.(event.target.value)}
+          onChange={onTextChange}
           onBlur={onTextBlur}
-          placeholder="Nhập câu trả lời ngắn"
         />
       ) : null}
 

@@ -162,6 +162,21 @@ CREATE TABLE IF NOT EXISTS question_tf_score_steps (
   PRIMARY KEY (question_id, correct_item_count)
 );
 
+-- Chi tiết đáp án Đúng/Sai theo từng mệnh đề. Bảng gốc THIẾU lệnh CREATE ở mọi
+-- migration (chỉ tồn tại out-of-band trên remote), khiến `supabase db reset` chết
+-- ngay tại trigger phía dưới. Thêm ở đây để schema tái lập được từ đầu.
+-- IF NOT EXISTS -> no-op trên môi trường đã có bảng (không đổi cấu trúc remote).
+CREATE TABLE IF NOT EXISTS session_tf_item_answers (
+  session_question_id UUID        NOT NULL REFERENCES exam_session_questions(id) ON DELETE CASCADE,
+  item_id             UUID        NOT NULL REFERENCES question_true_false_items(id) ON DELETE CASCADE,
+  selected_value      BOOLEAN,
+  is_correct          BOOLEAN     NOT NULL DEFAULT FALSE,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (session_question_id, item_id)
+);
+ALTER TABLE session_tf_item_answers ENABLE ROW LEVEL SECURITY;
+
 -- Trigger sync session_answers.correct_item_count từ session_tf_item_answers
 CREATE OR REPLACE FUNCTION sync_tf_aggregate()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$

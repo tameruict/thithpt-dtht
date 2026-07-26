@@ -8,7 +8,6 @@ import { CheckCircle, Flag, Maximize, Moon, Sun, AlertTriangle, X, Eye } from 'l
 import { createClient } from '@/lib/supabase/client';
 import {
   fetchExamSessionData,
-  getCurrentStudentId,
   getSupabaseErrorMessage,
   saveSessionAnswers,
   type ExamSessionData,
@@ -16,6 +15,7 @@ import {
   type SessionAnswerInput,
 } from '@/lib/supabase/exam-data';
 import QuestionRenderer, {
+  serializeShortAnswerForScoring,
   type RenderableQuestion,
 } from '@/components/question/QuestionRenderer';
 import { useExamStore } from '@/store/useExamStore';
@@ -118,10 +118,9 @@ export default function ExamPage() {
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSubmittedRef = useRef(false);
 
-  // Buffer ghi đáp án (tiết kiệm DB): gom thay đổi rồi flush gộp, không ghi mỗi thao tác.
-  const studentIdRef = useRef<string | null>(null);
+  // Buffer ghi đáp án: gom và khử trùng theo câu hỏi trước khi flush.
   const dirtyRef = useRef<Map<string, SessionAnswerInput>>(new Map());
-  const flushingRef = useRef(false);
+  const flushPromiseRef = useRef<Promise<boolean> | null>(null);
 
   useEffect(() => {
     if (!hasHydrated) return;
@@ -140,13 +139,6 @@ export default function ExamPage() {
     if (!hasHydrated || !currentSessionId) return;
 
     let isMounted = true;
-
-    // Lấy student id 1 lần để flush không phải gọi getUser mỗi lần.
-    getCurrentStudentId(supabase)
-      .then((id) => {
-        if (isMounted) studentIdRef.current = id;
-      })
-      .catch(() => undefined);
 
     fetchExamSessionData(supabase, currentSessionId)
       .then((data) => {
@@ -308,36 +300,46 @@ export default function ExamPage() {
   }, []);
 
   // Flush buffer đáp án lên DB theo lô (gom + dedup theo câu hỏi).
-  const flush = useCallback(async () => {
-    if (flushingRef.current || dirtyRef.current.size === 0) return;
+  const flush = useCallback(async (): Promise<boolean> => {
+    if (flushPromiseRef.current) return flushPromiseRef.current;
+    if (dirtyRef.current.size === 0) return true;
+    if (!currentSessionId) return false;
 
-    const pending = dirtyRef.current;
-    dirtyRef.current = new Map();
-    flushingRef.current = true;
-    showSaveIndicator('saving');
+    const run = (async () => {
+      while (dirtyRef.current.size > 0) {
+        const pending = dirtyRef.current;
+        dirtyRef.current = new Map();
+        showSaveIndicator('saving');
 
-    try {
-      if (!studentIdRef.current) {
-        studentIdRef.current = await getCurrentStudentId(supabase);
+        try {
+          await saveSessionAnswers(
+            supabase,
+            currentSessionId,
+            Array.from(pending.values()),
+          );
+          setSaveError('');
+          showSaveIndicator('saved');
+        } catch (error) {
+          // Trả mục lỗi vào buffer nhưng không đè thay đổi mới hơn của cùng câu.
+          pending.forEach((value, key) => {
+            if (!dirtyRef.current.has(key)) dirtyRef.current.set(key, value);
+          });
+          setSaveError(getSupabaseErrorMessage(error, 'Không thể lưu đáp án.'));
+          showSaveIndicator('error');
+          return false;
+        }
       }
-      await saveSessionAnswers(
-        supabase,
-        studentIdRef.current,
-        Array.from(pending.values()),
-      );
-      setSaveError('');
-      showSaveIndicator('saved');
-    } catch (error) {
-      // Đưa lại các mục lỗi vào buffer để thử lại, không đè lên sửa đổi mới hơn.
-      pending.forEach((value, key) => {
-        if (!dirtyRef.current.has(key)) dirtyRef.current.set(key, value);
-      });
-      setSaveError(getSupabaseErrorMessage(error, 'Không thể lưu đáp án.'));
-      showSaveIndicator('error');
+
+      return true;
+    })();
+
+    flushPromiseRef.current = run;
+    try {
+      return await run;
     } finally {
-      flushingRef.current = false;
+      if (flushPromiseRef.current === run) flushPromiseRef.current = null;
     }
-  }, [supabase, showSaveIndicator]);
+  }, [currentSessionId, supabase, showSaveIndicator]);
 
   const scheduleFlush = useCallback(() => {
     if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
@@ -427,15 +429,21 @@ export default function ExamPage() {
     }
 
     // Đẩy nốt đáp án trong buffer trước khi nộp.
-    await flush();
+    const answersSaved = await flush();
+    if (!answersSaved) {
+      setShowReviewPanel(true);
+      return;
+    }
 
     if (currentSessionId) {
-      try {
-        await supabase.rpc('submit_exam_session', {
-          p_session_id: currentSessionId,
-        });
-      } catch {
-        // Không block UX nếu RPC thất bại (network issue, v.v.)
+      const { error } = await supabase.rpc('submit_exam_session', {
+        p_session_id: currentSessionId,
+      });
+      if (error) {
+        setSaveError(getSupabaseErrorMessage(error, 'Không thể nộp bài.'));
+        showSaveIndicator('error');
+        setShowReviewPanel(true);
+        return;
       }
     }
 
@@ -443,7 +451,7 @@ export default function ExamPage() {
     // để trang /result tải được kết quả + đáp án.
     clearDraft();
     router.push('/result');
-  }, [clearDraft, currentSessionId, flush, router, supabase]);
+  }, [clearDraft, currentSessionId, flush, router, showSaveIndicator, supabase]);
 
   const handleConfirmSubmit = useCallback(async () => {
     setShowReviewPanel(false);
@@ -570,19 +578,20 @@ export default function ExamPage() {
     });
   };
 
-  const persistTextAnswer = (question: ExamSessionQuestion) => {
-    const value = textAnswers[question.id]?.trim() ?? '';
-    if (!value) return;
-
+  const persistTextAnswer = (question: ExamSessionQuestion, value: string) => {
+    setTextAnswers((current) => ({ ...current, [question.id]: value }));
+    const trimmedValue = value.trim();
     queueAnswer({
       sessionQuestionId: question.id,
-      shortAnswerText: value,
+      shortAnswerText: trimmedValue || null,
       answerJson: {
         type: question.type,
-        value,
+        value:
+          question.type === 'short_answer'
+            ? serializeShortAnswerForScoring(trimmedValue)
+            : trimmedValue,
       },
     });
-    void flush();
   };
 
 
@@ -783,13 +792,8 @@ export default function ExamPage() {
                 onTrueFalseChange={(itemId, value) =>
                   persistTrueFalse(activeQuestion, itemId, value)
                 }
-                onTextChange={(value) =>
-                  setTextAnswers((current) => ({
-                    ...current,
-                    [activeQuestion.id]: value,
-                  }))
-                }
-                onTextBlur={() => persistTextAnswer(activeQuestion)}
+                onTextChange={(value) => persistTextAnswer(activeQuestion, value)}
+                onTextBlur={() => void flush()}
               />
             </article>
           ) : null}

@@ -6,10 +6,9 @@ import { FileText, KeyRound, LogOut, Moon, ShieldCheck, Sun } from 'lucide-react
 import { createClient } from '@/lib/supabase/client';
 import { hasSupabaseEnv } from '@/lib/supabase/env';
 import {
-  fetchPublishedRooms,
-  fetchSubjectsWithRoomCounts,
+  clearReferenceCache,
+  fetchSubjectsDashboard,
   formatPriceVnd,
-  getActiveSession,
   type ActiveSessionInfo,
   type ExamRoomSummary,
   type SubjectSummary,
@@ -66,6 +65,7 @@ export default function SubjectsPage() {
     try {
       const supabase = createClient();
       await supabase.auth.signOut();
+      clearReferenceCache();
       logout();
       router.push('/', { transitionTypes: ['nav-back'] });
     } catch {
@@ -97,24 +97,14 @@ export default function SubjectsPage() {
     let isMounted = true;
     const supabase = createClient();
 
-    Promise.all([
-      fetchSubjectsWithRoomCounts(supabase),
-      fetchPublishedRooms(supabase),
-      // Fetch user role to determine admin visibility
-      supabase.rpc('get_my_profile').then(({ data }) => {
-        if (isMounted && data) {
-          const row = Array.isArray(data) ? data[0] : data;
-          setUserRole(row?.role ?? null);
-        }
-      }),
-      // Phiên thi đang làm dở (còn giờ) -> hiện banner "Tiếp tục".
-      getActiveSession(supabase).catch(() => null),
-    ])
-      .then(([subjectRows, roomRows, , active]) => {
+    // Môn + phòng + role + phiên đang dở: gộp 1 round-trip qua RPC dashboard.
+    fetchSubjectsDashboard(supabase)
+      .then((dashboard) => {
         if (!isMounted) return;
-        setSubjects(subjectRows);
-        setRooms(roomRows);
-        setActiveSession(active ?? null);
+        setSubjects(dashboard.subjects);
+        setRooms(dashboard.rooms);
+        setUserRole(dashboard.role);
+        setActiveSession(dashboard.activeSession);
         setLoadError('');
       })
       .catch((error: unknown) => {
