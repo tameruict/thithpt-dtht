@@ -10,6 +10,7 @@ import {
   FileJson,
   FilePlus2,
   ImagePlus,
+  Layers,
   ListPlus,
   PanelLeftClose,
   PenLine,
@@ -477,6 +478,9 @@ export default function AuthoringWorkspace({ initialData }: Props) {
           </span>
         </div>
         <div className={styles.topActions}>
+          <Link href="/admin/compose" className={styles.ghostButton}>
+            <Layers size={16} /> Dựng đề
+          </Link>
           <Link href="/admin" transitionTypes={['nav-back']} className={styles.ghostButton}>
             <ArrowLeft size={16} /> Admin
           </Link>
