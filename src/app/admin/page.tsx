@@ -4,8 +4,10 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
+  Ban,
   BarChart3,
   BookOpenCheck,
+  CalendarClock,
   Download,
   FilePenLine,
   GraduationCap,
@@ -51,6 +53,8 @@ type ExamKey = {
   isPublic: boolean;
   attempts: string;
   status: KeyStatusLabel;
+  rawStatus: ExamKeyStatus;
+  usedAttempts: number;
   expiresAt: string | null;
   createdAt: string | null;
 };
@@ -221,6 +225,8 @@ function mapKeyRecord(key: AdminExamKeyRecord): ExamKey {
     isPublic: key.is_public,
     attempts: `${key.used_attempts}/${key.total_attempts}`,
     status: keyStatusLabels[key.status],
+    rawStatus: key.status,
+    usedAttempts: key.used_attempts,
     expiresAt: key.expires_at,
     createdAt: key.created_at,
   };
@@ -760,6 +766,8 @@ export default function AdminPage() {
         isPublic: key.is_public,
         attempts: `${key.used_attempts}/${key.total_attempts}`,
         status: keyStatusLabels[key.status],
+        rawStatus: key.status,
+        usedAttempts: key.used_attempts,
         expiresAt: key.expires_at,
         createdAt: key.created_at,
       }));
@@ -772,6 +780,90 @@ export default function AdminPage() {
       setKeyFeedback(getErrorMessage(error));
     } finally {
       setIsCreatingKeys(false);
+    }
+  };
+
+  const handleRevokeKey = async (key: ExamKey) => {
+    if (!hasConfiguredSupabase) return;
+    if (!window.confirm(`Thu hồi key ${key.code}? Thí sinh sẽ không dùng key này để vào thi được nữa.`)) {
+      return;
+    }
+
+    try {
+      const { error } = await createClient()
+        .from('exam_keys')
+        .update({ status: 'revoked' })
+        .eq('id', key.id);
+      if (error) throw error;
+      setKeyFeedback(`Đã thu hồi key ${key.code}.`);
+      await loadKeyManagement();
+    } catch (error) {
+      setKeyFeedback(getAdminDataErrorMessage(error));
+    }
+  };
+
+  const handleExtendKey = async (key: ExamKey) => {
+    if (!hasConfiguredSupabase) return;
+
+    const suggestion = key.expiresAt
+      ? hanoiTodayInputValue(new Date(key.expiresAt))
+      : getDefaultExpiryDate();
+    const input = window.prompt(
+      `Gia hạn key ${key.code} — nhập ngày hết hạn mới (YYYY-MM-DD):`,
+      suggestion,
+    );
+    if (!input) return;
+
+    const trimmed = input.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      setKeyFeedback('Ngày không hợp lệ. Định dạng đúng: YYYY-MM-DD.');
+      return;
+    }
+
+    const expiresAt = getEndOfDayIso(trimmed);
+    if (new Date(expiresAt) <= new Date()) {
+      setKeyFeedback('Ngày hết hạn phải nằm trong tương lai.');
+      return;
+    }
+
+    // Key đang 'expired' mà gia hạn về tương lai -> mở lại theo số lượt đã dùng.
+    const reopenStatus: ExamKeyStatus | undefined =
+      key.rawStatus === 'expired'
+        ? key.usedAttempts > 0
+          ? 'active'
+          : 'unused'
+        : undefined;
+
+    try {
+      const patch: { expires_at: string; status?: ExamKeyStatus } = { expires_at: expiresAt };
+      if (reopenStatus) patch.status = reopenStatus;
+
+      const { error } = await createClient().from('exam_keys').update(patch).eq('id', key.id);
+      if (error) throw error;
+      setKeyFeedback(`Đã gia hạn key ${key.code} đến ${formatDate(expiresAt)}.`);
+      await loadKeyManagement();
+    } catch (error) {
+      setKeyFeedback(getAdminDataErrorMessage(error));
+    }
+  };
+
+  const handleDeleteKey = async (key: ExamKey) => {
+    if (!hasConfiguredSupabase) return;
+    if (!window.confirm(`Xoá vĩnh viễn key ${key.code}? Không thể hoàn tác.`)) return;
+
+    try {
+      const { error } = await createClient().from('exam_keys').delete().eq('id', key.id);
+      if (error) {
+        if (error.code === '23503' || error.message.includes('foreign key')) {
+          setKeyFeedback(`Key ${key.code} đã có phiên thi nên không xoá được. Hãy thu hồi thay vì xoá.`);
+          return;
+        }
+        throw error;
+      }
+      setKeyFeedback(`Đã xoá key ${key.code}.`);
+      await loadKeyManagement();
+    } catch (error) {
+      setKeyFeedback(getAdminDataErrorMessage(error));
     }
   };
 
@@ -1206,12 +1298,13 @@ export default function AdminPage() {
                   <th>Lượt</th>
                   <th>Hết hạn</th>
                   <th>Trạng thái</th>
+                  <th>Thao tác</th>
                 </tr>
               </thead>
               <tbody>
                 {keys.length === 0 ? (
                   <tr>
-                    <td className={styles.emptyCell} colSpan={7}>
+                    <td className={styles.emptyCell} colSpan={8}>
                       {isLoadingKeys ? 'Đang tải key...' : 'Chưa có key nào được tạo.'}
                     </td>
                   </tr>
@@ -1225,6 +1318,36 @@ export default function AdminPage() {
                       <td>{key.attempts}</td>
                       <td>{formatDate(key.expiresAt)}</td>
                       <td><span className={styles.keyStatus}>{key.status}</span></td>
+                      <td>
+                        <div className={styles.rowActions}>
+                          <button
+                            type="button"
+                            className={styles.iconAction}
+                            title="Thu hồi key"
+                            onClick={() => handleRevokeKey(key)}
+                            disabled={key.rawStatus !== 'unused' && key.rawStatus !== 'active'}
+                          >
+                            <Ban size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.iconAction}
+                            title="Gia hạn hết hạn"
+                            onClick={() => handleExtendKey(key)}
+                            disabled={key.rawStatus === 'revoked'}
+                          >
+                            <CalendarClock size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            className={`${styles.iconAction} ${styles.iconDanger}`}
+                            title="Xoá key"
+                            onClick={() => handleDeleteKey(key)}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))
                 )}

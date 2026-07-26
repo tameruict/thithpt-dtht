@@ -602,6 +602,42 @@
   cursor: not-allowed;
 }
 
+.rowActions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.iconAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all .16s ease;
+}
+
+.iconAction:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.iconAction:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.iconDanger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--border));
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
 .tableWrap {
   overflow-x: auto;
   border: 1px solid var(--border);
