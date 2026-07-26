@@ -466,12 +466,6 @@ export async function fetchSubjectsDashboard(
   };
 }
 
-/** @deprecated Dùng fetchSubjectsAndRooms để khỏi fetch rooms 2 lần. */
-export async function fetchSubjectsWithRoomCounts(supabase: SupabaseClient) {
-  const { subjects } = await fetchSubjectsAndRooms(supabase);
-  return subjects;
-}
-
 export async function fetchSubjectWithRooms(
   supabase: SupabaseClient,
   subjectCode: string,

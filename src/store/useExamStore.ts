@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { formatHanoiDateTime } from '@/lib/datetime';
 
 export interface ExamDraft {
   sessionId: string;
@@ -42,7 +41,6 @@ interface ExamState {
   theme: 'light' | 'dark';
   zoom: number;
   currentQuestion: number;
-  answers: Record<number, string>;
   marked: number[];
   isAuthenticated: boolean;
   candidateInfo: CandidateInfo | null;
@@ -60,31 +58,24 @@ interface ExamState {
   setHasHydrated: (hasHydrated: boolean) => void;
   setZoom: (zoom: number) => void;
   setCurrentQuestion: (q: number) => void;
-  setAnswer: (q: number, answer: string) => void;
   toggleMark: (q: number) => void;
   login: (code: string, profile?: Partial<Omit<CandidateInfo, 'code'>>) => void;
   logout: () => void;
   updateProfile: (profile: Partial<Omit<CandidateInfo, 'code'>>) => void;
   setSession: (sessionId: string, key: string) => void;
-  saveExamResult: (subject: string, score: string, examSet?: string) => void;
-  setSelectedSubjectCode: (subjectCode: string | null) => void;
-  setSelectedExamSetId: (examSetId: string | null) => void;
   selectExamSet: (subjectCode: string, examSetId: string) => void;
-  setRoomKey: (key: string | null) => void;
   setDraft: (draft: ExamDraft) => void;
   clearDraft: () => void;
-  resetExam: () => void;
   finishSession: () => void;
 }
 
 export const useExamStore = create<ExamState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       hasHydrated: false,
       theme: 'light',
       zoom: 100,
       currentQuestion: 1,
-      answers: {},
       marked: [],
       isAuthenticated: false,
       candidateInfo: null,
@@ -101,8 +92,6 @@ export const useExamStore = create<ExamState>()(
       setTheme: (theme) => set({ theme }),
       setZoom: (zoom) => set({ zoom }),
       setCurrentQuestion: (currentQuestion) => set({ currentQuestion }),
-      setAnswer: (q, answer) =>
-        set((state) => ({ answers: { ...state.answers, [q]: answer } })),
       toggleMark: (q) =>
         set((state) => ({
           marked: state.marked.includes(q)
@@ -134,7 +123,6 @@ export const useExamStore = create<ExamState>()(
           roomKey: null,
           currentSessionId: null,
           examDraft: null,
-          answers: {},
           marked: [],
         }),
 
@@ -152,72 +140,30 @@ export const useExamStore = create<ExamState>()(
         });
       },
 
-      saveExamResult: (subject, score, examSet) => {
-        const state = get();
-        if (!state.roomKey) return;
-
-        const date = formatHanoiDateTime(new Date());
-        const historyRecord: ExamHistory = {
-          id: Date.now().toString(),
-          subject,
-          examSet,
-          score,
-          date,
-        };
-
-        set((currentState) => ({
-          examHistory: [historyRecord, ...currentState.examHistory],
-          roomKey: null,
-          currentSessionId: null,
-          examDraft: null,
-        }));
-      },
-
-      setSelectedSubjectCode: (selectedSubjectCode) =>
-        set({
-          selectedSubjectCode,
-          selectedExamSetId: null,
-          answers: {},
-          marked: [],
-          currentQuestion: 1,
-        }),
-      setSelectedExamSetId: (selectedExamSetId) =>
-        set({
-          selectedExamSetId,
-          answers: {},
-          marked: [],
-          currentQuestion: 1,
-        }),
       selectExamSet: (selectedSubjectCode, selectedExamSetId) =>
         set({
           selectedSubjectCode,
           selectedExamSetId,
-          answers: {},
           marked: [],
           currentQuestion: 1,
           roomKey: null,
           currentSessionId: null,
         }),
-      setRoomKey: (roomKey) => set({ roomKey }),
       setDraft: (examDraft) => set({ examDraft }),
       clearDraft: () => set({ examDraft: null }),
-      resetExam: () => set({ answers: {}, marked: [], currentQuestion: 1 }),
       finishSession: () =>
         set({
           roomKey: null,
           currentSessionId: null,
           examDraft: null,
-          answers: {},
           marked: [],
           currentQuestion: 1,
         }),
     }),
     {
       name: 'exam-storage',
-      // Chỉ persist state cần thiết — KHÔNG persist answers/marked vì:
-      // - answers đã được lưu vào Supabase qua saveSessionAnswer
-      // - answers được load lại từ DB khi vào /exam
-      // - Bỏ answers khỏi localStorage giảm dung lượng và tránh stale data
+      // Chỉ persist state cần thiết — KHÔNG persist marked vì đáp án đã lưu ở
+      // Supabase và được load lại khi vào /exam; giảm dung lượng, tránh stale.
       partialize: (state) => ({
         theme: state.theme,
         zoom: state.zoom,
