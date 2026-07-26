@@ -14,6 +14,7 @@ import {
   Send,
   ShieldCheck,
   Sparkles,
+  UploadCloud,
   X,
 } from 'lucide-react';
 import {
@@ -43,6 +44,7 @@ import {
   createKnowledgeField,
   publishAuthoringDocument,
   saveAuthoringDocument,
+  uploadAuthoringImage,
 } from './actions';
 import LatexEditor, { type LatexEditorHandle } from './LatexEditor';
 import { HANOI_TZ } from '@/lib/datetime';
@@ -130,6 +132,8 @@ export default function AuthoringWorkspace({ initialData }: Props) {
   const [mobilePane, setMobilePane] = useState<'editor' | 'preview'>('editor');
   const [showCreate, setShowCreate] = useState(initialData.documents.length === 0);
   const [showImage, setShowImage] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [imageError, setImageError] = useState('');
   const [showKnowledgeCreate, setShowKnowledgeCreate] = useState(false);
   const [cursorPosition, setCursorPosition] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
@@ -286,6 +290,11 @@ export default function AuthoringWorkspace({ initialData }: Props) {
     });
   };
 
+  const openImageModal = () => {
+    setImageError('');
+    setShowImage(true);
+  };
+
   const handleInsertImage = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -294,6 +303,38 @@ export default function AuthoringWorkspace({ initialData }: Props) {
     if (!url || !alt) return;
     editorRef.current?.insertText(`\\image[alt={${alt}}]{${url}}`);
     setShowImage(false);
+  };
+
+  const handleUploadImage = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const file = formData.get('file');
+    const alt = String(formData.get('alt') || '').trim().replace(/[{}]/g, '');
+
+    if (!(file instanceof File) || file.size === 0) {
+      setImageError('Hãy chọn một tệp ảnh.');
+      return;
+    }
+    if (!alt) {
+      setImageError('Hãy nhập alt text mô tả ảnh.');
+      return;
+    }
+
+    setImageError('');
+    setImageUploading(true);
+    try {
+      const result = await uploadAuthoringImage(formData);
+      if (!result.ok) {
+        setImageError(result.error);
+        return;
+      }
+      editorRef.current?.insertText(
+        `\\image[alt={${result.alt || alt}}]{${result.url}}`,
+      );
+      setShowImage(false);
+    } finally {
+      setImageUploading(false);
+    }
   };
 
   const handleCreateKnowledgeField = (event: FormEvent<HTMLFormElement>) => {
@@ -440,7 +481,7 @@ export default function AuthoringWorkspace({ initialData }: Props) {
             <button
               type="button"
               disabled={publishedCurrent}
-              onClick={() => setShowImage(true)}
+              onClick={openImageModal}
             >
               <ImagePlus size={16} /> Chèn ảnh R2
             </button>
@@ -712,40 +753,78 @@ Nội dung lựa chọn
 
       {showImage ? (
         <div className={styles.modalBackdrop}>
-          <form className={styles.modal} onSubmit={handleInsertImage}>
+          <div className={styles.modal}>
             <div className={styles.modalHeader}>
               <div>
                 <span>Cloudflare R2</span>
-                <h2>Chèn ảnh từ registry</h2>
+                <h2>Chèn ảnh vào câu hỏi</h2>
               </div>
               <button type="button" onClick={() => setShowImage(false)}>
                 <X size={18} />
               </button>
             </div>
-            <label>
-              Public URL
-              <input
-                name="url"
-                type="url"
-                required
-                placeholder="https://cdn.example.com/path/image.webp"
-              />
-            </label>
-            <label>
-              Alt text
-              <input
-                name="alt"
-                required
-                placeholder="Mô tả nội dung ảnh cho người dùng trình đọc màn hình"
-              />
-            </label>
-            <p className={styles.modalHint}>
-              URL phải khớp chính xác một bản ghi trong r2_assets. Signed URL và HTTP sẽ bị từ chối khi xuất bản.
-            </p>
-            <button className={styles.primaryModalButton}>
-              <ImagePlus size={16} /> Chèn tại con trỏ
-            </button>
-          </form>
+
+            {imageError ? (
+              <p className={styles.modalError}>
+                <AlertCircle size={15} /> {imageError}
+              </p>
+            ) : null}
+
+            <form onSubmit={handleUploadImage}>
+              <label>
+                Tải tệp ảnh lên (PNG, JPG, WEBP, AVIF · ≤ 10 MB)
+                <input
+                  name="file"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/avif"
+                  required
+                />
+              </label>
+              <label>
+                Alt text
+                <input
+                  name="alt"
+                  required
+                  placeholder="Mô tả nội dung ảnh cho trình đọc màn hình"
+                />
+              </label>
+              <button
+                className={styles.primaryModalButton}
+                disabled={imageUploading}
+              >
+                <UploadCloud size={16} />
+                {imageUploading ? 'Đang tải lên...' : 'Tải lên & chèn'}
+              </button>
+            </form>
+
+            <div className={styles.modalDivider}>hoặc dán URL đã có trong registry</div>
+
+            <form onSubmit={handleInsertImage}>
+              <label>
+                Public URL
+                <input
+                  name="url"
+                  type="url"
+                  required
+                  placeholder="https://cdn.example.com/path/image.webp"
+                />
+              </label>
+              <label>
+                Alt text
+                <input
+                  name="alt"
+                  required
+                  placeholder="Mô tả nội dung ảnh cho trình đọc màn hình"
+                />
+              </label>
+              <p className={styles.modalHint}>
+                URL phải khớp chính xác một bản ghi trong r2_assets. Signed URL và HTTP sẽ bị từ chối khi xuất bản.
+              </p>
+              <button className={styles.primaryModalButton}>
+                <ImagePlus size={16} /> Chèn tại con trỏ
+              </button>
+            </form>
+          </div>
         </div>
       ) : null}
 

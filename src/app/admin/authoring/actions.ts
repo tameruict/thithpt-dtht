@@ -1,5 +1,6 @@
 'use server';
 
+import { randomUUID } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
 import { collectAuthoringImages, parseAuthoringSource } from '@/lib/authoring/parser';
 import { getAuthoringTemplate } from '@/lib/authoring/templates';
@@ -10,6 +11,13 @@ import type {
   AuthoringPaper,
   AuthoringWorkspaceData,
 } from '@/lib/authoring/types';
+import {
+  MAX_IMAGE_BYTES,
+  imageExtension,
+  isAllowedImageType,
+  putR2Object,
+  r2PublicUrl,
+} from '@/lib/r2/client';
 import { requireStaff } from '@/lib/supabase/staff';
 
 type DocumentRecord = {
@@ -130,6 +138,12 @@ function getActionError(error: unknown) {
   }
   if (message.includes('KNOWLEDGE_FIELD_NOT_FOUND')) {
     return 'Phạm vi kiến thức không tồn tại hoặc không thuộc môn học của tài liệu.';
+  }
+  if (message.includes('STAFF_ONLY') || message.includes('STAFF_REQUIRED')) {
+    return 'Chỉ tài khoản giáo viên/quản trị mới được thao tác.';
+  }
+  if (message.includes('Thiếu biến môi trường')) {
+    return message; // lỗi cấu hình R2 — hiển thị nguyên văn để dễ sửa .env.
   }
 
   return message || 'Không thể hoàn tất thao tác soạn đề.';
@@ -463,6 +477,50 @@ export async function publishAuthoringDocument(input: {
 
     revalidatePath('/admin/authoring');
     return { ok: true as const, result: data };
+  } catch (error) {
+    return { ok: false as const, error: getActionError(error) };
+  }
+}
+
+// Upload ảnh câu hỏi lên R2 rồi đăng ký vào r2_assets registry, để publish
+// (private.resolve_authoring_image) chấp nhận URL. Trả về URL public + alt để
+// client chèn macro \image[alt={...}]{url}.
+export async function uploadAuthoringImage(formData: FormData) {
+  try {
+    const { supabase } = await requireStaff();
+
+    const file = formData.get('file');
+    const alt = String(formData.get('alt') ?? '')
+      .trim()
+      .replace(/[{}]/g, '');
+
+    if (!(file instanceof File) || file.size === 0) {
+      return { ok: false as const, error: 'Chưa chọn tệp ảnh.' };
+    }
+    if (!isAllowedImageType(file.type)) {
+      return {
+        ok: false as const,
+        error: `Định dạng không hỗ trợ (${file.type || 'không rõ'}). Chỉ nhận PNG, JPG, WEBP, AVIF.`,
+      };
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      return { ok: false as const, error: 'Ảnh vượt giới hạn 10 MB.' };
+    }
+
+    const body = new Uint8Array(await file.arrayBuffer());
+    const key = `authoring/${randomUUID()}.${imageExtension(file.type)}`;
+
+    await putR2Object({ key, body, contentType: file.type });
+    const url = r2PublicUrl(key);
+
+    const { error } = await supabase.rpc('register_r2_asset', {
+      p_public_url: url,
+      p_content_type: file.type,
+      p_size_bytes: file.size,
+    });
+    if (error) throw error;
+
+    return { ok: true as const, url, alt };
   } catch (error) {
     return { ok: false as const, error: getActionError(error) };
   }

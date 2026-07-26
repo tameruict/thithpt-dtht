@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1095.0",
     "@codemirror/commands": "^6.10.3",
     "@codemirror/language": "^6.12.3",
     "@codemirror/legacy-modes": "^6.5.3",

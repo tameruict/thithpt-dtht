@@ -543,12 +543,17 @@
   cursor: pointer;
 }
 
-.modal > label {
+.modal label {
   display: grid;
   gap: 7px;
   color: #624e58;
   font-size: 0.84rem;
   font-weight: 700;
+}
+
+.modal form {
+  display: grid;
+  gap: 14px;
 }
 
 .modal input,
@@ -610,6 +615,39 @@
   color: var(--muted);
   font-size: 0.78rem;
   line-height: 1.6;
+}
+
+.modalError {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #f2c2cf;
+  border-radius: var(--radius-md);
+  color: #b42318;
+  background: #fdeff2;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.modalDivider {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.modalDivider::before,
+.modalDivider::after {
+  height: 1px;
+  flex: 1;
+  background: var(--line);
+  content: '';
 }
 
 @media (max-width: 900px) {
