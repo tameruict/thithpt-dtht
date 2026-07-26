@@ -7,6 +7,7 @@ import {
   BookOpen,
   Check,
   ChevronDown,
+  FileJson,
   FilePlus2,
   ImagePlus,
   ListPlus,
@@ -34,12 +35,14 @@ import {
 } from '@/lib/authoring/parser';
 import { getAuthoringTemplate } from '@/lib/authoring/templates';
 import type {
+  AuthoringDocument,
   AuthoringKnowledgeField,
   AuthoringMode,
   AuthoringQuestion,
   AuthoringWorkspaceData,
 } from '@/lib/authoring/types';
 import QuestionFormModal from './QuestionFormModal';
+import ImportModal from './ImportModal';
 import QuestionRenderer, {
   MathText,
   type RenderableQuestion,
@@ -145,6 +148,7 @@ export default function AuthoringWorkspace({ initialData }: Props) {
     null,
   );
   const [showKnowledgeCreate, setShowKnowledgeCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [cursorPosition, setCursorPosition] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -222,6 +226,38 @@ export default function AuthoringWorkspace({ initialData }: Props) {
     return () => window.clearTimeout(timeout);
   }, [dirty, isSaving, publishedCurrent, revision, selectedDocument, source]);
 
+  const registerCreatedDocument = (
+    document: AuthoringDocument,
+    sourcePaperId: string,
+  ) => {
+    setDocuments((current) => [
+      document,
+      ...current.filter((existing) => existing.id !== document.id),
+    ]);
+    if (
+      document.paperId &&
+      !papers.some((paper) => paper.id === document.paperId)
+    ) {
+      const sourcePaper = papers.find((paper) => paper.id === sourcePaperId);
+      if (sourcePaper) {
+        setPapers((current) => [
+          {
+            ...sourcePaper,
+            id: document.paperId!,
+            label: `${sourcePaper.label} - draft`,
+            status: 'draft',
+            isDefault: false,
+          },
+          ...current,
+        ]);
+      }
+    }
+    setSelectedId(document.id);
+    setSource(document.latexSource);
+    setSavedSource(document.latexSource);
+    setRevision(document.revision);
+  };
+
   const handleCreate = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -241,32 +277,7 @@ export default function AuthoringWorkspace({ initialData }: Props) {
         setFeedback(result.error);
         return;
       }
-      setDocuments((current) => [
-        result.document,
-        ...current.filter((document) => document.id !== result.document.id),
-      ]);
-      if (
-        result.document.paperId &&
-        !papers.some((paper) => paper.id === result.document.paperId)
-      ) {
-        const sourcePaper = papers.find((paper) => paper.id === sourcePaperId);
-        if (sourcePaper) {
-          setPapers((current) => [
-            {
-              ...sourcePaper,
-              id: result.document.paperId!,
-              label: `${sourcePaper.label} - draft`,
-              status: 'draft',
-              isDefault: false,
-            },
-            ...current,
-          ]);
-        }
-      }
-      setSelectedId(result.document.id);
-      setSource(result.document.latexSource);
-      setSavedSource(result.document.latexSource);
-      setRevision(result.document.revision);
+      registerCreatedDocument(result.document, sourcePaperId);
       setShowCreate(false);
       setFeedback('');
     });
@@ -430,6 +441,15 @@ export default function AuthoringWorkspace({ initialData }: Props) {
     setFeedback('');
   };
 
+  const handleImportCreated = (
+    document: AuthoringDocument,
+    sourcePaperId: string,
+  ) => {
+    registerCreatedDocument(document, sourcePaperId);
+    setShowImport(false);
+    setFeedback('Đã tạo bản nháp từ JSON. Xem preview bên phải rồi bấm Xuất bản.');
+  };
+
   const selectDocument = (documentId: string) => {
     const nextDocument = documents.find((document) => document.id === documentId);
     if (!nextDocument) return;
@@ -486,6 +506,13 @@ export default function AuthoringWorkspace({ initialData }: Props) {
           onClick={() => setShowCreate(true)}
         >
           <FilePlus2 size={17} /> Bản nháp mới
+        </button>
+        <button
+          type="button"
+          className={styles.importDocument}
+          onClick={() => setShowImport(true)}
+        >
+          <FileJson size={16} /> Nạp đề (JSON)
         </button>
         <div className={styles.railLabel}>Tài liệu gần đây</div>
         <div className={styles.documentList}>
@@ -818,6 +845,15 @@ Nội dung lựa chọn
           knowledgeFields={subjectKnowledgeFields}
           onClose={() => setShowForm(false)}
           onSubmit={handleFormSubmit}
+        />
+      ) : null}
+
+      {showImport ? (
+        <ImportModal
+          subjects={initialData.subjects}
+          papers={papers}
+          onClose={() => setShowImport(false)}
+          onCreated={handleImportCreated}
         />
       ) : null}
 

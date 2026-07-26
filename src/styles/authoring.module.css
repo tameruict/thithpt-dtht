@@ -144,6 +144,24 @@
   cursor: pointer;
 }
 
+.importDocument {
+  display: flex;
+  width: 100%;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px dashed #d7bbc8;
+  border-radius: var(--radius-md);
+  color: var(--pink-dark);
+  background: #fff;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+
 .railLabel {
   margin: 18px 7px 8px;
   color: #9b858f;
@@ -731,6 +749,94 @@
   color: #fff !important;
   background: var(--pink) !important;
   border-color: var(--pink) !important;
+}
+
+.secondaryButton {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+  border: 1px solid var(--pink);
+  border-radius: var(--radius-md);
+  color: var(--pink-dark);
+  background: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.secondaryButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sampleDetails {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.sampleDetails summary {
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sampleBlock {
+  margin: 8px 0 0;
+  padding: 12px;
+  overflow-x: auto;
+  border-radius: var(--radius-md);
+  color: #e7dfe4;
+  background: #17151a;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.importErrors {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid #f2c2cf;
+  border-radius: var(--radius-md);
+  color: #b42318;
+  background: #fdeff2;
+  font-size: 0.82rem;
+}
+
+.importErrors strong {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.importErrors ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.importOk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 14px;
+  border: 1px solid #b7e0c3;
+  border-radius: var(--radius-md);
+  color: #1a7f3c;
+  background: #eefaf1;
+  font-weight: 700;
+  font-size: 0.84rem;
+}
+
+.importChip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  color: #2f6f45;
+  background: #fff;
+  font-size: 0.74rem;
+  font-weight: 700;
 }
 
 .modeChoices {

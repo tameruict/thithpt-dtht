@@ -270,6 +270,8 @@ export async function createAuthoringDocument(input: {
   title: string;
   subjectCode: string;
   sourcePaperId?: string | null;
+  // Nội dung LaTeX khởi tạo (dùng khi nạp đề từ JSON). Bỏ trống -> template.
+  seedSource?: string;
 }) {
   try {
     const { supabase, user } = await requireStaff();
@@ -330,7 +332,10 @@ export async function createAuthoringDocument(input: {
         title,
         subject_code: subjectCode,
         paper_id: paperId,
-        latex_source: getAuthoringTemplate(input.mode),
+        latex_source:
+          input.seedSource && input.seedSource.trim() !== ''
+            ? input.seedSource
+            : getAuthoringTemplate(input.mode),
         created_by: user.id,
         updated_by: user.id,
       })
