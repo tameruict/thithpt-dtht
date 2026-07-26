@@ -32,12 +32,17 @@ type Subject = {
   status: 'Đang mở' | 'Nháp';
 };
 
+type QuestionStatus = 'draft' | 'reviewing' | 'approved' | 'archived';
+
 type DraftQuestion = {
   id: string;
   code: string;
   subject: string;
+  subjectCode: string;
   title: string;
   difficulty: string;
+  difficultyLevel: number;
+  status: QuestionStatus;
   answer: string | null;
 };
 
@@ -191,6 +196,17 @@ function examStatusLabel(status: ExamSessionStatus, autoExpired: boolean): strin
   }
 }
 
+const questionStatusLabels: Record<QuestionStatus, string> = {
+  draft: 'Nháp',
+  reviewing: 'Đang duyệt',
+  approved: 'Đã duyệt',
+  archived: 'Lưu trữ',
+};
+
+const questionStatusOptions: QuestionStatus[] = ['draft', 'reviewing', 'approved', 'archived'];
+
+const questionDifficultyOptions = [1, 2, 3, 4];
+
 function getDefaultExpiryDate() {
   // 30 ngày kể từ "hôm nay" theo giờ Hà Nội.
   const base = new Date(`${hanoiTodayInputValue()}T00:00:00+07:00`);
@@ -299,8 +315,11 @@ function mapQuestionRecord(question: QuestionRecord): DraftQuestion {
     id: question.id,
     code: question.code,
     subject: subject?.name ?? question.subject_code,
+    subjectCode: question.subject_code,
     title: question.content,
     difficulty: difficultyLabel(question.difficulty),
+    difficultyLevel: question.difficulty,
+    status: (question.status as QuestionStatus) ?? 'draft',
     answer: question.metadata?.draft_answer_label ?? null,
   };
 }
@@ -427,6 +446,10 @@ export default function AdminPage() {
   const [resultFilterSubject, setResultFilterSubject] = useState('');
   const [resultFilterRoom, setResultFilterRoom] = useState('');
   const [resultFilterStatus, setResultFilterStatus] = useState('');
+  const [questionSearch, setQuestionSearch] = useState('');
+  const [questionSubject, setQuestionSubject] = useState('');
+  const [questionDifficulty, setQuestionDifficulty] = useState('');
+  const [questionStatusFilter, setQuestionStatusFilter] = useState('');
 
   // Guard: kiểm tra role admin/teacher, redirect nếu không có quyền
   useEffect(() => {
@@ -476,7 +499,7 @@ export default function AdminPage() {
             .from('questions')
             .select('id,code,subject_code,content,difficulty,status,metadata,subjects(name)')
             .order('created_at', { ascending: false })
-            .limit(200),
+            .limit(500),
           supabase
             .from('student_key_summary')
             .select('student_id,gmail,full_name,school_name,current_key_code')
@@ -568,6 +591,24 @@ export default function AdminPage() {
       ),
     );
   }, [searchTerm, students]);
+
+  const filteredQuestions = useMemo(() => {
+    const search = questionSearch.trim().toLowerCase();
+    return questions.filter((question) => {
+      if (questionSubject && question.subjectCode !== questionSubject) return false;
+      if (questionDifficulty && String(question.difficultyLevel) !== questionDifficulty) return false;
+      if (questionStatusFilter && question.status !== questionStatusFilter) return false;
+      if (
+        search &&
+        ![question.code, question.title, question.subject].some((value) =>
+          value.toLowerCase().includes(search),
+        )
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [questions, questionSearch, questionSubject, questionDifficulty, questionStatusFilter]);
 
   const resultSubjectOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -705,6 +746,63 @@ export default function AdminPage() {
       if (error) throw error;
 
       event.currentTarget.reset();
+      await loadAdminCatalog();
+    } catch (error) {
+      setCatalogFeedback(getAdminDataErrorMessage(error));
+    }
+  };
+
+  const handleChangeQuestionStatus = async (question: DraftQuestion, status: QuestionStatus) => {
+    if (!hasConfiguredSupabase || status === question.status) return;
+
+    // Optimistic: cập nhật ngay, rollback bằng reload nếu lỗi.
+    setQuestions((current) =>
+      current.map((item) => (item.id === question.id ? { ...item, status } : item)),
+    );
+
+    try {
+      const { error } = await createClient()
+        .from('questions')
+        .update({ status })
+        .eq('id', question.id);
+      if (error) throw error;
+    } catch (error) {
+      setCatalogFeedback(getAdminDataErrorMessage(error));
+      await loadAdminCatalog();
+    }
+  };
+
+  const handleDeleteQuestion = async (question: DraftQuestion) => {
+    if (!hasConfiguredSupabase) return;
+    if (
+      !window.confirm(
+        `Xoá câu hỏi ${question.code}? Nếu câu đã dùng trong đề/phiên thi sẽ không xoá được.`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.from('questions').delete().eq('id', question.id);
+      if (error) {
+        if (error.code === '23503' || error.message.includes('foreign key')) {
+          if (
+            window.confirm(
+              `Câu hỏi ${question.code} đang được dùng nên không xoá được.\n\nChuyển sang "Lưu trữ" để ẩn khỏi ngân hàng?`,
+            )
+          ) {
+            const { error: archiveError } = await supabase
+              .from('questions')
+              .update({ status: 'archived' })
+              .eq('id', question.id);
+            if (archiveError) throw archiveError;
+            await loadAdminCatalog();
+          }
+          return;
+        }
+        throw error;
+      }
       await loadAdminCatalog();
     } catch (error) {
       setCatalogFeedback(getAdminDataErrorMessage(error));
@@ -1097,37 +1195,88 @@ export default function AdminPage() {
 
             {catalogFeedback ? <p className={styles.feedback}>{catalogFeedback}</p> : null}
 
-            {questions.length === 0 ? (
-              <div className={styles.list}>
+            <div className={styles.questionFilters}>
+              <label className={styles.search}>
+                <Search size={16} />
+                <input
+                  value={questionSearch}
+                  onChange={(event) => setQuestionSearch(event.target.value)}
+                  placeholder="Tìm mã hoặc nội dung..."
+                />
+              </label>
+              <select value={questionSubject} onChange={(event) => setQuestionSubject(event.target.value)}>
+                <option value="">Tất cả môn</option>
+                {subjects.map((subject) => (
+                  <option key={subject.code} value={subject.code}>{subject.name}</option>
+                ))}
+              </select>
+              <select value={questionDifficulty} onChange={(event) => setQuestionDifficulty(event.target.value)}>
+                <option value="">Mọi độ khó</option>
+                {questionDifficultyOptions.map((level) => (
+                  <option key={level} value={String(level)}>{difficultyLabel(level)}</option>
+                ))}
+              </select>
+              <select value={questionStatusFilter} onChange={(event) => setQuestionStatusFilter(event.target.value)}>
+                <option value="">Mọi trạng thái</option>
+                {questionStatusOptions.map((status) => (
+                  <option key={status} value={status}>{questionStatusLabels[status]}</option>
+                ))}
+              </select>
+            </div>
+
+            <p className={styles.questionCount}>
+              {isLoadingCatalog
+                ? 'Đang tải câu hỏi...'
+                : `${filteredQuestions.length}/${questions.length} câu hỏi`}
+            </p>
+
+            <div className={styles.list}>
+              {filteredQuestions.length === 0 ? (
                 <div className={styles.emptyCell}>
-                  {isLoadingCatalog ? 'Đang tải câu hỏi...' : 'Chưa có câu hỏi trong cơ sở dữ liệu.'}
+                  {isLoadingCatalog
+                    ? 'Đang tải câu hỏi...'
+                    : questions.length === 0
+                      ? 'Chưa có câu hỏi trong cơ sở dữ liệu.'
+                      : 'Không có câu hỏi khớp bộ lọc.'}
                 </div>
-              </div>
-            ) : (
-              <details className={styles.questionDisclosure}>
-                <summary>
-                  <span>
-                    <strong>{questions.length} câu hỏi trong ngân hàng</strong>
-                    <small>Danh sách chi tiết đang được thu gọn để màn hình quản trị dễ quét hơn.</small>
-                  </span>
-                  <span className={styles.disclosureAction}>Xem danh sách</span>
-                </summary>
-                <div className={styles.list}>
-                  {questions.map((question) => (
-                    <article key={question.id} className={styles.questionRow}>
-                      <span>{question.code}</span>
-                      <div>
-                        <strong>{question.title}</strong>
-                        <p>
-                          {question.subject} · {question.difficulty}
-                          {question.answer ? ` · Đáp án nháp ${question.answer}` : ''}
-                        </p>
+              ) : (
+                filteredQuestions.map((question) => (
+                  <article key={question.id} className={styles.questionRow}>
+                    <span>{question.code}</span>
+                    <div>
+                      <strong>{question.title}</strong>
+                      <p>
+                        {question.subject} · {question.difficulty}
+                        {question.answer ? ` · Đáp án nháp ${question.answer}` : ''}
+                      </p>
+                      <div className={styles.questionRowActions}>
+                        <select
+                          className={styles.questionStatusSelect}
+                          value={question.status}
+                          onChange={(event) =>
+                            handleChangeQuestionStatus(question, event.target.value as QuestionStatus)
+                          }
+                          disabled={!hasConfiguredSupabase}
+                        >
+                          {questionStatusOptions.map((status) => (
+                            <option key={status} value={status}>{questionStatusLabels[status]}</option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          className={`${styles.iconAction} ${styles.iconDanger}`}
+                          title="Xoá câu hỏi"
+                          onClick={() => handleDeleteQuestion(question)}
+                          disabled={!hasConfiguredSupabase}
+                        >
+                          <Trash2 size={15} />
+                        </button>
                       </div>
-                    </article>
-                  ))}
-                </div>
-              </details>
-            )}
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
           </section>
 
           <section id="subjects" className={styles.panel}>

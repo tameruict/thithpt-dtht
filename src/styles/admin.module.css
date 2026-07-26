@@ -399,6 +399,68 @@
   margin-top: 18px;
 }
 
+.questionFilters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.questionFilters .search {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.questionFilters select {
+  height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--input);
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+
+.questionFilters select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px var(--ring);
+}
+
+.questionCount {
+  margin: 14px 0 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.questionRowActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.questionStatusSelect {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.questionStatusSelect:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px var(--ring);
+}
+
 .questionDisclosure {
   margin-top: 18px;
 }
@@ -776,6 +838,7 @@
   .metrics,
   .resultStats,
   .resultFilters,
+  .questionFilters,
   .workGrid,
   .inlineFields,
   .keyFormGrid {
