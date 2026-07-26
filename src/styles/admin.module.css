@@ -249,6 +249,79 @@
   line-height: 1.45;
 }
 
+.resultStats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.resultStat {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface-soft) 84%, var(--surface));
+}
+
+.resultStat span {
+  color: var(--text);
+  font-size: 24px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.resultStat p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.resultToolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.resultFilters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.resultFilters label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.resultFilters select {
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--input);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+
+.resultFilters select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px var(--ring);
+}
+
 .form label {
   display: grid;
   gap: 7px;
@@ -632,7 +705,8 @@
     white-space: nowrap;
   }
 
-  .metrics {
+  .metrics,
+  .resultStats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -664,6 +738,8 @@
   }
 
   .metrics,
+  .resultStats,
+  .resultFilters,
   .workGrid,
   .inlineFields,
   .keyFormGrid {

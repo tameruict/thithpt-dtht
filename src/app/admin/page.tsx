@@ -4,7 +4,9 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
+  BarChart3,
   BookOpenCheck,
+  Download,
   FilePenLine,
   GraduationCap,
   KeyRound,
@@ -113,6 +115,45 @@ type StudentSummaryRecord = {
   current_key_code: string | null;
 };
 
+type ExamSessionStatus = 'in_progress' | 'submitted' | 'abandoned' | 'expired';
+
+type ExamResultRecord = {
+  session_id: string;
+  student_id: string;
+  student_name: string | null;
+  school_name: string | null;
+  exam_room_id: string;
+  room_name: string | null;
+  room_code: string | null;
+  subject_code: string | null;
+  subject_name: string | null;
+  attempt_number: number;
+  status: ExamSessionStatus;
+  score: number | string | null;
+  max_score: number | string | null;
+  started_at: string | null;
+  submitted_at: string | null;
+  scored_at: string | null;
+  finalized: string | null;
+};
+
+type ExamResult = {
+  sessionId: string;
+  studentName: string;
+  school: string;
+  subjectCode: string;
+  subjectName: string;
+  roomName: string;
+  roomCode: string;
+  attempt: number;
+  status: ExamSessionStatus;
+  autoExpired: boolean;
+  score: number | null;
+  maxScore: number;
+  startedAt: string | null;
+  submittedAt: string | null;
+};
+
 const keyStatusLabels: Record<ExamKeyStatus, KeyStatusLabel> = {
   unused: 'Chưa dùng',
   active: 'Đang dùng',
@@ -122,6 +163,29 @@ const keyStatusLabels: Record<ExamKeyStatus, KeyStatusLabel> = {
 };
 
 const activeKeyStatuses = new Set<KeyStatusLabel>(['Chưa dùng', 'Đang dùng']);
+
+const examStatusFilterOptions: { value: string; label: string }[] = [
+  { value: '', label: 'Tất cả trạng thái' },
+  { value: 'submitted', label: 'Đã nộp' },
+  { value: 'in_progress', label: 'Đang làm' },
+  { value: 'expired', label: 'Hết giờ' },
+  { value: 'abandoned', label: 'Bỏ dở' },
+];
+
+function examStatusLabel(status: ExamSessionStatus, autoExpired: boolean): string {
+  switch (status) {
+    case 'in_progress':
+      return 'Đang làm';
+    case 'submitted':
+      return autoExpired ? 'Hết giờ' : 'Đã nộp';
+    case 'expired':
+      return 'Hết giờ';
+    case 'abandoned':
+      return 'Bỏ dở';
+    default:
+      return status;
+  }
+}
 
 function getDefaultExpiryDate() {
   // 30 ngày kể từ "hôm nay" theo giờ Hà Nội.
@@ -244,6 +308,93 @@ function mapStudentSummary(student: StudentSummaryRecord): Student {
   };
 }
 
+function toFiniteNumber(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) return '—';
+
+  return new Intl.DateTimeFormat('vi-VN', {
+    timeZone: HANOI_TZ,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
+
+function mapExamResult(record: ExamResultRecord): ExamResult {
+  const maxScore = toFiniteNumber(record.max_score) ?? 10;
+
+  return {
+    sessionId: record.session_id,
+    studentName: record.student_name?.trim() || 'Chưa cập nhật',
+    school: record.school_name?.trim() || '—',
+    subjectCode: record.subject_code ?? '',
+    subjectName: record.subject_name?.trim() || record.subject_code || '—',
+    roomName: record.room_name?.trim() || record.room_code || '—',
+    roomCode: record.room_code ?? '',
+    attempt: record.attempt_number,
+    status: record.status,
+    autoExpired: record.finalized === 'auto_expired',
+    score: toFiniteNumber(record.score),
+    maxScore: maxScore > 0 ? maxScore : 10,
+    startedAt: record.started_at,
+    submittedAt: record.submitted_at,
+  };
+}
+
+// Điểm quy về thang 10 để so sánh/thống kê không phụ thuộc max_score từng đề.
+function normalizedScore(result: ExamResult): number | null {
+  if (result.score === null) return null;
+  if (result.maxScore <= 0) return null;
+  return (result.score / result.maxScore) * 10;
+}
+
+function csvCell(value: string | number | null | undefined) {
+  const text = value === null || value === undefined ? '' : String(value);
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function buildResultsCsv(rows: ExamResult[]): string {
+  const header = [
+    'Họ tên',
+    'Trường',
+    'Môn',
+    'Phòng',
+    'Mã đề',
+    'Lượt',
+    'Điểm',
+    'Thang điểm',
+    'Trạng thái',
+    'Bắt đầu',
+    'Nộp bài',
+  ];
+
+  const lines = rows.map((row) =>
+    [
+      csvCell(row.studentName),
+      csvCell(row.school),
+      csvCell(row.subjectName),
+      csvCell(row.roomName),
+      csvCell(row.roomCode),
+      csvCell(row.attempt),
+      csvCell(row.score === null ? '' : row.score.toFixed(2)),
+      csvCell(row.maxScore),
+      csvCell(examStatusLabel(row.status, row.autoExpired)),
+      csvCell(formatDateTime(row.startedAt)),
+      csvCell(formatDateTime(row.submittedAt)),
+    ].join(','),
+  );
+
+  // BOM để Excel (vi-VN) đọc đúng UTF-8 tiếng Việt.
+  return `﻿${[header.map(csvCell).join(','), ...lines].join('\r\n')}`;
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const hasConfiguredSupabase = hasSupabaseEnv();
@@ -264,6 +415,12 @@ export default function AdminPage() {
   const [keyFeedback, setKeyFeedback] = useState('');
   const [students, setStudents] = useState<Student[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [results, setResults] = useState<ExamResult[]>([]);
+  const [isLoadingResults, setIsLoadingResults] = useState(false);
+  const [resultsFeedback, setResultsFeedback] = useState('');
+  const [resultFilterSubject, setResultFilterSubject] = useState('');
+  const [resultFilterRoom, setResultFilterRoom] = useState('');
+  const [resultFilterStatus, setResultFilterStatus] = useState('');
 
   // Guard: kiểm tra role admin/teacher, redirect nếu không có quyền
   useEffect(() => {
@@ -360,16 +517,40 @@ export default function AdminPage() {
     }
   }, [hasConfiguredSupabase]);
 
+  const loadExamResults = useCallback(async () => {
+    if (!hasConfiguredSupabase) return;
+
+    setIsLoadingResults(true);
+    setResultsFeedback('');
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase.rpc('get_exam_results', {
+        p_limit: 1000,
+      });
+
+      if (error) throw error;
+
+      const loaded = ((data ?? []) as unknown as ExamResultRecord[]).map(mapExamResult);
+      setResults(loaded);
+    } catch (error) {
+      setResultsFeedback(getAdminDataErrorMessage(error));
+    } finally {
+      setIsLoadingResults(false);
+    }
+  }, [hasConfiguredSupabase]);
+
   useEffect(() => {
     if (!hasConfiguredSupabase) return;
 
     const timeoutId = window.setTimeout(() => {
       void loadAdminCatalog();
       void loadKeyManagement();
+      void loadExamResults();
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
-  }, [hasConfiguredSupabase, loadAdminCatalog, loadKeyManagement]);
+  }, [hasConfiguredSupabase, loadAdminCatalog, loadKeyManagement, loadExamResults]);
 
   const filteredStudents = useMemo(() => {
     const nextSearch = searchTerm.trim().toLowerCase();
@@ -381,6 +562,78 @@ export default function AdminPage() {
       ),
     );
   }, [searchTerm, students]);
+
+  const resultSubjectOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const result of results) {
+      if (result.subjectCode) map.set(result.subjectCode, result.subjectName);
+    }
+    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], 'vi'));
+  }, [results]);
+
+  const resultRoomOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const result of results) {
+      if (
+        result.roomCode &&
+        (!resultFilterSubject || result.subjectCode === resultFilterSubject)
+      ) {
+        map.set(result.roomCode, result.roomName);
+      }
+    }
+    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], 'vi'));
+  }, [results, resultFilterSubject]);
+
+  const filteredResults = useMemo(() => {
+    return results.filter((result) => {
+      if (resultFilterSubject && result.subjectCode !== resultFilterSubject) return false;
+      if (resultFilterRoom && result.roomCode !== resultFilterRoom) return false;
+      if (resultFilterStatus && result.status !== resultFilterStatus) return false;
+      return true;
+    });
+  }, [results, resultFilterSubject, resultFilterRoom, resultFilterStatus]);
+
+  const resultStats = useMemo(() => {
+    const total = filteredResults.length;
+    let submitted = 0;
+    let inProgress = 0;
+    let scoreSum = 0;
+    let scoredCount = 0;
+
+    for (const result of filteredResults) {
+      if (result.status === 'in_progress') inProgress += 1;
+      else submitted += 1;
+
+      const normalized = normalizedScore(result);
+      if (normalized !== null) {
+        scoreSum += normalized;
+        scoredCount += 1;
+      }
+    }
+
+    return {
+      total,
+      submitted,
+      inProgress,
+      scoredCount,
+      average: scoredCount > 0 ? scoreSum / scoredCount : null,
+    };
+  }, [filteredResults]);
+
+  const handleExportResults = () => {
+    if (filteredResults.length === 0) return;
+
+    const csv = buildResultsCsv(filteredResults);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `ket-qua-thi_${hanoiTodayInputValue()}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
 
   const handleDeleteSubject = async (code: string) => {
     if (!hasConfiguredSupabase) {
@@ -546,6 +799,7 @@ export default function AdminPage() {
         </div>
         <nav className={styles.nav}>
           <Link href="/admin/authoring" transitionTypes={['nav-forward']}><FilePenLine size={18} /> Soạn đề</Link>
+          <a href="#results"><BarChart3 size={18} /> Kết quả thi</a>
           <a href="#subjects"><BookOpenCheck size={18} /> Môn học</a>
           <a href="#keys"><KeyRound size={18} /> Quản lý key</a>
           <a href="#students"><Users size={18} /> Học viên</a>
@@ -587,6 +841,140 @@ export default function AdminPage() {
             <GraduationCap size={20} />
             <span>{students.length}</span>
             <p>Học viên</p>
+          </div>
+        </section>
+
+        <section id="results" className={styles.panel}>
+          <div className={styles.panelHeader}>
+            <div>
+              <h2>Kết quả thi</h2>
+              <p>Điểm và lượt thi của thí sinh theo phòng/môn. Hiển thị tối đa 1.000 phiên gần nhất.</p>
+            </div>
+            <button
+              className="btn outline small"
+              type="button"
+              onClick={loadExamResults}
+              disabled={isLoadingResults || !hasConfiguredSupabase}
+            >
+              <RefreshCw size={15} />
+              Tải lại
+            </button>
+          </div>
+
+          <div className={styles.resultStats}>
+            <div className={styles.resultStat}>
+              <span>{resultStats.total}</span>
+              <p>Phiên thi</p>
+            </div>
+            <div className={styles.resultStat}>
+              <span>{resultStats.submitted}</span>
+              <p>Đã hoàn thành</p>
+            </div>
+            <div className={styles.resultStat}>
+              <span>{resultStats.inProgress}</span>
+              <p>Đang làm</p>
+            </div>
+            <div className={styles.resultStat}>
+              <span>{resultStats.average === null ? '—' : resultStats.average.toFixed(2)}</span>
+              <p>Điểm TB (/10)</p>
+            </div>
+          </div>
+
+          <div className={styles.resultToolbar}>
+            <div className={styles.resultFilters}>
+              <label>
+                Môn
+                <select
+                  value={resultFilterSubject}
+                  onChange={(event) => {
+                    setResultFilterSubject(event.target.value);
+                    setResultFilterRoom('');
+                  }}
+                >
+                  <option value="">Tất cả môn</option>
+                  {resultSubjectOptions.map(([code, name]) => (
+                    <option key={code} value={code}>{name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Phòng thi
+                <select
+                  value={resultFilterRoom}
+                  onChange={(event) => setResultFilterRoom(event.target.value)}
+                >
+                  <option value="">Tất cả phòng</option>
+                  {resultRoomOptions.map(([code, name]) => (
+                    <option key={code} value={code}>{name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Trạng thái
+                <select
+                  value={resultFilterStatus}
+                  onChange={(event) => setResultFilterStatus(event.target.value)}
+                >
+                  {examStatusFilterOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <button
+              className="btn secondary small"
+              type="button"
+              onClick={handleExportResults}
+              disabled={filteredResults.length === 0}
+            >
+              <Download size={16} />
+              Xuất CSV
+            </button>
+          </div>
+
+          {resultsFeedback ? <p className={styles.feedback}>{resultsFeedback}</p> : null}
+
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>Thí sinh</th>
+                  <th>Trường</th>
+                  <th>Môn</th>
+                  <th>Phòng</th>
+                  <th>Lượt</th>
+                  <th>Điểm</th>
+                  <th>Trạng thái</th>
+                  <th>Nộp bài</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredResults.length === 0 ? (
+                  <tr>
+                    <td className={styles.emptyCell} colSpan={8}>
+                      {isLoadingResults ? 'Đang tải kết quả...' : 'Chưa có phiên thi nào khớp bộ lọc.'}
+                    </td>
+                  </tr>
+                ) : (
+                  filteredResults.map((result) => (
+                    <tr key={result.sessionId}>
+                      <td><strong>{result.studentName}</strong></td>
+                      <td>{result.school}</td>
+                      <td>{result.subjectName}</td>
+                      <td>{result.roomName}</td>
+                      <td>{result.attempt}</td>
+                      <td>
+                        {result.score === null
+                          ? '—'
+                          : `${result.score.toFixed(2)} / ${result.maxScore}`}
+                      </td>
+                      <td><span className={styles.keyStatus}>{examStatusLabel(result.status, result.autoExpired)}</span></td>
+                      <td>{formatDateTime(result.submittedAt)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </section>
 
