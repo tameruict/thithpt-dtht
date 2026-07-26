@@ -4,10 +4,12 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
+  Archive,
   Ban,
   BarChart3,
   BookOpenCheck,
   CalendarClock,
+  DoorOpen,
   Download,
   FilePenLine,
   GraduationCap,
@@ -163,6 +165,88 @@ type ExamResult = {
   submittedAt: string | null;
 };
 
+type ExamRoomStatus = 'draft' | 'published' | 'archived';
+
+type ExamRoomRecord = {
+  id: string;
+  code: string;
+  name: string;
+  subject_code: string;
+  subject_name: string | null;
+  blueprint_id: string;
+  blueprint_code: string | null;
+  blueprint_name: string | null;
+  duration_minutes: number;
+  status: ExamRoomStatus;
+  price_vnd: number;
+  total_attempts_default: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  published_at: string | null;
+  created_at: string | null;
+  paper_count: number;
+  question_count: number;
+};
+
+type ExamRoom = {
+  id: string;
+  code: string;
+  name: string;
+  subjectCode: string;
+  subjectName: string;
+  blueprintId: string;
+  blueprintName: string;
+  durationMinutes: number;
+  status: ExamRoomStatus;
+  priceVnd: number;
+  totalAttempts: number;
+  startsAt: string | null;
+  endsAt: string | null;
+  paperCount: number;
+  questionCount: number;
+};
+
+type BlueprintRecord = {
+  id: string;
+  code: string;
+  name: string;
+  subject_code: string;
+  status: string;
+};
+
+type BlueprintOption = {
+  id: string;
+  code: string;
+  name: string;
+  subjectCode: string;
+};
+
+type RoomFormState = {
+  name: string;
+  code: string;
+  subjectCode: string;
+  blueprintId: string;
+  durationMinutes: string;
+  totalAttempts: string;
+  priceVnd: string;
+  startsAt: string;
+  endsAt: string;
+  status: ExamRoomStatus;
+};
+
+const emptyRoomForm: RoomFormState = {
+  name: '',
+  code: '',
+  subjectCode: '',
+  blueprintId: '',
+  durationMinutes: '50',
+  totalAttempts: '1',
+  priceVnd: '0',
+  startsAt: '',
+  endsAt: '',
+  status: 'draft',
+};
+
 const keyStatusLabels: Record<ExamKeyStatus, KeyStatusLabel> = {
   unused: 'Chưa dùng',
   active: 'Đang dùng',
@@ -206,6 +290,27 @@ const questionStatusLabels: Record<QuestionStatus, string> = {
 const questionStatusOptions: QuestionStatus[] = ['draft', 'reviewing', 'approved', 'archived'];
 
 const questionDifficultyOptions = [1, 2, 3, 4];
+
+const roomStatusLabels: Record<ExamRoomStatus, string> = {
+  draft: 'Nháp',
+  published: 'Đang mở',
+  archived: 'Đã đóng',
+};
+
+function localInputToIso(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function isoToLocalInput(value: string | null): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  // datetime-local cần YYYY-MM-DDTHH:mm theo giờ địa phương của trình duyệt.
+  const pad = (input: number) => String(input).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
 
 function getDefaultExpiryDate() {
   // 30 ngày kể từ "hôm nay" theo giờ Hà Nội.
@@ -293,6 +398,28 @@ function getAdminDataErrorMessage(error: unknown) {
   return message
     ? `Lỗi thao tác dữ liệu: ${message}`
     : 'Lỗi thao tác dữ liệu. Vui lòng thử lại.';
+}
+
+function getRoomErrorMessage(error: unknown) {
+  const message =
+    error && typeof error === 'object' && 'message' in error
+      ? String((error as { message?: unknown }).message ?? '')
+      : '';
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? String((error as { code?: unknown }).code ?? '')
+      : '';
+
+  if (code === '23505' || message.includes('duplicate key') || message.includes('unique')) {
+    return 'Mã phòng đã tồn tại. Vui lòng chọn mã khác.';
+  }
+  if (code === '23503' || message.includes('foreign key')) {
+    return 'Blueprint không khớp môn học của phòng. Hãy chọn blueprint cùng môn.';
+  }
+  if (message.includes('permission denied') || message.includes('row-level security')) {
+    return 'Tài khoản cần role admin hoặc teacher để quản lý phòng thi.';
+  }
+  return message ? `Lỗi thao tác phòng thi: ${message}` : 'Không lưu được phòng thi.';
 }
 
 function firstRelation<T>(value: T | T[] | null | undefined) {
@@ -420,6 +547,35 @@ function buildResultsCsv(rows: ExamResult[]): string {
   return `﻿${[header.map(csvCell).join(','), ...lines].join('\r\n')}`;
 }
 
+function mapExamRoom(record: ExamRoomRecord): ExamRoom {
+  return {
+    id: record.id,
+    code: record.code,
+    name: record.name,
+    subjectCode: record.subject_code,
+    subjectName: record.subject_name?.trim() || record.subject_code,
+    blueprintId: record.blueprint_id,
+    blueprintName: record.blueprint_name?.trim() || record.blueprint_code || '—',
+    durationMinutes: record.duration_minutes,
+    status: record.status,
+    priceVnd: record.price_vnd,
+    totalAttempts: record.total_attempts_default,
+    startsAt: record.starts_at,
+    endsAt: record.ends_at,
+    paperCount: Number(record.paper_count) || 0,
+    questionCount: Number(record.question_count) || 0,
+  };
+}
+
+function mapBlueprint(record: BlueprintRecord): BlueprintOption {
+  return {
+    id: record.id,
+    code: record.code,
+    name: record.name,
+    subjectCode: record.subject_code,
+  };
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const hasConfiguredSupabase = hasSupabaseEnv();
@@ -450,6 +606,13 @@ export default function AdminPage() {
   const [questionSubject, setQuestionSubject] = useState('');
   const [questionDifficulty, setQuestionDifficulty] = useState('');
   const [questionStatusFilter, setQuestionStatusFilter] = useState('');
+  const [rooms, setRooms] = useState<ExamRoom[]>([]);
+  const [blueprints, setBlueprints] = useState<BlueprintOption[]>([]);
+  const [isLoadingRooms, setIsLoadingRooms] = useState(false);
+  const [roomsFeedback, setRoomsFeedback] = useState('');
+  const [roomForm, setRoomForm] = useState<RoomFormState>(emptyRoomForm);
+  const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
+  const [isSavingRoom, setIsSavingRoom] = useState(false);
 
   // Guard: kiểm tra role admin/teacher, redirect nếu không có quyền
   useEffect(() => {
@@ -489,7 +652,7 @@ export default function AdminPage() {
 
     try {
       const supabase = createClient();
-      const [subjectsResponse, questionsResponse, studentsResponse] =
+      const [subjectsResponse, questionsResponse, studentsResponse, blueprintsResponse] =
         await Promise.all([
           supabase
             .from('subjects')
@@ -505,15 +668,21 @@ export default function AdminPage() {
             .select('student_id,gmail,full_name,school_name,current_key_code')
             .order('full_name', { ascending: true })
             .limit(200),
+          supabase
+            .from('exam_blueprints')
+            .select('id,code,name,subject_code,status')
+            .order('name', { ascending: true }),
         ]);
 
       if (subjectsResponse.error) throw subjectsResponse.error;
       if (questionsResponse.error) throw questionsResponse.error;
       if (studentsResponse.error) throw studentsResponse.error;
+      if (blueprintsResponse.error) throw blueprintsResponse.error;
 
       setSubjects(((subjectsResponse.data ?? []) as unknown as SubjectRecord[]).map(mapSubjectRecord));
       setQuestions(((questionsResponse.data ?? []) as unknown as QuestionRecord[]).map(mapQuestionRecord));
       setStudents(((studentsResponse.data ?? []) as unknown as StudentSummaryRecord[]).map(mapStudentSummary));
+      setBlueprints(((blueprintsResponse.data ?? []) as unknown as BlueprintRecord[]).map(mapBlueprint));
     } catch (error) {
       setCatalogFeedback(getAdminDataErrorMessage(error));
     } finally {
@@ -569,6 +738,29 @@ export default function AdminPage() {
     }
   }, [hasConfiguredSupabase]);
 
+  const loadRooms = useCallback(async () => {
+    if (!hasConfiguredSupabase) return;
+
+    setIsLoadingRooms(true);
+    setRoomsFeedback('');
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('admin_exam_room_summary')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setRooms(((data ?? []) as unknown as ExamRoomRecord[]).map(mapExamRoom));
+    } catch (error) {
+      setRoomsFeedback(getAdminDataErrorMessage(error));
+    } finally {
+      setIsLoadingRooms(false);
+    }
+  }, [hasConfiguredSupabase]);
+
   useEffect(() => {
     if (!hasConfiguredSupabase) return;
 
@@ -576,10 +768,11 @@ export default function AdminPage() {
       void loadAdminCatalog();
       void loadKeyManagement();
       void loadExamResults();
+      void loadRooms();
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
-  }, [hasConfiguredSupabase, loadAdminCatalog, loadKeyManagement, loadExamResults]);
+  }, [hasConfiguredSupabase, loadAdminCatalog, loadKeyManagement, loadExamResults, loadRooms]);
 
   const filteredStudents = useMemo(() => {
     const nextSearch = searchTerm.trim().toLowerCase();
@@ -680,6 +873,151 @@ export default function AdminPage() {
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
+  };
+
+  const blueprintsForSubject = useMemo(
+    () => blueprints.filter((blueprint) => blueprint.subjectCode === roomForm.subjectCode),
+    [blueprints, roomForm.subjectCode],
+  );
+
+  const resetRoomForm = () => {
+    setRoomForm(emptyRoomForm);
+    setEditingRoomId(null);
+  };
+
+  const handleEditRoom = (room: ExamRoom) => {
+    setEditingRoomId(room.id);
+    setRoomForm({
+      name: room.name,
+      code: room.code,
+      subjectCode: room.subjectCode,
+      blueprintId: room.blueprintId,
+      durationMinutes: String(room.durationMinutes),
+      totalAttempts: String(room.totalAttempts),
+      priceVnd: String(room.priceVnd),
+      startsAt: isoToLocalInput(room.startsAt),
+      endsAt: isoToLocalInput(room.endsAt),
+      status: room.status,
+    });
+    setRoomsFeedback('');
+    document.getElementById('rooms')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const handleSubmitRoom = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!hasConfiguredSupabase) {
+      setRoomsFeedback('Chưa cấu hình Supabase nên không thể lưu phòng thi.');
+      return;
+    }
+
+    const name = roomForm.name.trim();
+    const code = roomForm.code.trim().toUpperCase();
+    const duration = Number.parseInt(roomForm.durationMinutes, 10);
+    const attempts = Number.parseInt(roomForm.totalAttempts, 10);
+    const price = Number.parseInt(roomForm.priceVnd, 10);
+
+    if (!name || !code) {
+      setRoomsFeedback('Nhập tên và mã phòng.');
+      return;
+    }
+    if (!roomForm.subjectCode) {
+      setRoomsFeedback('Chọn môn học cho phòng.');
+      return;
+    }
+    if (!roomForm.blueprintId) {
+      setRoomsFeedback('Chọn khung đề (blueprint) cùng môn.');
+      return;
+    }
+    if (!Number.isInteger(duration) || duration < 1) {
+      setRoomsFeedback('Thời lượng phải là số phút lớn hơn 0.');
+      return;
+    }
+    if (!Number.isInteger(attempts) || attempts < 1) {
+      setRoomsFeedback('Số lượt mặc định phải từ 1 trở lên.');
+      return;
+    }
+
+    const startsAt = localInputToIso(roomForm.startsAt);
+    const endsAt = localInputToIso(roomForm.endsAt);
+    if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) {
+      setRoomsFeedback('Thời điểm đóng phải sau thời điểm mở.');
+      return;
+    }
+
+    const payload = {
+      name,
+      code,
+      subject_code: roomForm.subjectCode,
+      blueprint_id: roomForm.blueprintId,
+      duration_minutes: duration,
+      total_attempts_default: attempts,
+      price_vnd: Number.isInteger(price) && price >= 0 ? price : 0,
+      starts_at: startsAt,
+      ends_at: endsAt,
+      status: roomForm.status,
+      published_at: roomForm.status === 'published' ? new Date().toISOString() : null,
+    };
+
+    setIsSavingRoom(true);
+    setRoomsFeedback('');
+
+    try {
+      const supabase = createClient();
+      if (editingRoomId) {
+        const { error } = await supabase.from('exam_rooms').update(payload).eq('id', editingRoomId);
+        if (error) throw error;
+        setRoomsFeedback(`Đã cập nhật phòng ${code}.`);
+      } else {
+        const { error } = await supabase.from('exam_rooms').insert(payload);
+        if (error) throw error;
+        setRoomsFeedback(`Đã tạo phòng ${code}.`);
+      }
+      resetRoomForm();
+      await loadRooms();
+    } catch (error) {
+      setRoomsFeedback(getRoomErrorMessage(error));
+    } finally {
+      setIsSavingRoom(false);
+    }
+  };
+
+  const handleRoomStatus = async (room: ExamRoom, status: ExamRoomStatus) => {
+    if (!hasConfiguredSupabase) return;
+    if (status === 'archived' && !window.confirm(`Đóng phòng ${room.code}? Thí sinh sẽ không vào thi được nữa.`)) {
+      return;
+    }
+
+    try {
+      const patch: { status: ExamRoomStatus; published_at?: string | null } = { status };
+      if (status === 'published') patch.published_at = new Date().toISOString();
+      const { error } = await createClient().from('exam_rooms').update(patch).eq('id', room.id);
+      if (error) throw error;
+      await loadRooms();
+    } catch (error) {
+      setRoomsFeedback(getRoomErrorMessage(error));
+    }
+  };
+
+  const handleDeleteRoom = async (room: ExamRoom) => {
+    if (!hasConfiguredSupabase) return;
+    if (!window.confirm(`Xoá phòng ${room.code}? Các đề/câu hỏi gắn trong phòng cũng bị xoá. Không thể hoàn tác.`)) {
+      return;
+    }
+
+    try {
+      const { error } = await createClient().from('exam_rooms').delete().eq('id', room.id);
+      if (error) {
+        if (error.code === '23503' || error.message.includes('foreign key')) {
+          setRoomsFeedback(`Phòng ${room.code} đang có phiên thi liên quan nên không xoá được. Hãy "Đóng phòng" thay vì xoá.`);
+          return;
+        }
+        throw error;
+      }
+      if (editingRoomId === room.id) resetRoomForm();
+      await loadRooms();
+    } catch (error) {
+      setRoomsFeedback(getRoomErrorMessage(error));
+    }
   };
 
   const handleDeleteSubject = async (code: string) => {
@@ -990,6 +1328,7 @@ export default function AdminPage() {
         <nav className={styles.nav}>
           <Link href="/admin/authoring" transitionTypes={['nav-forward']}><FilePenLine size={18} /> Soạn đề</Link>
           <a href="#results"><BarChart3 size={18} /> Kết quả thi</a>
+          <a href="#rooms"><DoorOpen size={18} /> Phòng thi</a>
           <a href="#subjects"><BookOpenCheck size={18} /> Môn học</a>
           <a href="#keys"><KeyRound size={18} /> Quản lý key</a>
           <a href="#students"><Users size={18} /> Học viên</a>
@@ -1334,6 +1673,223 @@ export default function AdminPage() {
             </div>
           </section>
         </div>
+
+        <section id="rooms" className={styles.panel}>
+          <div className={styles.panelHeader}>
+            <div>
+              <h2>Phòng thi</h2>
+              <p>Tạo phòng, gắn khung đề (blueprint) + môn, đặt thời lượng/khung giờ, mở hoặc đóng phòng.</p>
+            </div>
+            <button
+              className="btn outline small"
+              type="button"
+              onClick={loadRooms}
+              disabled={isLoadingRooms || !hasConfiguredSupabase}
+            >
+              <RefreshCw size={15} />
+              Tải lại
+            </button>
+          </div>
+
+          <form className={`${styles.form} ${styles.keyForm}`} onSubmit={handleSubmitRoom}>
+            <div className={styles.keyFormGrid}>
+              <label>
+                Tên phòng
+                <input
+                  value={roomForm.name}
+                  onChange={(event) => setRoomForm((form) => ({ ...form, name: event.target.value }))}
+                  placeholder="VD: Thi thử Toán lần 1"
+                  required
+                />
+              </label>
+              <label>
+                Mã phòng
+                <input
+                  value={roomForm.code}
+                  onChange={(event) => setRoomForm((form) => ({ ...form, code: event.target.value }))}
+                  placeholder="TOAN-2026-L1"
+                  required
+                />
+              </label>
+              <label>
+                Môn
+                <select
+                  value={roomForm.subjectCode}
+                  onChange={(event) =>
+                    setRoomForm((form) => ({ ...form, subjectCode: event.target.value, blueprintId: '' }))
+                  }
+                  required
+                >
+                  <option value="">— Chọn môn —</option>
+                  {subjects.map((subject) => (
+                    <option key={subject.code} value={subject.code}>{subject.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Khung đề (blueprint)
+                <select
+                  value={roomForm.blueprintId}
+                  onChange={(event) => setRoomForm((form) => ({ ...form, blueprintId: event.target.value }))}
+                  disabled={!roomForm.subjectCode}
+                  required
+                >
+                  <option value="">{roomForm.subjectCode ? '— Chọn blueprint —' : 'Chọn môn trước'}</option>
+                  {blueprintsForSubject.map((blueprint) => (
+                    <option key={blueprint.id} value={blueprint.id}>{blueprint.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Thời lượng (phút)
+                <input
+                  value={roomForm.durationMinutes}
+                  onChange={(event) => setRoomForm((form) => ({ ...form, durationMinutes: event.target.value }))}
+                  type="number"
+                  min={1}
+                  required
+                />
+              </label>
+              <label>
+                Số lượt mặc định
+                <input
+                  value={roomForm.totalAttempts}
+                  onChange={(event) => setRoomForm((form) => ({ ...form, totalAttempts: event.target.value }))}
+                  type="number"
+                  min={1}
+                  required
+                />
+              </label>
+              <label>
+                Mở lúc (tuỳ chọn)
+                <input
+                  value={roomForm.startsAt}
+                  onChange={(event) => setRoomForm((form) => ({ ...form, startsAt: event.target.value }))}
+                  type="datetime-local"
+                />
+              </label>
+              <label>
+                Đóng lúc (tuỳ chọn)
+                <input
+                  value={roomForm.endsAt}
+                  onChange={(event) => setRoomForm((form) => ({ ...form, endsAt: event.target.value }))}
+                  type="datetime-local"
+                />
+              </label>
+              <label>
+                Trạng thái
+                <select
+                  value={roomForm.status}
+                  onChange={(event) =>
+                    setRoomForm((form) => ({ ...form, status: event.target.value as ExamRoomStatus }))
+                  }
+                >
+                  <option value="draft">Nháp</option>
+                  <option value="published">Đang mở</option>
+                  <option value="archived">Đã đóng</option>
+                </select>
+              </label>
+            </div>
+
+            <div className={styles.keyFormActions}>
+              <button className="btn" type="submit" disabled={isSavingRoom || !hasConfiguredSupabase}>
+                <Plus size={16} />
+                {isSavingRoom ? 'Đang lưu...' : editingRoomId ? 'Cập nhật phòng' : 'Tạo phòng'}
+              </button>
+              {editingRoomId ? (
+                <button className="btn outline small" type="button" onClick={resetRoomForm}>
+                  Huỷ sửa
+                </button>
+              ) : null}
+              <span>Khung đề phải cùng môn với phòng. Phòng phải “Đang mở” thì key mới vào thi được.</span>
+            </div>
+
+            {roomsFeedback ? <p className={styles.feedback}>{roomsFeedback}</p> : null}
+          </form>
+
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>Phòng</th>
+                  <th>Môn</th>
+                  <th>Thời lượng</th>
+                  <th>Câu / Đề</th>
+                  <th>Khung giờ</th>
+                  <th>Trạng thái</th>
+                  <th>Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rooms.length === 0 ? (
+                  <tr>
+                    <td className={styles.emptyCell} colSpan={7}>
+                      {isLoadingRooms ? 'Đang tải phòng thi...' : 'Chưa có phòng thi nào. Tạo phòng ở form phía trên.'}
+                    </td>
+                  </tr>
+                ) : (
+                  rooms.map((room) => (
+                    <tr key={room.id}>
+                      <td>
+                        <strong>{room.code}</strong>
+                        <div className={styles.cellSub}>{room.name}</div>
+                      </td>
+                      <td>{room.subjectName}</td>
+                      <td>{room.durationMinutes} phút</td>
+                      <td>{room.questionCount} câu · {room.paperCount} đề</td>
+                      <td>
+                        {room.startsAt || room.endsAt
+                          ? `${formatDateTime(room.startsAt)} → ${formatDateTime(room.endsAt)}`
+                          : 'Không giới hạn'}
+                      </td>
+                      <td><span className={styles.keyStatus}>{roomStatusLabels[room.status]}</span></td>
+                      <td>
+                        <div className={styles.rowActions}>
+                          {room.status !== 'published' ? (
+                            <button
+                              type="button"
+                              className={styles.iconAction}
+                              title="Mở phòng"
+                              onClick={() => handleRoomStatus(room, 'published')}
+                            >
+                              <DoorOpen size={15} />
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            className={styles.iconAction}
+                            title="Sửa phòng"
+                            onClick={() => handleEditRoom(room)}
+                          >
+                            <FilePenLine size={15} />
+                          </button>
+                          {room.status !== 'archived' ? (
+                            <button
+                              type="button"
+                              className={styles.iconAction}
+                              title="Đóng phòng"
+                              onClick={() => handleRoomStatus(room, 'archived')}
+                            >
+                              <Archive size={15} />
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            className={`${styles.iconAction} ${styles.iconDanger}`}
+                            title="Xoá phòng"
+                            onClick={() => handleDeleteRoom(room)}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
         <section id="keys" className={styles.panel}>
           <div className={styles.panelHeader}>

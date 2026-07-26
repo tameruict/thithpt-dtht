@@ -700,6 +700,13 @@
   background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
+.cellSub {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .tableWrap {
   overflow-x: auto;
   border: 1px solid var(--border);
