@@ -707,6 +707,11 @@
   font-weight: 700;
 }
 
+.violationFlag {
+  color: var(--danger);
+  font-weight: 900;
+}
+
 .essayList {
   display: grid;
   gap: 14px;

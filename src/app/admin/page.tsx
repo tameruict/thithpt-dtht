@@ -143,6 +143,7 @@ type ExamResultRecord = {
   status: ExamSessionStatus;
   score: number | string | null;
   max_score: number | string | null;
+  violation_count: number | string | null;
   started_at: string | null;
   submitted_at: string | null;
   scored_at: string | null;
@@ -162,6 +163,7 @@ type ExamResult = {
   autoExpired: boolean;
   score: number | null;
   maxScore: number;
+  violations: number;
   startedAt: string | null;
   submittedAt: string | null;
 };
@@ -522,6 +524,7 @@ function mapExamResult(record: ExamResultRecord): ExamResult {
     autoExpired: record.finalized === 'auto_expired',
     score: toFiniteNumber(record.score),
     maxScore: maxScore > 0 ? maxScore : 10,
+    violations: toFiniteNumber(record.violation_count) ?? 0,
     startedAt: record.started_at,
     submittedAt: record.submitted_at,
   };
@@ -550,6 +553,7 @@ function buildResultsCsv(rows: ExamResult[]): string {
     'Điểm',
     'Thang điểm',
     'Trạng thái',
+    'Rời tab',
     'Bắt đầu',
     'Nộp bài',
   ];
@@ -565,6 +569,7 @@ function buildResultsCsv(rows: ExamResult[]): string {
       csvCell(row.score === null ? '' : row.score.toFixed(2)),
       csvCell(row.maxScore),
       csvCell(examStatusLabel(row.status, row.autoExpired)),
+      csvCell(row.violations),
       csvCell(formatDateTime(row.startedAt)),
       csvCell(formatDateTime(row.submittedAt)),
     ].join(','),
@@ -1586,13 +1591,14 @@ export default function AdminPage() {
                   <th>Lượt</th>
                   <th>Điểm</th>
                   <th>Trạng thái</th>
+                  <th>Rời tab</th>
                   <th>Nộp bài</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredResults.length === 0 ? (
                   <tr>
-                    <td className={styles.emptyCell} colSpan={8}>
+                    <td className={styles.emptyCell} colSpan={9}>
                       {isLoadingResults ? 'Đang tải kết quả...' : 'Chưa có phiên thi nào khớp bộ lọc.'}
                     </td>
                   </tr>
@@ -1610,6 +1616,11 @@ export default function AdminPage() {
                           : `${result.score.toFixed(2)} / ${result.maxScore}`}
                       </td>
                       <td><span className={styles.keyStatus}>{examStatusLabel(result.status, result.autoExpired)}</span></td>
+                      <td>
+                        {result.violations > 0
+                          ? <strong className={styles.violationFlag}>{result.violations}</strong>
+                          : '0'}
+                      </td>
                       <td>{formatDateTime(result.submittedAt)}</td>
                     </tr>
                   ))

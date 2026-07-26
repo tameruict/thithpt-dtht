@@ -114,6 +114,9 @@ export default function ExamPage() {
   const [showReviewPanel, setShowReviewPanel] = useState(false);
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
   const [showTabWarning, setShowTabWarning] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(
+    () => typeof document !== 'undefined' && Boolean(document.fullscreenElement),
+  );
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSubmittedRef = useRef(false);
@@ -471,19 +474,47 @@ export default function ExamPage() {
     return () => window.clearTimeout(timeout);
   }, [examData, handleSubmit, isLoading, timeLeft]);
 
-  // Anti-cheat: detect tab switching
+  const recordViolation = useCallback(
+    (type: string) => {
+      setTabSwitchCount((count) => count + 1);
+      setShowTabWarning(true);
+      window.setTimeout(() => setShowTabWarning(false), 4000);
+      if (currentSessionId) {
+        // Ghi log phía server (chỉ tính khi phiên đang thi); bỏ qua lỗi mạng.
+        void supabase.rpc('record_session_event', {
+          p_session_id: currentSessionId,
+          p_type: type,
+        });
+      }
+    },
+    [currentSessionId, supabase],
+  );
+
+  // Chống gian lận: ghi log khi rời tab (không cưỡng chế).
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden && examData && !isLoading) {
-        setTabSwitchCount((c) => c + 1);
-        setShowTabWarning(true);
-        setTimeout(() => setShowTabWarning(false), 4000);
+        recordViolation('tab_switch');
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [examData, isLoading]);
+  }, [examData, isLoading, recordViolation]);
+
+  // Bắt buộc toàn màn hình: theo dõi trạng thái + ghi log khi thoát giữa giờ.
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const active = Boolean(document.fullscreenElement);
+      setIsFullscreen(active);
+      if (!active && examData && !isLoading) {
+        recordViolation('fullscreen_exit');
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, [examData, isLoading, recordViolation]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -601,7 +632,13 @@ export default function ExamPage() {
   }
 
   return (
-    <div className={styles.screen}>
+    <div
+      className={styles.screen}
+      onCopy={(event) => event.preventDefault()}
+      onCut={(event) => event.preventDefault()}
+      onPaste={(event) => event.preventDefault()}
+      onContextMenu={(event) => event.preventDefault()}
+    >
       <header className={styles.header}>
         <div>
           <div className={styles.candidateLine}>{candidateInfo.name}</div>
@@ -704,11 +741,24 @@ export default function ExamPage() {
         </div>
       </div>
 
-      {/* Tab switch warning */}
+      {/* Cảnh báo rời khu vực thi (rời tab / thoát toàn màn hình) */}
       {showTabWarning && (
         <div className={styles.tabWarning}>
           <AlertTriangle size={16} />
-          <span>Bạn đã rời khỏi tab thi! ({tabSwitchCount} lần)</span>
+          <span>Bạn đã rời khỏi khu vực thi! ({tabSwitchCount} lần)</span>
+        </div>
+      )}
+
+      {!isFullscreen && examData && !isLoading && (
+        <div className={styles.fullscreenPrompt}>
+          <AlertTriangle size={16} />
+          <span>Bài thi yêu cầu chế độ toàn màn hình.</span>
+          <button
+            type="button"
+            onClick={() => void document.documentElement.requestFullscreen?.()}
+          >
+            Vào toàn màn hình
+          </button>
         </div>
       )}
 
