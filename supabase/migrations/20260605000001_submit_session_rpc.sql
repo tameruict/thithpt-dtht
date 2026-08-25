@@ -23,10 +23,8 @@ begin
   -- để tránh block UX khi học sinh bấm nộp bài nhiều lần
 end;
 $$;
-
 -- Revoke quyền mặc định, chỉ authenticated mới gọi được
 revoke all on function public.submit_exam_session(uuid) from public, anon;
 grant execute on function public.submit_exam_session(uuid) to authenticated;
-
 -- Thông báo PostgREST reload schema để nhận diện function mới
 notify pgrst, 'reload schema';

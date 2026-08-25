@@ -28,15 +28,12 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_questions_prevent_duplicate_authoring_revision
   on public.questions;
 create trigger trg_questions_prevent_duplicate_authoring_revision
   before insert on public.questions
   for each row
   execute function private.prevent_duplicate_authoring_revision();
-
 revoke all on function private.prevent_duplicate_authoring_revision()
   from public, anon, authenticated;
-
 notify pgrst, 'reload schema';

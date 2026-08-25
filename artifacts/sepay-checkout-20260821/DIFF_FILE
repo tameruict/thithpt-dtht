@@ -1,0 +1,1378 @@
+SEPAY_CHECKOUT_DIFF
+BRANCH=fix/exam-session-scoring-lifecycle
+CHANGED_FIELD=purchase_orders.status/payment_code -> fulfilled and exam_keys.source_order_id
+
+GIT_DIFF_STAT
+ src/app/profile/page.tsx      | 127 ++++++++++++++++++++++++++++++------------
+ src/app/room-key/page.tsx     |  23 +++++---
+ src/styles/profile.module.css |  51 +++++++++++++++++
+ 3 files changed, 156 insertions(+), 45 deletions(-)
+
+GIT_DIFF
+diff --git a/src/app/profile/page.tsx b/src/app/profile/page.tsx
+index c404ddc..e28bfb6 100644
+--- a/src/app/profile/page.tsx
++++ b/src/app/profile/page.tsx
+@@ -2,6 +2,7 @@
+ 
+ import { useEffect, useState } from 'react';
+ import { useRouter } from 'next/navigation';
++import Link from 'next/link';
+ import { createClient } from '@/lib/supabase/client';
+ import { hasSupabaseEnv } from '@/lib/supabase/env';
+ import {
+@@ -30,6 +31,7 @@ type ProfileContentProps = {
+   activeKeys: StoreState['activeKeys'];
+   usedKeys: string[];
+   examHistory: StoreState['examHistory'];
++  purchaseOrders: ProfilePurchaseOrderRecord[];
+   updateProfile: StoreState['updateProfile'];
+   onBack: () => void;
+ };
+@@ -51,11 +53,21 @@ type ProfileSessionRecord = {
+   exam_rooms?: { name: string; subject_code: string } | { name: string; subject_code: string }[] | null;
+ };
+ 
++type ProfilePurchaseOrderRecord = {
++  id: string;
++  status: string;
++  amount: number;
++  currency: string;
++  payment_code: string;
++  created_at: string;
++  fulfilled_at: string | null;
++};
++
+ const genderOptions = [
+-  { value: '', label: 'Chọn giới tính' },
++  { value: '', label: 'Chá»n giá»›i tÃ­nh' },
+   { value: 'male', label: 'Nam' },
+-  { value: 'female', label: 'Nữ' },
+-  { value: 'other', label: 'Khác' },
++  { value: 'female', label: 'Ná»¯' },
++  { value: 'other', label: 'KhÃ¡c' },
+ ];
+ 
+ function toDateInputValue(value: string) {
+@@ -76,10 +88,10 @@ function toGenderValue(value: string) {
+   const normalized = value.trim().toLowerCase();
+ 
+   if (normalized === 'male' || normalized === 'nam') return 'male';
+-  if (normalized === 'female' || normalized === 'nữ' || normalized === 'nu') {
++  if (normalized === 'female' || normalized === 'ná»¯' || normalized === 'nu') {
+     return 'female';
+   }
+-  if (normalized === 'other' || normalized === 'khác' || normalized === 'khac') {
++  if (normalized === 'other' || normalized === 'khÃ¡c' || normalized === 'khac') {
+     return 'other';
+   }
+ 
+@@ -113,6 +125,7 @@ export default function ProfilePage() {
+   const [activeKeys, setActiveKeys] = useState<StoreState['activeKeys']>([]);
+   const [usedKeys, setUsedKeys] = useState<string[]>([]);
+   const [examHistory, setExamHistory] = useState<StoreState['examHistory']>([]);
++  const [purchaseOrders, setPurchaseOrders] = useState<ProfilePurchaseOrderRecord[]>([]);
+ 
+   useEffect(() => {
+     if (hasHydrated && !candidateInfo) {
+@@ -166,7 +179,7 @@ export default function ProfilePage() {
+           });
+         }
+ 
+-        const [keyResult, sessionResult] = await Promise.all([
++        const [keyResult, sessionResult, orderResult] = await Promise.all([
+           supabase
+             .from('exam_keys')
+             .select('code,status,total_attempts,used_attempts')
+@@ -178,6 +191,12 @@ export default function ProfilePage() {
+             .eq('student_id', data.user.id)
+             .order('started_at', { ascending: false })
+             .limit(20),
++          supabase
++            .from('purchase_orders')
++            .select('id,status,amount,currency,payment_code,created_at,fulfilled_at')
++            .eq('student_id', data.user.id)
++            .order('created_at', { ascending: false })
++            .limit(20),
+         ]);
+ 
+         if (!isMounted) return;
+@@ -204,6 +223,9 @@ export default function ProfilePage() {
+         );
+ 
+         const sessionRows = (sessionResult.data ?? []) as unknown as ProfileSessionRecord[];
++        setPurchaseOrders(
++          (orderResult.data ?? []) as unknown as ProfilePurchaseOrderRecord[],
++        );
+         setExamHistory(
+           sessionRows.map((session) => {
+             const room = firstRelation(session.exam_rooms);
+@@ -214,7 +236,7 @@ export default function ProfilePage() {
+ 
+             return {
+               id: session.id,
+-              subject: room?.subject_code ?? 'Chưa rõ môn',
++              subject: room?.subject_code ?? 'ChÆ°a rÃµ mÃ´n',
+               examSet: room?.name,
+               score,
+               date: formatHanoiDateTime(
+@@ -240,6 +262,7 @@ export default function ProfilePage() {
+       activeKeys={activeKeys}
+       usedKeys={usedKeys}
+       examHistory={examHistory}
++      purchaseOrders={purchaseOrders}
+       updateProfile={updateProfile}
+       onBack={() => router.push('/subjects')}
+     />
+@@ -251,6 +274,7 @@ function ProfileContent({
+   activeKeys,
+   usedKeys,
+   examHistory,
++  purchaseOrders,
+   updateProfile,
+   onBack,
+ }: ProfileContentProps) {
+@@ -281,13 +305,13 @@ function ProfileContent({
+     const fullName = form.name.trim();
+     if (!fullName) {
+       setStatus('error');
+-      setFeedback('Vui lòng nhập họ và tên học sinh.');
++      setFeedback('Vui lÃ²ng nháº­p há» vÃ  tÃªn há»c sinh.');
+       return;
+     }
+ 
+     if (!hasSupabaseEnv()) {
+       setStatus('error');
+-      setFeedback('Chưa cấu hình Supabase nên không thể lưu hồ sơ.');
++      setFeedback('ChÆ°a cáº¥u hÃ¬nh Supabase nÃªn khÃ´ng thá»ƒ lÆ°u há»“ sÆ¡.');
+       return;
+     }
+ 
+@@ -300,7 +324,7 @@ function ProfileContent({
+ 
+       if (!data.user) {
+         throw new Error(
+-          'Phiên đăng nhập Supabase đã hết hạn. Vui lòng đăng nhập lại để lưu hồ sơ.',
++          'PhiÃªn Ä‘Äƒng nháº­p Supabase Ä‘Ã£ háº¿t háº¡n. Vui lÃ²ng Ä‘Äƒng nháº­p láº¡i Ä‘á»ƒ lÆ°u há»“ sÆ¡.',
+         );
+       }
+ 
+@@ -329,12 +353,12 @@ function ProfileContent({
+       });
+       setDraftForm(null);
+       setStatus('success');
+-      setFeedback('Đã lưu thông tin vào cơ sở dữ liệu.');
++      setFeedback('ÄÃ£ lÆ°u thÃ´ng tin vÃ o cÆ¡ sá»Ÿ dá»¯ liá»‡u.');
+     } catch (saveError) {
+       const message =
+         saveError instanceof Error
+           ? saveError.message
+-          : 'Không thể lưu hồ sơ học sinh.';
++          : 'KhÃ´ng thá»ƒ lÆ°u há»“ sÆ¡ há»c sinh.';
+       setStatus('error');
+       setFeedback(message);
+     }
+@@ -343,18 +367,18 @@ function ProfileContent({
+   return (
+     <div className={styles.container}>
+       <div className={styles.header}>
+-        <h1 className={styles.title}>Quản lý hồ sơ</h1>
++        <h1 className={styles.title}>Quáº£n lÃ½ há»“ sÆ¡</h1>
+         <button className="btn outline" type="button" onClick={onBack}>
+-          Quay lại chọn môn
++          Quay láº¡i chá»n mÃ´n
+         </button>
+       </div>
+ 
+       <div className={styles.grid}>
+         <div className={styles.card}>
+-          <h2 className={styles.sectionTitle}>Thông tin học sinh</h2>
++          <h2 className={styles.sectionTitle}>ThÃ´ng tin há»c sinh</h2>
+           <form onSubmit={handleSave}>
+             <div className={styles.formGroup}>
+-              <label className={styles.label}>Số báo danh / Mã thí sinh</label>
++              <label className={styles.label}>Sá»‘ bÃ¡o danh / MÃ£ thÃ­ sinh</label>
+               <input
+                 type="text"
+                 className={styles.input}
+@@ -364,7 +388,7 @@ function ProfileContent({
+             </div>
+ 
+             <div className={styles.formGroup}>
+-              <label className={styles.label}>Họ và tên</label>
++              <label className={styles.label}>Há» vÃ  tÃªn</label>
+               <input
+                 type="text"
+                 required
+@@ -377,7 +401,7 @@ function ProfileContent({
+ 
+             <div className={styles.formGrid}>
+               <div className={styles.formGroup}>
+-                <label className={styles.label}>Ngày sinh</label>
++                <label className={styles.label}>NgÃ y sinh</label>
+                 <input
+                   type="date"
+                   required
+@@ -389,7 +413,7 @@ function ProfileContent({
+               </div>
+ 
+               <div className={styles.formGroup}>
+-                <label className={styles.label}>Giới tính</label>
++                <label className={styles.label}>Giá»›i tÃ­nh</label>
+                 <select
+                   className={styles.input}
+                   value={form.gender}
+@@ -405,7 +429,7 @@ function ProfileContent({
+             </div>
+ 
+             <div className={styles.formGroup}>
+-              <label className={styles.label}>Trường học</label>
++              <label className={styles.label}>TrÆ°á»ng há»c</label>
+               <input
+                 type="text"
+                 className={styles.input}
+@@ -417,7 +441,7 @@ function ProfileContent({
+ 
+             <div className={styles.formGrid}>
+               <div className={styles.formGroup}>
+-                <label className={styles.label}>Tỉnh / Thành phố</label>
++                <label className={styles.label}>Tá»‰nh / ThÃ nh phá»‘</label>
+                 <input
+                   type="text"
+                   className={styles.input}
+@@ -427,7 +451,7 @@ function ProfileContent({
+               </div>
+ 
+               <div className={styles.formGroup}>
+-                <label className={styles.label}>Quận / Huyện</label>
++                <label className={styles.label}>Quáº­n / Huyá»‡n</label>
+                 <input
+                   type="text"
+                   className={styles.input}
+@@ -438,7 +462,7 @@ function ProfileContent({
+             </div>
+ 
+             <div className={styles.formGroup}>
+-              <label className={styles.label}>Số điện thoại</label>
++              <label className={styles.label}>Sá»‘ Ä‘iá»‡n thoáº¡i</label>
+               <input
+                 type="tel"
+                 className={styles.input}
+@@ -463,53 +487,84 @@ function ProfileContent({
+               className={`btn ${styles.submitBtn}`}
+               disabled={status === 'saving'}
+             >
+-              {status === 'saving' ? 'Đang lưu...' : 'Lưu thay đổi'}
++              {status === 'saving' ? 'Äang lÆ°u...' : 'LÆ°u thay Ä‘á»•i'}
+             </button>
+           </form>
+         </div>
+ 
+         <div className={styles.stack}>
+           <div className={styles.card}>
+-            <h2 className={styles.sectionTitle}>Quản lý key phòng thi</h2>
++            <h2 className={styles.sectionTitle}>Quáº£n lÃ½ key phÃ²ng thi</h2>
+ 
+-            <h3 className={styles.subsectionTitle}>Đang sử dụng</h3>
++            <h3 className={styles.subsectionTitle}>Äang sá»­ dá»¥ng</h3>
+             {activeKeys.length > 0 ? (
+               activeKeys.map((key) => (
+                 <div key={key.code} className={styles.keyStat}>
+                   <span className={styles.code}>Key: {key.code}</span>
+                   <span className={styles.attempts}>
+-                    Còn lại: {key.remainingAttempts} lượt
++                    CÃ²n láº¡i: {key.remainingAttempts} lÆ°á»£t
+                   </span>
+                 </div>
+               ))
+             ) : (
+-              <div className={styles.emptyState}>Không có key nào đang dùng</div>
++              <div className={styles.emptyState}>KhÃ´ng cÃ³ key nÃ o Ä‘ang dÃ¹ng</div>
+             )}
+ 
+             <h3 className={`${styles.subsectionTitle} ${styles.spaced}`}>
+-              Đã dùng hết
++              ÄÃ£ dÃ¹ng háº¿t
+             </h3>
+             {usedKeys.length > 0 ? (
+               usedKeys.map((key) => (
+                 <div key={key} className={`${styles.keyStat} ${styles.used}`}>
+                   <span className={styles.code}>Key: {key}</span>
+-                  <span className={styles.attempts}>Hết lượt</span>
++                  <span className={styles.attempts}>Háº¿t lÆ°á»£t</span>
+                 </div>
+               ))
+             ) : (
+-              <div className={styles.emptyState}>Chưa có key nào đã dùng hết</div>
++              <div className={styles.emptyState}>ChÆ°a cÃ³ key nÃ o Ä‘Ã£ dÃ¹ng háº¿t</div>
+             )}
+           </div>
+ 
+           <div className={styles.card}>
+-            <h2 className={styles.sectionTitle}>Lịch sử bài thi</h2>
++            <div className={styles.sectionHeader}>
++              <div>
++                <h2 className={styles.sectionTitle}>Lịch sử mua key</h2>
++                <p className={styles.muted}>
++                  Key đã mua được dùng cho exam và practice.
++                </p>
++              </div>
++              <Link className="btn outline small" href="/purchase">
++                Mua key
++              </Link>
++            </div>
++            {purchaseOrders.length > 0 ? (
++              <div className={styles.purchaseList}>
++                {purchaseOrders.map((purchase) => (
++                  <div className={styles.purchaseRow} key={purchase.id}>
++                    <div>
++                      <strong>{purchase.payment_code}</strong>
++                      <span>{formatHanoiDateTime(purchase.created_at)}</span>
++                    </div>
++                    <span className={styles.purchaseAmount}>
++                      {purchase.amount.toLocaleString('vi-VN')} {purchase.currency}
++                    </span>
++                    <span className={styles.purchaseStatus}>{purchase.status}</span>
++                  </div>
++                ))}
++              </div>
++            ) : (
++              <div className={styles.emptyState}>Chưa có đơn mua key nào</div>
++            )}
++          </div>
++          <div className={styles.card}>
++            <h2 className={styles.sectionTitle}>Lá»‹ch sá»­ bÃ i thi</h2>
+             {examHistory.length > 0 ? (
+               <table className={styles.table}>
+                 <thead>
+                   <tr>
+-                    <th>Môn thi</th>
+-                    <th>Ngày hoàn thành</th>
+-                    <th>Điểm số</th>
++                    <th>MÃ´n thi</th>
++                    <th>NgÃ y hoÃ n thÃ nh</th>
++                    <th>Äiá»ƒm sá»‘</th>
+                   </tr>
+                 </thead>
+                 <tbody>
+@@ -531,7 +586,7 @@ function ProfileContent({
+               </table>
+             ) : (
+               <div className={styles.emptyState}>
+-                Chưa có lịch sử làm bài nào
++                ChÆ°a cÃ³ lá»‹ch sá»­ lÃ m bÃ i nÃ o
+               </div>
+             )}
+           </div>
+diff --git a/src/app/room-key/page.tsx b/src/app/room-key/page.tsx
+index 703250a..cb4fa1c 100644
+--- a/src/app/room-key/page.tsx
++++ b/src/app/room-key/page.tsx
+@@ -44,19 +44,20 @@ function keyErrorMessage(hint: string | undefined, fallback?: string) {
+   }
+ }
+ 
+-export default function RoomKeyPage() {
++export default function RoomKeyPage({ roomId }: { roomId?: string }) {
+   const hasConfiguredSupabase = hasSupabaseEnv();
+   const [key, setKey] = useState('');
+   const [error, setError] = useState('');
+   const [selectedRoom, setSelectedRoom] = useState<ExamRoomSummary | null>(null);
+   const [isLoadingRoom, setIsLoadingRoom] = useState(hasConfiguredSupabase);
+   const [isSubmitting, setIsSubmitting] = useState(false);
+-  const selectedSubjectCode = useExamStore((state) => state.selectedSubjectCode);
+   const selectedExamSetId = useExamStore((state) => state.selectedExamSetId);
++  const selectExamSet = useExamStore((state) => state.selectExamSet);
+   const router = useRouter();
++  const effectiveRoomId = roomId ?? selectedExamSetId;
+ 
+   useEffect(() => {
+-    if (!selectedSubjectCode || !selectedExamSetId) {
++    if (!effectiveRoomId) {
+       router.push('/subjects');
+       return;
+     }
+@@ -66,7 +67,7 @@ export default function RoomKeyPage() {
+     let isMounted = true;
+     const supabase = createClient();
+ 
+-    fetchExamRoomById(supabase, selectedExamSetId)
++    fetchExamRoomById(supabase, effectiveRoomId)
+       .then((room) => {
+         if (!isMounted) return;
+         if (!room) {
+@@ -74,6 +75,7 @@ export default function RoomKeyPage() {
+           return;
+         }
+         setSelectedRoom(room);
++        if (roomId) selectExamSet(room.subjectCode, room.id);
+       })
+       .catch((loadError: unknown) => {
+         if (!isMounted) return;
+@@ -90,7 +92,7 @@ export default function RoomKeyPage() {
+     return () => {
+       isMounted = false;
+     };
+-  }, [hasConfiguredSupabase, router, selectedExamSetId, selectedSubjectCode]);
++  }, [effectiveRoomId, hasConfiguredSupabase, roomId, router, selectExamSet]);
+ 
+   const handleSubmit = async (e: React.FormEvent) => {
+     e.preventDefault();
+@@ -101,7 +103,7 @@ export default function RoomKeyPage() {
+       return;
+     }
+ 
+-    if (!selectedSubjectCode || !selectedExamSetId || !selectedRoom) {
++    if (!effectiveRoomId || !selectedRoom) {
+       setError('Vui lòng chọn môn và phòng thi trước khi nhập key.');
+       return;
+     }
+@@ -115,8 +117,8 @@ export default function RoomKeyPage() {
+       // Keys are global; the selected room determines the concrete exam session.
+       const { data: sessionId, error: rpcError } = await supabase.rpc('join_exam', {
+         p_code: trimmedKey,
+-        p_subject_code: selectedSubjectCode ?? null,
+-        p_exam_room_id: selectedExamSetId,
++        p_subject_code: selectedRoom.subjectCode,
++        p_exam_room_id: effectiveRoomId,
+       });
+ 
+       if (rpcError) {
+@@ -133,7 +135,7 @@ export default function RoomKeyPage() {
+       }
+ 
+       useExamStore.getState().setSession(sessionId as string, trimmedKey);
+-      router.push('/exam');
++      router.push(`/exam/${sessionId}`);
+     } catch (submitError) {
+       const message =
+         submitError instanceof Error
+@@ -216,6 +218,9 @@ export default function RoomKeyPage() {
+         </form>
+ 
+         <div className={`${styles.footerLinks} ${styles.centered}`}>
++          <Link href="/purchase" className={styles.forgotLink}>
++            Mua key qua SePay
++          </Link>
+           <Link href="/subjects" transitionTypes={['nav-back']} className={styles.forgotLink}>
+             &larr; Quay lại chọn môn và phòng thi
+           </Link>
+diff --git a/src/styles/profile.module.css b/src/styles/profile.module.css
+index 5933136..29c9b77 100644
+--- a/src/styles/profile.module.css
++++ b/src/styles/profile.module.css
+@@ -244,6 +244,57 @@
+   font-weight: 750;
+ }
+ 
++.sectionHeader {
++  display: flex;
++  justify-content: space-between;
++  gap: 16px;
++  align-items: flex-start;
++}
++
++.muted {
++  margin: 4px 0 0;
++  color: var(--muted);
++  font-size: 13px;
++}
++
++.purchaseList {
++  display: grid;
++  gap: 10px;
++  margin-top: 16px;
++}
++
++.purchaseRow {
++  display: grid;
++  grid-template-columns: 1fr auto auto;
++  gap: 12px;
++  align-items: center;
++  padding: 12px;
++  border: 1px solid var(--border);
++  border-radius: var(--radius-md);
++}
++
++.purchaseRow > div {
++  display: grid;
++  gap: 4px;
++}
++
++.purchaseRow span {
++  color: var(--muted);
++  font-size: 12px;
++}
++
++.purchaseAmount {
++  color: var(--primary);
++  font-weight: 800;
++}
++
++.purchaseStatus {
++  color: var(--success);
++  font-size: 12px;
++  font-weight: 800;
++  text-transform: uppercase;
++}
++
+ @media (max-width: 960px) {
+   .header {
+     align-items: flex-start;
+
+NEW_FILES
+E:\Web-thi-thpt\src\app\purchase\actions.ts
+E:\Web-thi-thpt\src\app\purchase\page.tsx
+E:\Web-thi-thpt\src\app\purchase\PurchaseClient.tsx
+E:\Web-thi-thpt\src\app\api\payments\sepay\webhook\route.ts
+E:\Web-thi-thpt\src\app\admin\key-products\KeyProductsClient.tsx
+E:\Web-thi-thpt\src\app\admin\key-products\page.tsx
+E:\Web-thi-thpt\src\app\admin\purchases\page.tsx
+E:\Web-thi-thpt\src\app\admin\purchases\PurchasesClient.tsx
+E:\Web-thi-thpt\src\lib\payments\config.ts
+E:\Web-thi-thpt\src\lib\payments\sepay.test.ts
+E:\Web-thi-thpt\src\lib\payments\sepay.ts
+E:\Web-thi-thpt\supabase\tests\math_content_database_v2_test.sql
+E:\Web-thi-thpt\supabase\tests\production_foundation_test.sql
+E:\Web-thi-thpt\supabase\tests\sepay_checkout_test.sql
+
+MIGRATION
+-- SePay checkout and purchased global-key entitlement.
+-- Forward-only: tolerates the optional foundation tables already existing while
+-- creating the same contract when this migration is applied to live directly.
+
+create table if not exists public.key_products (
+  id uuid primary key default extensions.gen_random_uuid(),
+  code text not null unique,
+  name text not null,
+  product_kind text not null check (product_kind in ('exam', 'practice', 'bundle')),
+  attempt_count integer not null check (attempt_count > 0),
+  price_amount integer not null check (price_amount >= 0),
+  currency text not null default 'VND' check (currency ~ '^[A-Z]{3}$'),
+  valid_days integer check (valid_days is null or valid_days > 0),
+  is_active boolean not null default false,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  archived_at timestamptz
+);
+
+alter table public.key_products
+  add column if not exists valid_days integer;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'key_products_valid_days_positive'
+      and conrelid = 'public.key_products'::regclass
+  ) then
+    alter table public.key_products
+      add constraint key_products_valid_days_positive
+      check (valid_days is null or valid_days > 0);
+  end if;
+end
+$$;
+
+create table if not exists public.purchase_orders (
+  id uuid primary key default extensions.gen_random_uuid(),
+  student_id uuid not null references public.profiles(id) on delete restrict,
+  product_id uuid references public.key_products(id) on delete set null,
+  status text not null default 'pending'
+    check (status in ('pending', 'paid', 'fulfilled', 'failed', 'cancelled', 'refunded')),
+  amount integer not null check (amount >= 0),
+  currency text not null default 'VND' check (currency ~ '^[A-Z]{3}$'),
+  product_snapshot jsonb not null,
+  provider text,
+  provider_order_ref text,
+  idempotency_key text not null unique,
+  payment_code text,
+  expires_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  paid_at timestamptz,
+  fulfilled_at timestamptz,
+  failed_at timestamptz,
+  failure_code text
+);
+
+alter table public.purchase_orders
+  add column if not exists payment_code text,
+  add column if not exists expires_at timestamptz;
+
+update public.purchase_orders
+set payment_code = 'LEGACY' || upper(replace(id::text, '-', ''))
+where payment_code is null;
+
+alter table public.purchase_orders
+  alter column payment_code set not null;
+
+create unique index if not exists purchase_orders_payment_code_unique
+  on public.purchase_orders (payment_code);
+create unique index if not exists purchase_orders_provider_ref_unique
+  on public.purchase_orders (provider, provider_order_ref)
+  where provider is not null and provider_order_ref is not null;
+create index if not exists purchase_orders_student_created_idx
+  on public.purchase_orders (student_id, created_at desc);
+create index if not exists purchase_orders_status_created_idx
+  on public.purchase_orders (status, created_at desc);
+
+create table if not exists public.payment_events (
+  id bigint generated by default as identity primary key,
+  order_id uuid references public.purchase_orders(id) on delete set null,
+  provider text not null,
+  provider_event_id text not null,
+  event_type text not null,
+  payload_sha256 text not null check (payload_sha256 ~ '^[0-9a-f]{64}$'),
+  payload jsonb not null,
+  received_at timestamptz not null default now(),
+  processed_at timestamptz,
+  processing_error text,
+  unique (provider, provider_event_id)
+);
+
+create index if not exists payment_events_order_received_idx
+  on public.payment_events (order_id, received_at desc);
+create index if not exists payment_events_error_received_idx
+  on public.payment_events (processing_error, received_at desc)
+  where processing_error is not null;
+
+create table if not exists public.admin_audit_log (
+  id bigint generated by default as identity primary key,
+  actor_user_id uuid references auth.users(id) on delete set null,
+  action text not null,
+  entity_type text not null,
+  entity_id text,
+  request_id text,
+  details jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists admin_audit_log_entity_created_idx
+  on public.admin_audit_log (entity_type, entity_id, created_at desc);
+
+alter table public.admin_audit_log enable row level security;
+drop policy if exists admin_audit_log_admin_read on public.admin_audit_log;
+create policy admin_audit_log_admin_read
+on public.admin_audit_log for select to authenticated
+using (private.is_admin());
+revoke all on public.admin_audit_log from anon, authenticated;
+grant select on public.admin_audit_log to authenticated;
+
+alter table public.exam_keys
+  alter column exam_room_id drop not null,
+  add column if not exists source_order_id uuid;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'exam_keys_source_order_id_fkey'
+      and conrelid = 'public.exam_keys'::regclass
+  ) then
+    alter table public.exam_keys
+      add constraint exam_keys_source_order_id_fkey
+      foreign key (source_order_id)
+      references public.purchase_orders(id)
+      on delete set null;
+  end if;
+end
+$$;
+
+create unique index if not exists exam_keys_source_order_unique
+  on public.exam_keys (source_order_id)
+  where source_order_id is not null;
+
+-- The event row is intentionally append-only. The service role reaches it only
+-- through process_sepay_payment; dashboard users can read errors but cannot
+-- mutate provider evidence.
+create or replace function private.prevent_payment_event_mutation()
+returns trigger
+language plpgsql
+security definer
+set search_path to ''
+as $$
+begin
+  raise exception 'PAYMENT_EVENT_IMMUTABLE';
+end;
+$$;
+
+revoke all on function private.prevent_payment_event_mutation() from public, anon, authenticated;
+
+drop trigger if exists payment_events_immutable on public.payment_events;
+create trigger payment_events_immutable
+before update or delete on public.payment_events
+for each row execute function private.prevent_payment_event_mutation();
+
+alter table public.key_products enable row level security;
+alter table public.purchase_orders enable row level security;
+alter table public.payment_events enable row level security;
+
+drop policy if exists key_products_authenticated_read on public.key_products;
+create policy key_products_authenticated_read
+on public.key_products for select to authenticated
+using ((is_active and archived_at is null) or private.is_admin());
+
+drop policy if exists key_products_admin_write on public.key_products;
+create policy key_products_admin_write
+on public.key_products for all to authenticated
+using (private.is_admin())
+with check (private.is_admin());
+
+drop policy if exists purchase_orders_owner_read on public.purchase_orders;
+create policy purchase_orders_owner_read
+on public.purchase_orders for select to authenticated
+using (student_id = (select auth.uid()) or private.is_admin());
+
+drop policy if exists purchase_orders_authenticated_write on public.purchase_orders;
+drop policy if exists purchase_orders_admin_write on public.purchase_orders;
+create policy purchase_orders_admin_write
+on public.purchase_orders for all to authenticated
+using (private.is_admin())
+with check (private.is_admin());
+
+drop policy if exists payment_events_admin_read on public.payment_events;
+create policy payment_events_admin_read
+on public.payment_events for select to authenticated
+using (private.is_admin());
+
+revoke all on public.key_products, public.purchase_orders, public.payment_events
+  from anon, authenticated;
+grant select on public.key_products to authenticated;
+grant insert, update, delete on public.key_products to authenticated;
+grant select on public.purchase_orders, public.payment_events to authenticated;
+
+drop trigger if exists key_products_updated_at on public.key_products;
+create trigger key_products_updated_at
+before update on public.key_products
+for each row execute function private.touch_updated_at();
+
+drop trigger if exists purchase_orders_updated_at on public.purchase_orders;
+create trigger purchase_orders_updated_at
+before update on public.purchase_orders
+for each row execute function private.touch_updated_at();
+
+-- Ensure the two catalog/order tables participate in the existing admin audit
+-- stream when the foundation migration has already created that trigger.
+do $$
+begin
+  if to_regprocedure('private.audit_admin_mutation()') is not null then
+    execute 'drop trigger if exists audit_admin_mutation on public.key_products';
+    execute 'create trigger audit_admin_mutation after insert or update or delete on public.key_products for each row execute function private.audit_admin_mutation()';
+    execute 'drop trigger if exists audit_admin_mutation on public.purchase_orders';
+    execute 'create trigger audit_admin_mutation after insert or update or delete on public.purchase_orders for each row execute function private.audit_admin_mutation()';
+  end if;
+end
+$$;
+
+create or replace function private.fulfill_purchase_order(
+  p_order_id uuid,
+  p_provider_reference text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path to ''
+as $$
+declare
+  order_row public.purchase_orders%rowtype;
+  key_row public.exam_keys%rowtype;
+  key_id uuid;
+  key_code text;
+  expiry timestamptz;
+  attempt_count integer;
+  valid_days integer;
+begin
+  select *
+  into order_row
+  from public.purchase_orders
+  where id = p_order_id
+  for update;
+
+  if not found then
+    raise exception 'PURCHASE_ORDER_NOT_FOUND';
+  end if;
+
+  if order_row.status in ('cancelled', 'refunded') then
+    raise exception 'PURCHASE_ORDER_NOT_PAYABLE';
+  end if;
+
+  attempt_count := greatest((order_row.product_snapshot ->> 'attempt_count')::integer, 1);
+  valid_days := nullif(order_row.product_snapshot ->> 'valid_days', '')::integer;
+  expiry := case
+    when valid_days is null then null
+    else now() + make_interval(days => valid_days)
+  end;
+
+  select *
+  into key_row
+  from public.exam_keys
+  where source_order_id = p_order_id
+  for update;
+
+  if not found then
+    insert into public.students (id, full_name)
+    select profile.id, profile.full_name
+    from public.profiles profile
+    where profile.id = order_row.student_id
+    on conflict (id) do nothing;
+
+    loop
+      key_id := extensions.gen_random_uuid();
+      key_code := 'BUY-' || upper(replace(substr(key_id::text, 1, 16), '-', ''));
+      begin
+        insert into public.exam_keys (
+          id,
+          code,
+          exam_room_id,
+          batch_id,
+          assigned_to,
+          total_attempts,
+          used_attempts,
+          status,
+          expires_at,
+          price_paid,
+          payment_ref,
+          is_public,
+          source_order_id
+        ) values (
+          key_id,
+          key_code,
+          null,
+          null,
+          order_row.student_id,
+          attempt_count,
+          0,
+          'unused',
+          expiry,
+          order_row.amount,
+          'sepay:' || coalesce(nullif(trim(p_provider_reference), ''), order_row.payment_code),
+          false,
+          p_order_id
+        );
+        exit;
+      exception
+        when unique_violation then
+          key_id := null;
+      end;
+    end loop;
+  else
+    key_id := key_row.id;
+    key_code := key_row.code;
+  end if;
+
+  update public.purchase_orders
+  set status = 'fulfilled',
+      provider = coalesce(provider, 'sepay'),
+      provider_order_ref = coalesce(
+        provider_order_ref,
+        nullif(trim(p_provider_reference), '')
+      ),
+      paid_at = coalesce(paid_at, now()),
+      fulfilled_at = coalesce(fulfilled_at, now()),
+      failure_code = null,
+      updated_at = now()
+  where id = p_order_id;
+
+  return jsonb_build_object(
+    'order_id', p_order_id,
+    'status', 'fulfilled',
+    'key_id', key_id,
+    'key_code', key_code
+  );
+end;
+$$;
+
+revoke all on function private.fulfill_purchase_order(uuid, text)
+  from public, anon, authenticated;
+
+create or replace function public.create_purchase_order(
+  p_product_id uuid,
+  p_idempotency_key text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path to ''
+as $$
+declare
+  current_student_id uuid := (select auth.uid());
+  product_row public.key_products%rowtype;
+  existing_order public.purchase_orders%rowtype;
+  order_id uuid;
+  payment_code text;
+begin
+  if current_student_id is null
+     or not exists (
+       select 1
+       from public.profiles profile
+       where profile.id = current_student_id
+         and profile.role = 'student'
+     ) then
+    raise exception 'NOT_AUTHENTICATED';
+  end if;
+
+  if nullif(trim(p_idempotency_key), '') is null
+     or length(trim(p_idempotency_key)) > 120 then
+    raise exception 'IDEMPOTENCY_KEY_INVALID';
+  end if;
+
+  select *
+  into existing_order
+  from public.purchase_orders
+  where purchase_orders.student_id = current_student_id
+    and purchase_orders.idempotency_key = trim(p_idempotency_key);
+
+  if found then
+    return jsonb_build_object(
+      'order_id', existing_order.id,
+      'payment_code', existing_order.payment_code,
+      'amount', existing_order.amount,
+      'currency', existing_order.currency,
+      'status', existing_order.status,
+      'expires_at', existing_order.expires_at,
+      'product_snapshot', existing_order.product_snapshot
+    );
+  end if;
+
+  select *
+  into product_row
+  from public.key_products
+  where id = p_product_id
+    and is_active
+    and archived_at is null
+  for update;
+
+  if not found then
+    raise exception 'PRODUCT_NOT_AVAILABLE';
+  end if;
+
+  order_id := extensions.gen_random_uuid();
+  payment_code := 'THPT' || upper(replace(substr(order_id::text, 1, 12), '-', ''));
+
+  insert into public.purchase_orders (
+    id,
+    student_id,
+    product_id,
+    status,
+    amount,
+    currency,
+    product_snapshot,
+    idempotency_key,
+    payment_code,
+    expires_at
+  ) values (
+    order_id,
+    current_student_id,
+    product_row.id,
+    'pending',
+    product_row.price_amount,
+    product_row.currency,
+    jsonb_build_object(
+      'id', product_row.id,
+      'code', product_row.code,
+      'name', product_row.name,
+      'product_kind', product_row.product_kind,
+      'attempt_count', product_row.attempt_count,
+      'price_amount', product_row.price_amount,
+      'currency', product_row.currency,
+      'valid_days', product_row.valid_days
+    ),
+    trim(p_idempotency_key),
+    payment_code,
+    now() + interval '24 hours'
+  )
+  on conflict (idempotency_key) do nothing;
+
+  select *
+  into existing_order
+  from public.purchase_orders purchase
+  where purchase.id = order_id
+     or (
+       purchase.student_id = current_student_id
+       and purchase.idempotency_key = trim(p_idempotency_key)
+     );
+
+  if not found then
+    raise exception 'PURCHASE_ORDER_CREATE_FAILED';
+  end if;
+
+  return jsonb_build_object(
+    'order_id', existing_order.id,
+    'payment_code', existing_order.payment_code,
+    'amount', existing_order.amount,
+    'currency', existing_order.currency,
+    'status', existing_order.status,
+    'expires_at', existing_order.expires_at,
+    'product_snapshot', existing_order.product_snapshot
+  );
+end;
+$$;
+
+revoke all on function public.create_purchase_order(uuid, text)
+  from public, anon;
+grant execute on function public.create_purchase_order(uuid, text)
+  to authenticated;
+
+create or replace function public.process_sepay_payment(
+  p_provider_event_id text,
+  p_payment_code text,
+  p_amount integer,
+  p_transfer_type text,
+  p_account_number text,
+  p_expected_account_number text,
+  p_provider_reference text,
+  p_payload jsonb,
+  p_payload_sha256 text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path to ''
+as $$
+declare
+  order_row public.purchase_orders%rowtype;
+  event_row public.payment_events%rowtype;
+  result jsonb;
+  existing_status text;
+  existing_key_code text;
+  event_type text;
+  processing_error text;
+begin
+  if coalesce((select auth.jwt() ->> 'role'), '') <> 'service_role' then
+    raise exception 'SERVICE_ROLE_ONLY';
+  end if;
+
+  if nullif(trim(p_provider_event_id), '') is null then
+    raise exception 'PROVIDER_EVENT_ID_REQUIRED';
+  end if;
+
+  if p_payload_sha256 !~ '^[0-9a-f]{64}$' then
+    raise exception 'PAYLOAD_HASH_INVALID';
+  end if;
+
+  select *
+  into event_row
+  from public.payment_events
+  where provider = 'sepay'
+    and provider_event_id = trim(p_provider_event_id);
+
+  if found then
+    select purchase.status, key.code
+    into existing_status, existing_key_code
+    from public.purchase_orders purchase
+    left join public.exam_keys key on key.source_order_id = purchase.id
+    where purchase.id = event_row.order_id;
+
+    return jsonb_build_object(
+      'duplicate', true,
+      'accepted', event_row.processing_error is null,
+      'event_id', event_row.id,
+      'order_id', event_row.order_id,
+      'status', coalesce(existing_status, 'unmatched'),
+      'key_code', existing_key_code
+    );
+  end if;
+
+  select *
+  into order_row
+  from public.purchase_orders
+  where upper(payment_code) = upper(trim(coalesce(p_payment_code, '')))
+  for update;
+
+  if not found then
+    insert into public.payment_events (
+      provider,
+      provider_event_id,
+      event_type,
+      payload_sha256,
+      payload,
+      processed_at,
+      processing_error
+    ) values (
+      'sepay',
+      trim(p_provider_event_id),
+      'unmatched',
+      lower(p_payload_sha256),
+      coalesce(p_payload, '{}'::jsonb),
+      now(),
+      'PAYMENT_CODE_NOT_FOUND'
+    );
+
+    return jsonb_build_object(
+      'duplicate', false,
+      'accepted', false,
+      'status', 'unmatched',
+      'error', 'PAYMENT_CODE_NOT_FOUND'
+    );
+  end if;
+
+  if lower(trim(coalesce(p_transfer_type, ''))) <> 'in' then
+    event_type := 'invalid_transfer';
+    processing_error := 'TRANSFER_TYPE_NOT_IN';
+  elsif p_amount is null or p_amount <> order_row.amount then
+    event_type := 'invalid_amount';
+    processing_error := 'PAYMENT_AMOUNT_MISMATCH';
+  elsif nullif(trim(coalesce(p_account_number, '')), '') is null
+     or nullif(trim(coalesce(p_expected_account_number, '')), '') is null
+     or trim(p_account_number) <> trim(p_expected_account_number) then
+    event_type := 'invalid_account';
+    processing_error := 'PAYMENT_ACCOUNT_MISMATCH';
+  else
+    event_type := 'payment_received';
+    processing_error := null;
+  end if;
+
+  if processing_error is not null then
+    insert into public.payment_events (
+      order_id,
+      provider,
+      provider_event_id,
+      event_type,
+      payload_sha256,
+      payload,
+      received_at,
+      processed_at,
+      processing_error
+    ) values (
+      order_row.id,
+      'sepay',
+      trim(p_provider_event_id),
+      event_type,
+      lower(p_payload_sha256),
+      coalesce(p_payload, '{}'::jsonb),
+      now(),
+      now(),
+      processing_error
+    );
+
+    return jsonb_build_object(
+      'duplicate', false,
+      'accepted', false,
+      'status', order_row.status,
+      'order_id', order_row.id,
+      'error', processing_error
+    );
+  end if;
+
+  if order_row.expires_at is not null and order_row.expires_at <= now() then
+    processing_error := 'PURCHASE_ORDER_EXPIRED';
+    insert into public.payment_events (
+      order_id,
+      provider,
+      provider_event_id,
+      event_type,
+      payload_sha256,
+      payload,
+      received_at,
+      processed_at,
+      processing_error
+    ) values (
+      order_row.id,
+      'sepay',
+      trim(p_provider_event_id),
+      'expired_order',
+      lower(p_payload_sha256),
+      coalesce(p_payload, '{}'::jsonb),
+      now(),
+      now(),
+      processing_error
+    );
+
+    update public.purchase_orders
+    set status = 'failed', failed_at = now(), failure_code = processing_error
+    where id = order_row.id and status = 'pending';
+
+    return jsonb_build_object(
+      'duplicate', false,
+      'accepted', false,
+      'status', 'failed',
+      'order_id', order_row.id,
+      'error', processing_error
+    );
+  end if;
+
+  insert into public.payment_events (
+    order_id,
+    provider,
+    provider_event_id,
+    event_type,
+    payload_sha256,
+    payload,
+    received_at,
+    processed_at
+  ) values (
+    order_row.id,
+    'sepay',
+    trim(p_provider_event_id),
+    'payment_received',
+    lower(p_payload_sha256),
+    coalesce(p_payload, '{}'::jsonb),
+    now(),
+    now()
+  );
+
+  update public.purchase_orders
+  set status = case when status = 'pending' then 'paid' else status end,
+      provider = 'sepay',
+      provider_order_ref = coalesce(
+        nullif(trim(p_provider_reference), ''),
+        trim(p_provider_event_id)
+      ),
+      paid_at = coalesce(paid_at, now()),
+      updated_at = now()
+  where id = order_row.id;
+
+  result := private.fulfill_purchase_order(
+    order_row.id,
+    coalesce(nullif(trim(p_provider_reference), ''), trim(p_provider_event_id))
+  );
+
+  return jsonb_build_object(
+    'duplicate', false,
+    'accepted', true,
+    'event_id', (
+      select id
+      from public.payment_events
+      where provider = 'sepay'
+        and provider_event_id = trim(p_provider_event_id)
+    )
+  ) || result;
+end;
+$$;
+
+revoke all on function public.process_sepay_payment(
+  text, text, integer, text, text, text, text, jsonb, text
+) from public, anon, authenticated;
+grant execute on function public.process_sepay_payment(
+  text, text, integer, text, text, text, text, jsonb, text
+) to service_role;
+
+create or replace function public.reconcile_purchase_order(p_order_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path to ''
+as $$
+declare
+  order_row public.purchase_orders%rowtype;
+begin
+  if not private.is_admin() then
+    raise exception 'ADMIN_ONLY';
+  end if;
+
+  select *
+  into order_row
+  from public.purchase_orders
+  where id = p_order_id
+  for update;
+
+  if not found then
+    raise exception 'PURCHASE_ORDER_NOT_FOUND';
+  end if;
+
+  if order_row.status = 'paid' then
+    return private.fulfill_purchase_order(
+      p_order_id,
+      order_row.provider_order_ref
+    );
+  end if;
+
+  return jsonb_build_object(
+    'order_id', order_row.id,
+    'status', order_row.status,
+    'key_code', (
+      select code from public.exam_keys where source_order_id = order_row.id
+    )
+  );
+end;
+$$;
+
+revoke all on function public.reconcile_purchase_order(uuid)
+  from public, anon;
+grant execute on function public.reconcile_purchase_order(uuid)
+  to authenticated;
+
+create or replace function public.revoke_purchase_order(
+  p_order_id uuid,
+  p_reason text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path to ''
+as $$
+declare
+  order_row public.purchase_orders%rowtype;
+  key_row public.exam_keys%rowtype;
+begin
+  if not private.is_admin() then
+    raise exception 'ADMIN_ONLY';
+  end if;
+
+  if nullif(trim(p_reason), '') is null then
+    raise exception 'REVOCATION_REASON_REQUIRED';
+  end if;
+
+  select *
+  into order_row
+  from public.purchase_orders
+  where id = p_order_id
+  for update;
+
+  if not found then
+    raise exception 'PURCHASE_ORDER_NOT_FOUND';
+  end if;
+
+  select *
+  into key_row
+  from public.exam_keys
+  where source_order_id = p_order_id
+  for update;
+
+  if found then
+    update public.exam_keys
+    set status = 'revoked',
+        deleted_at = now(),
+        updated_at = now()
+    where id = key_row.id;
+  end if;
+
+  update public.purchase_orders
+  set status = 'refunded',
+      failure_code = left(trim(p_reason), 200),
+      updated_at = now()
+  where id = p_order_id;
+
+  if to_regclass('public.admin_audit_log') is not null then
+    insert into public.admin_audit_log (
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      details
+    ) values (
+      (select auth.uid()),
+      'refund_revoke',
+      'purchase_order',
+      p_order_id::text,
+      jsonb_build_object('reason', left(trim(p_reason), 500), 'key_id', key_row.id)
+    );
+  end if;
+
+  return jsonb_build_object(
+    'order_id', p_order_id,
+    'status', 'refunded',
+    'key_revoked', key_row.id is not null
+  );
+end;
+$$;
+
+revoke all on function public.revoke_purchase_order(uuid, text)
+  from public, anon;
+grant execute on function public.revoke_purchase_order(uuid, text)
+  to authenticated;
+
+notify pgrst, 'reload schema';

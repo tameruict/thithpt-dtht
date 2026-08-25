@@ -1,0 +1,94 @@
+IMPLEMENTATION: production-improvement-20260821
+BRANCH: fix/exam-session-scoring-lifecycle
+CHANGED_FIELD: public.exam_rooms.mode = exam | practice
+ORIGINAL_HEAD_SHA256/GIT: 45830e06c7b89e56d6054f8de3b9ecb60fce502c
+MODIFIED_FILE_SHA256: 5a921221eace23aef64ba5739c34a7558b015d3fcfff9553e81a690dea6f0a05
+DIFF_FILE_SHA256: 6adebbb23b4889b6042b5c6c079f266e482e6ab1cfaff3616e9f1dd230a5cb62
+ROLLBACK_SH_SHA256: 63d122ae287691ec910594baa7feb45ce73f6d73b241b35d2830a520fd002f99
+
+ARTIFACTS
+MODIFIED_FILE=E:\Web-thi-thpt\artifacts\production-improvement-20260821\MODIFIED_FILE
+DIFF_FILE=E:\Web-thi-thpt\artifacts\production-improvement-20260821\DIFF_FILE.patch
+VERIFICATION=E:\Web-thi-thpt\artifacts\production-improvement-20260821\VERIFICATION.txt
+ROLLBACK=E:\Web-thi-thpt\artifacts\production-improvement-20260821\ROLLBACK.sh
+
+BASELINE
+COMMAND: npx tsc --noEmit
+INPUT: cwd=E:\Web-thi-thpt; Next.js 16.2.7 working tree before implementation
+LITERAL_OUTPUT: (empty)
+EXIT_STATUS: 0
+
+COMMAND: npm run lint -- --max-warnings=0
+INPUT: cwd=E:\Web-thi-thpt
+LITERAL_OUTPUT: > web-thi-thpt-next@0.1.0 lint | > eslint --max-warnings=0
+EXIT_STATUS: 0
+
+COMMAND: npm test
+INPUT: cwd=E:\Web-thi-thpt
+LITERAL_OUTPUT: Test Files 6 passed (6) | Tests 32 passed (32)
+EXIT_STATUS: 0
+
+COMMAND: npm run build
+INPUT: cwd=E:\Web-thi-thpt; Next.js 16.2.7
+LITERAL_OUTPUT: Compiled successfully | Generating static pages (13/13)
+EXIT_STATUS: 0
+
+COMMAND: npm audit --omit=dev
+INPUT: cwd=E:\Web-thi-thpt
+LITERAL_OUTPUT: 4 high severity vulnerabilities
+EXIT_STATUS: 1
+
+MODIFIED
+COMMAND: npx tsc --noEmit
+INPUT: cwd=E:\Web-thi-thpt; Next.js 16.3.1 + production foundation implementation
+LITERAL_OUTPUT: (empty)
+EXIT_STATUS: 0
+
+COMMAND: npm run lint -- --max-warnings=0
+INPUT: cwd=E:\Web-thi-thpt
+LITERAL_OUTPUT: > web-thi-thpt-next@0.1.0 lint | > eslint --max-warnings=0
+EXIT_STATUS: 0
+
+COMMAND: npm test
+INPUT: cwd=E:\Web-thi-thpt
+LITERAL_OUTPUT: Test Files 7 passed (7) | Tests 36 passed (36)
+EXIT_STATUS: 0
+
+COMMAND: npx supabase db push --linked --dry-run
+INPUT: cwd=E:\Web-thi-thpt; remote history=63 migrations
+LITERAL_OUTPUT: Would push these migrations: 20260820234029_production_foundation_v1.sql | Finished supabase db push.
+EXIT_STATUS: 0
+
+COMMAND: MCP execute_sql(<migration SQL> + <18 pgTAP assertions ending ROLLBACK>)
+INPUT: migration_sha256=5a921221eace23aef64ba5739c34a7558b015d3fcfff9553e81a690dea6f0a05; linked live schema
+LITERAL_OUTPUT: ok 18 - legacy staff compatibility wrapper is admin-only
+EXIT_STATUS: 0
+RESTORED_RESULT: room_mode_column=false; grading_column=false; new_migration_recorded=false; pg_jsonschema_schema=public; production_table=null; remote_migration_count=63
+
+COMMAND: npm run build
+INPUT: cwd=E:\Web-thi-thpt; Next.js 16.3.1
+LITERAL_OUTPUT: Compiled successfully | Generating static pages (11/11) | all application routes dynamic for per-request CSP nonce
+EXIT_STATUS: 0
+
+COMMAND: npm audit --omit=dev
+INPUT: cwd=E:\Web-thi-thpt
+LITERAL_OUTPUT: found 0 vulnerabilities
+EXIT_STATUS: 0
+
+COMMAND: production HTTP smoke against npm start -- -p 3005
+INPUT: http://127.0.0.1:3005
+LITERAL_OUTPUT: PATH=/ STATUS=200 | PATH=/subjects STATUS=307 LOCATION=/?redirect=%2Fsubjects | NONCE_MATCH=True | SCRIPT_COUNT=12 | X_POWERED_BY=
+EXIT_STATUS: 0
+
+ROLLBACK
+COMMAND: git worktree add --detach E:\Web-thi-thpt\.codex-tmp\rollback-test-final-20260821 HEAD; git apply --whitespace=nowarn DIFF_FILE.patch; TARGET_ROOT=/e/Web-thi-thpt/.codex-tmp/rollback-test-final-20260821 ROLLBACK.sh; vitest run --root E:\Web-thi-thpt\.codex-tmp\rollback-test-final-20260821
+INPUT: HEAD=45830e06c7b89e56d6054f8de3b9ecb60fce502c; PATCH_SHA256=6adebbb23b4889b6042b5c6c079f266e482e6ab1cfaff3616e9f1dd230a5cb62
+LITERAL_OUTPUT: FORWARD_APPLY_EXIT=0 | FORWARD_MODE_FIELD=True | ROLLBACK_RESULT=restored | RESTORED_GIT_STATUS= | RESTORED_HEAD_MATCH=True | RESTORED_PROXY_MATCH=True | FOUNDATION_FILE_EXISTS=False | Test Files 6 passed (6) | Tests 32 passed (32)
+EXIT_STATUS: 0
+RESTORED_BEHAVIOR_STATUS: exact HEAD/proxy hashes restored; new foundation migration removed; baseline unit behavior 32/32 passed
+
+DEPLOYMENT_STATE
+REPO_IMPLEMENTATION=changed and verified
+LINKED_LIVE_DATABASE=unchanged after rolled-back validation
+STAGING_BRANCH=not created; Supabase API returned HTTP 402 because Branching is unavailable on the current plan
+NEXT_REQUIRED_STATE=enable/create staging branch, apply the single dry-run migration there, enable Auth Turnstile and leaked-password protection, then deploy Vercel preview

@@ -1,5 +1,4 @@
 drop function if exists public.join_exam(text);
-
 create or replace function public.join_exam(
   p_code text,
   p_subject_code text default null
@@ -146,11 +145,8 @@ begin
   return v_session_id;
 end;
 $$;
-
 revoke all on function public.join_exam(text, text)
   from public, anon;
-
 grant execute on function public.join_exam(text, text)
   to authenticated;
-
 notify pgrst, 'reload schema';

@@ -37,6 +37,10 @@ Mở [http://localhost:3000](http://localhost:3000).
 
 ## Cơ sở dữ liệu (Supabase)
 
+Database live là nguồn chuẩn. Lịch sử remote được giữ nguyên; chỉ migration
+forward-only mới được triển khai. Các migration lịch sử chỉ có dấu `;` là marker
+đã fetch từ production, không đủ để tái tạo database bằng cách replay mù.
+
 Áp schema cho môi trường local (Docker + Supabase CLI):
 
 ```bash
@@ -49,7 +53,19 @@ npx supabase db reset
 npx supabase db push
 ```
 
-Migration nằm trong `supabase/migrations/`. Tài khoản quản trị được bootstrap theo email cấu hình trong migration `20260604100000_fix_auth_roles_and_triggers.sql`; các tài khoản khác mặc định role `student` (nâng quyền `teacher`/`admin` trong bảng `profiles`).
+Trước production, dựng project staging riêng bằng schema live và seed đã ẩn danh:
+
+```powershell
+powershell -File scripts/bootstrap-staging.ps1 `
+  -StagingDbUrl $env:STAGING_DATABASE_URL `
+  -SnapshotDirectory C:\secure\web-thi-thpt-staging
+```
+
+Audit toàn bộ nội dung Markdown + KaTeX ở chế độ chỉ đọc bằng
+`npm run content:audit`. Thêm `-- --apply` chỉ để tạo hàng chờ duyệt khi runner
+có secret server-side; nội dung mơ hồ không được tự động thay đổi.
+
+Migration nằm trong `supabase/migrations/`. Tài khoản quản trị được bootstrap theo email cấu hình trong migration `20260604100000_fix_auth_roles_and_triggers.sql`; các tài khoản khác mặc định role `student` và chỉ role `admin` có quyền quản trị.
 
 ## Kiểm thử & chất lượng
 

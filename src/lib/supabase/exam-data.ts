@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { AppSupabaseClient, Json } from './database';
 
 type PublishedRoomRecord = {
   id: string;
@@ -36,8 +36,11 @@ type RpcSessionQuestionRecord = {
   code: string;
   type: ExamQuestionType;
   content: string;
+  content_format_version?: number | null;
   image_url: string | null;
   image_alt_text: string | null;
+  image_width_px: number | null;
+  image_height_px: number | null;
   options:
     | {
         id: string;
@@ -46,6 +49,8 @@ type RpcSessionQuestionRecord = {
         content: string;
         image_url: string | null;
         image_alt_text: string | null;
+        image_width_px: number | null;
+        image_height_px: number | null;
       }[]
     | null;
   true_false_items:
@@ -117,6 +122,8 @@ export type ExamQuestionOption = {
   content: string;
   imageUrl: string | null;
   imageAltText: string | null;
+  imageWidth: number | null;
+  imageHeight: number | null;
 };
 
 export type ExamTrueFalseItem = {
@@ -135,8 +142,11 @@ export type ExamSessionQuestion = {
   code: string;
   type: ExamQuestionType;
   content: string;
+  contentFormatVersion: number;
   imageUrl: string | null;
   imageAltText: string | null;
+  imageWidth: number | null;
+  imageHeight: number | null;
   options: ExamQuestionOption[];
   trueFalseItems: ExamTrueFalseItem[];
 };
@@ -223,8 +233,11 @@ function mapRpcSessionQuestion(
     code: record.code,
     type: record.type,
     content: record.content,
+    contentFormatVersion: record.content_format_version ?? 1,
     imageUrl: record.image_url,
     imageAltText: record.image_alt_text,
+    imageWidth: record.image_width_px,
+    imageHeight: record.image_height_px,
     options: (record.options ?? []).map((option) => ({
       id: option.id,
       seq: option.seq,
@@ -232,6 +245,8 @@ function mapRpcSessionQuestion(
       content: option.content,
       imageUrl: option.image_url,
       imageAltText: option.image_alt_text,
+      imageWidth: option.image_width_px,
+      imageHeight: option.image_height_px,
     })),
     trueFalseItems: (record.true_false_items ?? []).map((item) => ({
       id: item.id,
@@ -338,7 +353,7 @@ const PUBLISHED_ROOM_COLUMNS = [
 ].join(',');
 
 async function loadPublishedRooms(
-  supabase: SupabaseClient,
+  supabase: AppSupabaseClient,
   subjectCode?: string,
 ): Promise<ExamRoomSummary[]> {
   let query = supabase
@@ -359,7 +374,7 @@ async function loadPublishedRooms(
 }
 
 export function fetchPublishedRooms(
-  supabase: SupabaseClient,
+  supabase: AppSupabaseClient,
   subjectCode?: string,
 ): Promise<ExamRoomSummary[]> {
   const key = `rooms:${subjectCode ? subjectCode.toUpperCase() : 'all'}`;
@@ -395,7 +410,7 @@ function attachRoomCounts(
 }
 
 async function loadActiveSubjects(
-  supabase: SupabaseClient,
+  supabase: AppSupabaseClient,
 ): Promise<SubjectBase[]> {
   const { data, error } = await supabase
     .from('subjects')
@@ -416,7 +431,7 @@ async function loadActiveSubjects(
  * RPC); hàm này giữ lại cho các consumer khác.
  */
 export async function fetchSubjectsAndRooms(
-  supabase: SupabaseClient,
+  supabase: AppSupabaseClient,
 ): Promise<{ subjects: SubjectSummary[]; rooms: ExamRoomSummary[] }> {
   const [subjectBases, rooms] = await Promise.all([
     cachedReference('subjects:active', () => loadActiveSubjects(supabase)),
@@ -429,8 +444,20 @@ export async function fetchSubjectsAndRooms(
 export type SubjectsDashboard = {
   subjects: SubjectSummary[];
   rooms: ExamRoomSummary[];
+  practice: PracticeAvailability[];
+  attemptBalance: number;
   role: string | null;
   activeSession: ActiveSessionInfo | null;
+};
+
+export type PracticeAvailability = {
+  subjectCode: string;
+  subjectName: string;
+  roomId: string | null;
+  roomName: string | null;
+  attemptCost: number;
+  approvedQuestionCount: number;
+  available: boolean;
 };
 
 /**
@@ -440,7 +467,7 @@ export type SubjectsDashboard = {
  * trang bắn 3-4 request song song tới Supabase (Mumbai); nay chỉ 1.
  */
 export async function fetchSubjectsDashboard(
-  supabase: SupabaseClient,
+  supabase: AppSupabaseClient,
 ): Promise<SubjectsDashboard> {
   const { data, error } = await supabase.rpc('get_subjects_dashboard');
   if (error) throw error;
@@ -451,6 +478,16 @@ export async function fetchSubjectsDashboard(
   const payload = data as {
     subjects: SubjectRecord[] | null;
     rooms: PublishedRoomRecord[] | null;
+    practice?: {
+      subject_code: string;
+      subject_name: string;
+      room_id: string | null;
+      room_name: string | null;
+      attempt_cost: number;
+      approved_question_count: number;
+      available: boolean | null;
+    }[] | null;
+    attempt_balance?: number | string | null;
     profile: { role?: string | null } | null;
     active_session: Record<string, unknown> | null;
   };
@@ -461,13 +498,23 @@ export async function fetchSubjectsDashboard(
   return {
     subjects: attachRoomCounts(subjectBases, rooms),
     rooms,
+    practice: (payload.practice ?? []).map((practice) => ({
+      subjectCode: practice.subject_code,
+      subjectName: practice.subject_name,
+      roomId: practice.room_id,
+      roomName: practice.room_name,
+      attemptCost: Number(practice.attempt_cost ?? 3),
+      approvedQuestionCount: Number(practice.approved_question_count ?? 0),
+      available: Boolean(practice.available),
+    })),
+    attemptBalance: Number(payload.attempt_balance ?? 0),
     role: payload.profile?.role ?? null,
     activeSession: mapActiveSession(payload.active_session),
   };
 }
 
 export async function fetchSubjectWithRooms(
-  supabase: SupabaseClient,
+  supabase: AppSupabaseClient,
   subjectCode: string,
 ) {
   const normalizedCode = subjectCode.toUpperCase();
@@ -500,7 +547,7 @@ export async function fetchSubjectWithRooms(
 }
 
 export async function fetchExamRoomById(
-  supabase: SupabaseClient,
+  supabase: AppSupabaseClient,
   roomId: string,
 ) {
   const { data, error } = await supabase
@@ -530,6 +577,29 @@ export async function fetchExamRoomById(
   return data ? mapRoom(data as unknown as PublishedRoomRecord) : null;
 }
 
+export async function startPracticeSession(
+  supabase: AppSupabaseClient,
+  input: {
+    subjectCode: string;
+    questionCount: number;
+    knowledgeFieldIds?: number[];
+    difficulties?: number[];
+  },
+) {
+  const { data, error } = await supabase.rpc('start_practice_session', {
+    p_subject_code: input.subjectCode.toUpperCase(),
+    p_question_count: input.questionCount,
+    p_knowledge_field_ids: input.knowledgeFieldIds?.length
+      ? input.knowledgeFieldIds
+      : null,
+    p_difficulties: input.difficulties?.length ? input.difficulties : null,
+  });
+
+  if (error) throw error;
+  if (!data) throw new Error('Không tạo được phiên tự luyện.');
+  return data;
+}
+
 /**
  * Tải toàn bộ dữ liệu 1 phiên thi qua RPC get_active_exam_session_full: session +
  * room + câu hỏi + đáp án đã chọn của chính thí sinh, GỘP trong 1 round-trip.
@@ -537,7 +607,7 @@ export async function fetchExamRoomById(
  * lấy questions+room -> lấy answers. RPC không lộ đáp án đúng (đang làm bài).
  */
 export async function fetchExamSessionData(
-  supabase: SupabaseClient,
+  supabase: AppSupabaseClient,
   sessionId: string,
 ): Promise<ExamSessionData> {
   const { data, error } = await supabase.rpc('get_active_exam_session_full', {
@@ -591,7 +661,7 @@ export type SessionAnswerInput = {
  * không nhận từ client, nên payload luôn khớp với RLS của phiên đang làm.
  */
 export async function saveSessionAnswers(
-  supabase: SupabaseClient,
+  supabase: AppSupabaseClient,
   sessionId: string,
   rows: SessionAnswerInput[],
 ) {
@@ -606,7 +676,7 @@ export async function saveSessionAnswers(
 
   const { error } = await supabase.rpc('save_session_answers', {
     p_session_id: sessionId,
-    p_answers: payload,
+    p_answers: payload as unknown as Json,
   });
 
   if (error) throw error;
@@ -644,7 +714,7 @@ function mapActiveSession(
  * "Tiếp tục bài thi". RPC tự kết thúc các phiên đã quá hạn trước khi trả về.
  */
 export async function getActiveSession(
-  supabase: SupabaseClient,
+  supabase: AppSupabaseClient,
 ): Promise<ActiveSessionInfo | null> {
   const { data, error } = await supabase.rpc('get_active_session');
   if (error) throw error;
@@ -683,6 +753,8 @@ export type SessionReviewQuestion = {
   content: string;
   imageUrl: string | null;
   imageAltText: string | null;
+  imageWidth: number | null;
+  imageHeight: number | null;
   options: SessionReviewOption[];
   trueFalseItems: SessionReviewTrueFalseItem[];
   shortAnswerKeys: SessionReviewShortAnswerKey[];
@@ -698,6 +770,8 @@ export type SessionReview = {
     submittedAt: string | null;
     dueAt: string | null;
     scoredAt: string | null;
+    gradingStatus: 'pending_auto' | 'pending_manual' | 'scored' | 'failed';
+    gradingError: string | null;
     score: number | null;
     maxScore: number;
     examRoomId: string;
@@ -719,6 +793,8 @@ type RawReviewOption = {
   content: string;
   image_url: string | null;
   image_alt_text: string | null;
+  image_width_px?: number | null;
+  image_height_px?: number | null;
   correct: boolean;
 };
 
@@ -741,6 +817,8 @@ type RawReviewQuestion = {
   content: string;
   image_url: string | null;
   image_alt_text: string | null;
+  image_width_px?: number | null;
+  image_height_px?: number | null;
   options: RawReviewOption[] | null;
   true_false_items: RawReviewTfItem[] | null;
   short_answer_keys: { display: string | null; answer_type: string | null }[] | null;
@@ -759,7 +837,7 @@ type RawReviewQuestion = {
  * chỉ cho chủ phiên / staff). Dùng cho trang /result sau khi đã nộp.
  */
 export async function fetchSessionReview(
-  supabase: SupabaseClient,
+  supabase: AppSupabaseClient,
   sessionId: string,
 ): Promise<SessionReview> {
   const { data, error } = await supabase.rpc('get_session_review', {
@@ -796,6 +874,8 @@ export async function fetchSessionReview(
       content: q.content,
       imageUrl: q.image_url,
       imageAltText: q.image_alt_text,
+      imageWidth: q.image_width_px ?? null,
+      imageHeight: q.image_height_px ?? null,
       options: (q.options ?? []).map((o) => ({
         id: o.id,
         seq: o.seq,
@@ -803,6 +883,8 @@ export async function fetchSessionReview(
         content: o.content,
         imageUrl: o.image_url,
         imageAltText: o.image_alt_text,
+        imageWidth: o.image_width_px ?? null,
+        imageHeight: o.image_height_px ?? null,
         correct: Boolean(o.correct),
       })),
       trueFalseItems: (q.true_false_items ?? []).map((t) => ({
@@ -840,6 +922,10 @@ export async function fetchSessionReview(
       submittedAt: (s.submitted_at as string | null) ?? null,
       dueAt: (s.due_at as string | null) ?? null,
       scoredAt: (s.scored_at as string | null) ?? null,
+      gradingStatus:
+        (s.grading_status as SessionReview['session']['gradingStatus'] | undefined) ??
+        (s.score === null || s.score === undefined ? 'pending_auto' : 'scored'),
+      gradingError: (s.grading_error as string | null) ?? null,
       score: s.score === null || s.score === undefined ? null : Number(s.score),
       maxScore: Number(s.max_score ?? 10),
       examRoomId: String(s.exam_room_id),

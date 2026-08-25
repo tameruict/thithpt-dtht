@@ -1,23 +1,17 @@
 alter table public.key_batches
   add column if not exists expires_at timestamptz;
-
 alter table public.key_batches
   add column if not exists total_attempts int not null default 3;
-
 alter table public.key_batches
   drop constraint if exists key_batches_total_attempts_positive;
-
 alter table public.key_batches
   add constraint key_batches_total_attempts_positive
   check (total_attempts > 0);
-
 create index if not exists key_batches_room_created_idx
   on public.key_batches(exam_room_id, created_at desc);
-
 create index if not exists exam_keys_expires_status_idx
   on public.exam_keys(expires_at, status)
   where expires_at is not null;
-
 insert into public.exam_rooms (
   blueprint_id,
   subject_code,
@@ -53,7 +47,6 @@ set
   total_attempts_default = excluded.total_attempts_default,
   published_at = coalesce(public.exam_rooms.published_at, excluded.published_at),
   updated_at = now();
-
 create or replace view public.admin_exam_room_options
 with (security_invoker = true)
 as
@@ -71,7 +64,6 @@ from public.exam_rooms er
 join public.subjects s on s.code = er.subject_code
 where private.is_staff()
   and er.status <> 'archived';
-
 create or replace view public.admin_exam_key_overview
 with (security_invoker = true)
 as
@@ -99,7 +91,6 @@ join public.subjects s on s.code = er.subject_code
 left join public.students st on st.id = ek.assigned_to
 left join public.key_batches kb on kb.id = ek.batch_id
 where private.is_staff();
-
 create or replace function public.generate_exam_keys(
   p_exam_room_id uuid,
   p_quantity int,
@@ -245,12 +236,9 @@ begin
   end loop;
 end;
 $$;
-
 revoke all on function public.generate_exam_keys(uuid, int, timestamptz, text)
   from public, anon;
-
 grant execute on function public.generate_exam_keys(uuid, int, timestamptz, text)
   to authenticated;
-
 grant select on public.admin_exam_room_options to authenticated;
 grant select on public.admin_exam_key_overview to authenticated;

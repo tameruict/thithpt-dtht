@@ -1,0 +1,4 @@
+COMMAND: npm audit --omit=dev
+INPUT: cwd=E:\Web-thi-thpt
+found 0 vulnerabilities
+EXIT_STATUS: 0

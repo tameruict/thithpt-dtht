@@ -4,7 +4,8 @@ import type {
   AuthoringKnowledgeField,
   AuthoringSubject,
 } from '@/lib/authoring/types';
-import { requireStaff } from '@/lib/supabase/staff';
+import { requireAdmin } from '@/lib/supabase/admin';
+import type { Database } from '@/lib/supabase/database';
 
 export type ComposePaper = {
   id: string;
@@ -81,7 +82,7 @@ function actionError(error: unknown): string {
 }
 
 export async function loadComposeData(): Promise<ComposeData> {
-  const { supabase } = await requireStaff();
+  const { supabase } = await requireAdmin();
   const [papersRes, subjectsRes, knowledgeRes] = await Promise.all([
     supabase
       .from('exam_room_papers')
@@ -165,7 +166,7 @@ export async function searchBankQuestions(input: {
   query?: string;
 }) {
   try {
-    const { supabase } = await requireStaff();
+    const { supabase } = await requireAdmin();
     let request = supabase
       .from('questions')
       .select('id,code,type,difficulty,content,status')
@@ -174,7 +175,12 @@ export async function searchBankQuestions(input: {
       .order('created_at', { ascending: false })
       .limit(100);
 
-    if (input.type) request = request.eq('type', input.type);
+    if (input.type) {
+      request = request.eq(
+        'type',
+        input.type as Database['public']['Enums']['question_type'],
+      );
+    }
     if (input.difficulty) request = request.eq('difficulty', input.difficulty);
     if (input.knowledgeFieldId) {
       request = request.eq('knowledge_field_id', input.knowledgeFieldId);
@@ -212,7 +218,7 @@ export async function searchBankQuestions(input: {
 
 export async function getComposition(paperId: string) {
   try {
-    const { supabase } = await requireStaff();
+    const { supabase } = await requireAdmin();
     const { data, error } = await supabase.rpc('get_paper_composition', {
       p_paper_id: paperId,
     });
@@ -225,7 +231,7 @@ export async function getComposition(paperId: string) {
 
 export async function addToComposition(paperId: string, questionIds: string[]) {
   try {
-    const { supabase } = await requireStaff();
+    const { supabase } = await requireAdmin();
     const { data, error } = await supabase.rpc('compose_add_questions', {
       p_paper_id: paperId,
       p_question_ids: questionIds,
@@ -242,7 +248,7 @@ export async function removeFromComposition(
   questionId: string,
 ) {
   try {
-    const { supabase } = await requireStaff();
+    const { supabase } = await requireAdmin();
     const { data, error } = await supabase.rpc('compose_remove_question', {
       p_paper_id: paperId,
       p_question_id: questionId,

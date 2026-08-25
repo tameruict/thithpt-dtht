@@ -1,9 +1,7 @@
 alter table public.exam_keys
   add column if not exists paper_id uuid;
-
 alter table public.exam_sessions
   add column if not exists paper_id uuid;
-
 do $$
 begin
   if not exists (
@@ -33,21 +31,16 @@ begin
   end if;
 end;
 $$;
-
 comment on column public.exam_keys.paper_id is
   'Preassigned paper variant for this key. Null means the session chooses a paper from the selected room.';
-
 comment on column public.exam_sessions.paper_id is
   'Paper variant used by this concrete exam session.';
-
 create index if not exists idx_exam_keys_paper
   on public.exam_keys(paper_id)
   where paper_id is not null;
-
 create index if not exists idx_exam_sessions_paper
   on public.exam_sessions(paper_id)
   where paper_id is not null;
-
 create or replace function private.fn_exam_keys_sync_paper_room()
 returns trigger
 language plpgsql
@@ -79,14 +72,12 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_exam_keys_sync_paper_room on public.exam_keys;
 create trigger trg_exam_keys_sync_paper_room
   before insert or update of exam_room_id, paper_id
   on public.exam_keys
   for each row
   execute function private.fn_exam_keys_sync_paper_room();
-
 drop policy if exists "Users can start sessions for their active keys" on public.exam_sessions;
 create policy "Users can start sessions for their active keys"
 on public.exam_sessions
@@ -122,10 +113,8 @@ with check (
     )
   )
 );
-
 drop function if exists public.activate_exam_key(text);
 drop function if exists public.activate_exam_key(text, text);
-
 create or replace function public.activate_exam_key(
   p_key_code text,
   p_subject_code text default null
@@ -340,16 +329,12 @@ exception
     );
 end;
 $$;
-
 revoke all on function public.activate_exam_key(text, text)
   from public, anon;
-
 grant execute on function public.activate_exam_key(text, text)
   to authenticated;
-
 drop function if exists public.join_exam(text);
 drop function if exists public.join_exam(text, text);
-
 create or replace function public.join_exam(
   p_code text,
   p_subject_code text default null
@@ -559,17 +544,12 @@ begin
   return v_session_id;
 end;
 $$;
-
 revoke all on function public.join_exam(text, text)
   from public, anon;
-
 grant execute on function public.join_exam(text, text)
   to authenticated;
-
 comment on function public.activate_exam_key(text, text) is
   'Claims an exam key for the authenticated student and resolves the available room/paper when possible.';
-
 comment on function public.join_exam(text, text) is
   'Claims an exam key, resolves the room paper, creates an exam session, and copies questions for that paper blueprint.';
-
 notify pgrst, 'reload schema';

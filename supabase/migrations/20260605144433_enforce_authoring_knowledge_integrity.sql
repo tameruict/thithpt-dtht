@@ -125,4 +125,4 @@ revoke all on function public.publish_authoring_document(uuid, bigint, jsonb)
 grant execute on function public.publish_authoring_document(uuid, bigint, jsonb)
   to authenticated;
 
-notify pgrst, 'reload schema';
+notify pgrst, 'reload schema';;

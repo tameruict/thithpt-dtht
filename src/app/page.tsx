@@ -10,6 +10,9 @@ import { createClient } from '@/lib/supabase/client';
 import { hasSupabaseEnv } from '@/lib/supabase/env';
 import { loadCandidateProfile } from '@/lib/supabase/user-profile';
 import { translateAuthError } from '@/lib/supabase/auth-errors';
+import CaptchaChallenge, {
+  turnstileSiteKey,
+} from '@/components/auth/CaptchaChallenge';
 
 function getPostLoginPath() {
   const redirect = new URLSearchParams(window.location.search).get('redirect');
@@ -26,6 +29,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const router = useRouter();
   const login = useExamStore((state) => state.login);
 
@@ -68,10 +72,15 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      if (turnstileSiteKey && !captchaToken) {
+        setError('Vui lòng hoàn tất xác minh chống bot.');
+        return;
+      }
       const supabase = createClient();
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
+        options: { captchaToken: captchaToken ?? undefined },
       });
 
       if (authError) {
@@ -161,10 +170,11 @@ export default function LoginPage() {
 
         <form onSubmit={handleLogin}>
           <div className={styles.formGroup}>
-            <label className={styles.label}>Email <span className={styles.required}>*</span></label>
+            <label className={styles.label} htmlFor="login-email">Email <span className={styles.required}>*</span></label>
             <div className={styles.inputWrapper}>
               <User className={styles.inputIcon} />
               <input 
+                id="login-email"
                 type="email" 
                 required 
                 className={styles.input} 
@@ -177,10 +187,11 @@ export default function LoginPage() {
           </div>
 
           <div className={styles.formGroup}>
-            <label className={styles.label}>Mật khẩu <span className={styles.required}>*</span></label>
+            <label className={styles.label} htmlFor="login-password">Mật khẩu <span className={styles.required}>*</span></label>
             <div className={styles.inputWrapper}>
               <Lock className={styles.inputIcon} />
               <input 
+                id="login-password"
                 type={showPassword ? "text" : "password"} 
                 required 
                 className={styles.input} 
@@ -200,7 +211,8 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {error && <p className={styles.errorText}>{error}</p>}
+          <CaptchaChallenge onToken={setCaptchaToken} />
+          {error && <p className={styles.errorText} role="alert" aria-live="assertive">{error}</p>}
 
           <button
             type="submit"

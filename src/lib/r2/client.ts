@@ -8,7 +8,11 @@
 //   R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY,
 //   R2_BUCKET_NAME, R2_PUBLIC_URL (base URL public/custom domain, không kèm path).
 
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  DeleteObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 
 export const ALLOWED_IMAGE_TYPES = [
   'image/png',
@@ -66,6 +70,10 @@ export function r2PublicUrl(objectKey: string): string {
   return `${base}/${objectKey.replace(/^\/+/, '')}`;
 }
 
+export function r2BucketName(): string {
+  return requiredEnv('R2_BUCKET_NAME');
+}
+
 /** Upload một object lên R2. Không đăng ký DB — việc đó do RPC riêng lo. */
 export async function putR2Object(params: {
   key: string;
@@ -75,11 +83,22 @@ export async function putR2Object(params: {
   const client = getR2Client();
   await client.send(
     new PutObjectCommand({
-      Bucket: requiredEnv('R2_BUCKET_NAME'),
+      Bucket: r2BucketName(),
       Key: params.key,
       Body: params.body,
       ContentType: params.contentType,
       CacheControl: 'public, max-age=31536000, immutable',
+    }),
+  );
+}
+
+/** Compensating action when the database registry write fails after upload. */
+export async function deleteR2Object(objectKey: string): Promise<void> {
+  const client = getR2Client();
+  await client.send(
+    new DeleteObjectCommand({
+      Bucket: r2BucketName(),
+      Key: objectKey,
     }),
   );
 }

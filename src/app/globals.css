@@ -478,3 +478,12 @@ button:disabled,
     animation-delay: 0s !important;
   }
 }
+.route-error {
+  min-height: 70dvh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+}

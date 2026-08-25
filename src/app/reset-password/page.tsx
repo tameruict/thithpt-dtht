@@ -9,6 +9,13 @@ import { createClient } from '@/lib/supabase/client';
 import { hasSupabaseEnv } from '@/lib/supabase/env';
 import { loadCandidateProfile } from '@/lib/supabase/user-profile';
 import { translateAuthError } from '@/lib/supabase/auth-errors';
+import {
+  getPasswordPolicyError,
+  MIN_PASSWORD_LENGTH,
+} from '@/lib/supabase/password-policy';
+import CaptchaChallenge, {
+  turnstileSiteKey,
+} from '@/components/auth/CaptchaChallenge';
 import { useExamStore } from '@/store/useExamStore';
 
 const RESEND_COOLDOWN = 60;
@@ -27,6 +34,7 @@ function ResetPasswordForm() {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const router = useRouter();
   const login = useExamStore((state) => state.login);
 
@@ -47,9 +55,16 @@ function ResetPasswordForm() {
     setError('');
     setLoading(true);
     try {
+      if (turnstileSiteKey && !captchaToken) {
+        setError('Vui lòng hoàn tất xác minh chống bot.');
+        return false;
+      }
       const supabase = createClient();
       // Không truyền redirectTo: dùng luồng mã OTP thay vì link đăng nhập.
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(targetEmail);
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(
+        targetEmail,
+        { captchaToken: captchaToken ?? undefined },
+      );
       if (resetError) {
         setError(translateAuthError(resetError.message));
         return false;
@@ -93,8 +108,9 @@ function ResetPasswordForm() {
       setError(`Mã OTP gồm ${OTP_LENGTH} số. Vui lòng nhập đầy đủ.`);
       return;
     }
-    if (password.length < 6) {
-      setError('Mật khẩu mới phải có ít nhất 6 ký tự.');
+    const passwordError = getPasswordPolicyError(password);
+    if (passwordError) {
+      setError(passwordError);
       return;
     }
     if (password !== confirmPassword) {
@@ -175,10 +191,11 @@ function ResetPasswordForm() {
 
             <form onSubmit={handleRequest}>
               <div className={styles.formGroup}>
-                <label className={styles.label}>Email <span className={styles.required}>*</span></label>
+                <label className={styles.label} htmlFor="recovery-email">Email <span className={styles.required}>*</span></label>
                 <div className={styles.inputWrapper}>
                   <Mail className={styles.inputIcon} />
                   <input
+                    id="recovery-email"
                     type="email"
                     required
                     className={styles.input}
@@ -190,7 +207,8 @@ function ResetPasswordForm() {
                 </div>
               </div>
 
-              {error && <p className={styles.errorText}>{error}</p>}
+              <CaptchaChallenge onToken={setCaptchaToken} />
+              {error && <p className={styles.errorText} role="alert" aria-live="assertive">{error}</p>}
 
               <button type="submit" className={styles.submitBtn} disabled={loading}>
                 {loading ? 'Đang gửi…' : 'Gửi mã OTP'}
@@ -206,10 +224,11 @@ function ResetPasswordForm() {
 
             <form onSubmit={handleVerify}>
               <div className={styles.formGroup}>
-                <label className={styles.label}>Mã OTP <span className={styles.required}>*</span></label>
+                <label className={styles.label} htmlFor="recovery-otp">Mã OTP <span className={styles.required}>*</span></label>
                 <div className={styles.inputWrapper}>
                   <KeyRound className={styles.inputIcon} />
                   <input
+                    id="recovery-otp"
                     type="text"
                     required
                     inputMode="numeric"
@@ -224,15 +243,17 @@ function ResetPasswordForm() {
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.label}>Mật khẩu mới <span className={styles.required}>*</span></label>
+                <label className={styles.label} htmlFor="recovery-password">Mật khẩu mới <span className={styles.required}>*</span></label>
                 <div className={styles.inputWrapper}>
                   <Lock className={styles.inputIcon} />
                   <input
+                    id="recovery-password"
                     type={showPassword ? 'text' : 'password'}
                     required
+                    minLength={MIN_PASSWORD_LENGTH}
                     className={styles.input}
                     value={password}
-                    placeholder="Tối thiểu 6 ký tự"
+                    placeholder="Tối thiểu 10 ký tự, gồm chữ và số"
                     autoComplete="new-password"
                     onChange={(e) => setPassword(e.target.value)}
                   />
@@ -248,10 +269,11 @@ function ResetPasswordForm() {
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.label}>Nhập lại mật khẩu <span className={styles.required}>*</span></label>
+                <label className={styles.label} htmlFor="recovery-password-confirm">Nhập lại mật khẩu <span className={styles.required}>*</span></label>
                 <div className={styles.inputWrapper}>
                   <Lock className={styles.inputIcon} />
                   <input
+                    id="recovery-password-confirm"
                     type={showPassword ? 'text' : 'password'}
                     required
                     className={styles.input}
@@ -263,7 +285,7 @@ function ResetPasswordForm() {
                 </div>
               </div>
 
-              {error && <p className={styles.errorText}>{error}</p>}
+              {error && <p className={styles.errorText} role="alert" aria-live="assertive">{error}</p>}
               {message && <p className={`${styles.errorText} ${styles.successText}`}>{message}</p>}
 
               <button type="submit" className={styles.submitBtn} disabled={loading}>

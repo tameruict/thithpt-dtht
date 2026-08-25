@@ -167,12 +167,16 @@ function toRenderableQuestion(q: SessionReviewQuestion): RenderableQuestion {
     content: q.content,
     imageUrl: q.imageUrl,
     imageAltText: q.imageAltText,
+    imageWidth: q.imageWidth,
+    imageHeight: q.imageHeight,
     options: q.options.map((o) => ({
       id: o.id,
       label: o.label,
       content: o.content,
       imageUrl: o.imageUrl,
       imageAltText: o.imageAltText,
+      imageWidth: o.imageWidth,
+      imageHeight: o.imageHeight,
       correct: o.correct,
     })),
     trueFalseItems: q.trueFalseItems.map((t) => ({
@@ -253,7 +257,7 @@ function getCorrectAnswerLabel(question: SessionReviewQuestion): string {
 }
 
 /* ─── Component ──────────────────────────────────────── */
-export default function ResultPage() {
+export default function ResultPage({ sessionId }: { sessionId?: string }) {
   const router = useRouter();
   const {
     hasHydrated,
@@ -263,8 +267,9 @@ export default function ResultPage() {
     clearDraft,
     candidateInfo,
     roomKey,
-    currentSessionId,
+    currentSessionId: storedSessionId,
   } = useExamStore();
+  const currentSessionId = sessionId ?? storedSessionId;
   const supabase = useMemo(() => createClient(), []);
   const [review, setReview] = useState<SessionReview | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -279,15 +284,15 @@ export default function ResultPage() {
   }, [clearDraft]);
 
   useEffect(() => {
-    if (hasHydrated && !candidateInfo) {
+    if (hasHydrated && !candidateInfo && !sessionId) {
       router.push('/');
       return;
     }
 
-    if (hasHydrated && (!roomKey || !currentSessionId)) {
+    if (hasHydrated && (!currentSessionId || (!sessionId && !roomKey))) {
       router.push('/');
     }
-  }, [candidateInfo, currentSessionId, hasHydrated, roomKey, router]);
+  }, [candidateInfo, currentSessionId, hasHydrated, roomKey, router, sessionId]);
 
   useEffect(() => {
     if (!hasHydrated || !currentSessionId) return;
@@ -303,7 +308,11 @@ export default function ResultPage() {
         setLoadError('');
 
         // Điểm chưa có (đang chấm) -> thử lại tối đa 3 lần, cách 1.5s.
-        if (data.session.score === null && attempt < 3) {
+        if (
+          data.session.gradingStatus === 'pending_auto' &&
+          data.session.score === null &&
+          attempt < 3
+        ) {
           setIsScoring(true);
           window.setTimeout(() => {
             if (mounted) void run(attempt + 1);
@@ -386,7 +395,7 @@ export default function ResultPage() {
     router.push('/subjects');
   };
 
-  if (!hasHydrated || !candidateInfo) return null;
+  if (!hasHydrated || (!candidateInfo && !sessionId)) return null;
 
   return (
     <div className={styles.screen}>
@@ -430,6 +439,18 @@ export default function ResultPage() {
                 <h2>
                   {subjectName} — {examRoomName}
                 </h2>
+                {review.session.gradingStatus === 'pending_manual' && (
+                  <p className={styles.pendingNotice} role="status" aria-live="polite">
+                    Điểm hiện tại là điểm tự động tạm tính. Bài còn chờ admin chấm
+                    phần tự luận.
+                  </p>
+                )}
+                {review.session.gradingStatus === 'failed' && (
+                  <p className={styles.gradingError} role="alert">
+                    Hệ thống chưa hoàn tất chấm tự động. Phiên đã được đưa vào hàng
+                    đợi phục hồi.
+                  </p>
+                )}
                 <div className={styles.scoreHero}>
                   <ScoreDonut percent={progressPercent} score10={score10} />
                   <div className={styles.heroDetails}>

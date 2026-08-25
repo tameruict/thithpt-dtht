@@ -244,6 +244,57 @@
   font-weight: 750;
 }
 
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.muted {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.purchaseList {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.purchaseRow {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.purchaseRow > div {
+  display: grid;
+  gap: 4px;
+}
+
+.purchaseRow span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.purchaseAmount {
+  color: var(--primary);
+  font-weight: 800;
+}
+
+.purchaseStatus {
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 @media (max-width: 960px) {
   .header {
     align-items: flex-start;

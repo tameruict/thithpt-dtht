@@ -6,6 +6,18 @@ import {
 } from './parser';
 
 describe('parseAuthoringSource', () => {
+  it('blocks publishing malformed KaTeX content', () => {
+    const parsed = parseAuthoringSource(
+      String.raw`\begin{question}[type=short_answer,difficulty=2]
+Giải phương trình $\frac{x}{2}.
+\answer{1}
+\end{question}`,
+      'question',
+    );
+
+    expect(parsed.errors.some((error) => error.message.includes('delimiter'))).toBe(true);
+  });
+
   it('parses question and option R2 images', () => {
     const result = parseAuthoringSource(
       String.raw`\begin{question}[type=multiple_choice,difficulty=2]

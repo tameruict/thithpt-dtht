@@ -13,20 +13,68 @@
   font-size: 0.82rem;
 }
 
-.inlineMath {
-  display: inline;
+.mathContent {
+  display: contents;
 }
 
-.displayMath {
-  display: block;
+.mathParagraph {
+  white-space: pre-wrap;
+}
+
+.mathContent :global(.katex) {
+  max-width: 100%;
+  font-size: 1.04em;
+}
+
+.mathContent :global(.katex-display) {
   max-width: 100%;
   margin: 14px 0;
   overflow-x: auto;
+  overflow-y: hidden;
+  text-align: center;
+}
+
+.mathContent table {
+  display: table;
+  width: max-content;
+  max-width: 100%;
+  margin: 14px auto;
+  border-collapse: collapse;
+  overflow-x: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.mathContent th,
+.mathContent td {
+  min-width: 3rem;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  text-align: center;
+  vertical-align: middle;
+}
+
+.mathContent th {
+  background: var(--surface-soft);
+  font-weight: 700;
+}
+
+.invalidMath {
+  text-decoration: underline wavy color-mix(in srgb, var(--danger, #b42318) 70%, transparent);
+  text-underline-offset: 4px;
+}
+
+.mathError {
+  display: block;
+  margin-top: 6px;
+  color: var(--danger, #b42318);
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .questionImage {
   display: block;
   width: auto;
+  height: auto;
   max-width: min(100%, 760px);
   max-height: 520px;
   margin: 16px auto;

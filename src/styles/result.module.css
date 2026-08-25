@@ -660,3 +660,19 @@
     min-width: 68px;
   }
 }
+.pendingNotice,
+.gradingError {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+.pendingNotice {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.gradingError {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+}

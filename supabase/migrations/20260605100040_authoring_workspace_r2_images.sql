@@ -1,23 +1,18 @@
 alter table public.question_options
   add column if not exists r2_asset_id uuid references public.r2_assets(id) on delete set null,
   add column if not exists image_alt_text text;
-
 create index if not exists idx_question_options_r2_asset
   on public.question_options(r2_asset_id)
   where r2_asset_id is not null;
-
 alter table public.exam_room_papers
   add column if not exists status text not null default 'draft',
   add column if not exists source_paper_id uuid references public.exam_room_papers(id) on delete set null,
   add column if not exists published_at timestamptz;
-
 alter table public.exam_room_papers
   drop constraint if exists exam_room_papers_status_check;
-
 alter table public.exam_room_papers
   add constraint exam_room_papers_status_check
   check (status in ('draft', 'published', 'archived'));
-
 update public.exam_room_papers paper
 set
   status = case
@@ -30,13 +25,10 @@ set
   end
 from public.exam_rooms room
 where room.id = paper.exam_room_id;
-
 create index if not exists idx_exam_room_papers_status
   on public.exam_room_papers(exam_room_id, status, is_default);
-
 alter table public.exam_room_questions
   add column if not exists paper_id uuid references public.exam_room_papers(id) on delete cascade;
-
 update public.exam_room_questions placement
 set paper_id = coalesce(
   (
@@ -56,23 +48,18 @@ set paper_id = coalesce(
   )
 )
 where placement.paper_id is null;
-
 alter table public.exam_room_questions
   alter column paper_id set not null;
-
 alter table public.exam_room_questions
   drop constraint if exists exam_room_questions_pkey,
   drop constraint if exists exam_room_questions_exam_room_id_question_id_key;
-
 alter table public.exam_room_questions
   add constraint exam_room_questions_pkey
     primary key (paper_id, blueprint_section_id, seq),
   add constraint exam_room_questions_paper_question_key
     unique (paper_id, question_id);
-
 create index if not exists idx_exam_room_questions_paper
   on public.exam_room_questions(paper_id, blueprint_section_id, seq);
-
 create or replace function private.ensure_exam_room_question_matches_blueprint()
 returns trigger
 language plpgsql
@@ -130,10 +117,8 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_exam_sessions_populate_questions on public.exam_sessions;
 drop function if exists public.trg_populate_session_questions();
-
 create table if not exists public.exam_authoring_documents (
   id uuid primary key default extensions.gen_random_uuid(),
   mode text not null check (mode in ('question', 'paper')),
@@ -154,33 +139,25 @@ create table if not exists public.exam_authoring_documents (
     or (mode = 'paper' and paper_id is not null)
   )
 );
-
 create unique index if not exists uq_exam_authoring_documents_paper
   on public.exam_authoring_documents(paper_id)
   where paper_id is not null;
-
 create index if not exists idx_exam_authoring_documents_updated
   on public.exam_authoring_documents(updated_at desc);
-
 create index if not exists idx_exam_authoring_documents_subject
   on public.exam_authoring_documents(subject_code, mode);
-
 drop trigger if exists trg_exam_authoring_documents_updated_at
   on public.exam_authoring_documents;
-
 create trigger trg_exam_authoring_documents_updated_at
   before update on public.exam_authoring_documents
   for each row execute function private.touch_updated_at();
-
 alter table public.exam_authoring_documents enable row level security;
-
 drop policy if exists authoring_documents_staff_read
   on public.exam_authoring_documents;
 create policy authoring_documents_staff_read
   on public.exam_authoring_documents
   for select to authenticated
   using (private.is_staff());
-
 drop policy if exists authoring_documents_staff_write
   on public.exam_authoring_documents;
 create policy authoring_documents_staff_write
@@ -191,11 +168,9 @@ create policy authoring_documents_staff_write
     private.is_staff()
     and updated_by = (select auth.uid())
   );
-
 revoke all on table public.exam_authoring_documents from public, anon;
 grant select, insert, update, delete
   on table public.exam_authoring_documents to authenticated, service_role;
-
 create or replace function public.create_exam_paper_successor(p_source_paper_id uuid)
 returns uuid
 language plpgsql
@@ -250,12 +225,10 @@ begin
   return successor_id;
 end;
 $$;
-
 revoke all on function public.create_exam_paper_successor(uuid)
   from public, anon;
 grant execute on function public.create_exam_paper_successor(uuid)
   to authenticated;
-
 create or replace function private.resolve_authoring_image(p_image jsonb)
 returns public.r2_assets
 language plpgsql
@@ -308,12 +281,10 @@ begin
   return asset;
 end;
 $$;
-
 revoke all on function private.resolve_authoring_image(jsonb)
   from public, anon;
 grant execute on function private.resolve_authoring_image(jsonb)
   to authenticated;
-
 create or replace function public.save_authoring_document(
   p_document_id uuid,
   p_expected_revision bigint,
@@ -348,12 +319,10 @@ begin
   end if;
 end;
 $$;
-
 revoke all on function public.save_authoring_document(uuid, bigint, text)
   from public, anon;
 grant execute on function public.save_authoring_document(uuid, bigint, text)
   to authenticated;
-
 create or replace function public.publish_authoring_document(
   p_document_id uuid,
   p_expected_revision bigint,
@@ -771,12 +740,10 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.publish_authoring_document(uuid, bigint, jsonb)
   from public, anon;
 grant execute on function public.publish_authoring_document(uuid, bigint, jsonb)
   to authenticated;
-
 create or replace function public.join_exam(
   p_code text,
   p_subject_code text default null
@@ -956,17 +923,14 @@ begin
   return session_id;
 end;
 $$;
-
 revoke all on function public.join_exam(text, text)
   from public, anon;
 grant execute on function public.join_exam(text, text)
   to authenticated;
-
 comment on table public.exam_authoring_documents is
   'Autosaved LaTeX sources for staff authoring. Publishing materializes normalized exam data atomically.';
 comment on column public.question_options.r2_asset_id is
   'Registry entry for the stable public R2 image used by this option.';
 comment on column public.question_options.image_alt_text is
   'Accessible alternative text for the option image.';
-
 notify pgrst, 'reload schema';

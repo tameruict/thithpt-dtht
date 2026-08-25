@@ -1,7 +1,6 @@
 alter table public.students
   add column if not exists date_of_birth date,
   add column if not exists gender text;
-
 do $$
 begin
   if not exists (
@@ -18,16 +17,12 @@ begin
       );
   end if;
 end $$;
-
 drop policy if exists "Staff updates students"
 on public.students;
-
 drop policy if exists "Students update their own student row"
 on public.students;
-
 drop policy if exists "Students and staff update students"
 on public.students;
-
 create policy "Students and staff update students"
 on public.students
 for update

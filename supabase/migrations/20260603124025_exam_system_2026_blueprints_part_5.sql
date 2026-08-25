@@ -135,3 +135,4 @@ grant select on public.exam_blueprint_score_summary to anon, authenticated;
 grant select on public.student_key_summary to authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
 grant usage, select on all sequences in schema public to authenticated;
+;

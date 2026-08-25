@@ -1,6 +1,5 @@
 drop function if exists public.activate_exam_key(text);
 drop function if exists public.activate_exam_key(text, text);
-
 create or replace function public.activate_exam_key(p_key_code text)
 returns jsonb
 language plpgsql
@@ -117,14 +116,10 @@ exception
     );
 end;
 $$;
-
 revoke all on function public.activate_exam_key(text)
   from public, anon;
-
 grant execute on function public.activate_exam_key(text)
   to authenticated;
-
 comment on function public.activate_exam_key(text) is
   'Claims an exam key for the authenticated student without creating an exam session.';
-
 notify pgrst, 'reload schema';

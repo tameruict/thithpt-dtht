@@ -18,12 +18,10 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_exam_keys_guard_owner on public.exam_keys;
 create trigger trg_exam_keys_guard_owner
   before update of assigned_to on public.exam_keys
   for each row
   execute function private.fn_exam_keys_guard_owner();
-
 comment on function private.fn_exam_keys_guard_owner() is
   'Prevents moving an assigned exam key directly from one student to another. Staff can reset assigned_to to null first.';

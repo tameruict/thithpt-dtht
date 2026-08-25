@@ -1,0 +1,7 @@
+COMMAND: npm run lint -- --max-warnings=0
+INPUT: cwd=E:\Web-thi-thpt
+
+> web-thi-thpt-next@0.1.0 lint
+> eslint --max-warnings=0
+
+EXIT_STATUS: 0

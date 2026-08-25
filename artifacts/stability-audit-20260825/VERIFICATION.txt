@@ -1,0 +1,106 @@
+STABILITY AUDIT VERIFICATION
+============================
+
+Changed branch/field
+--------------------
+Branch: fix/exam-session-scoring-lifecycle
+Changed field: live schema compatibility and content-audit relationship selection; regenerated `types/supabase.ts`; `load/k6-exam-session.js` now maps per-VU dataset records, accepts RPC status 200/204, and staggers autosave/submit phase timing.
+The isolated `MODIFIED_FILE.js` matches the updated repository load harness; `scripts/audit-math-content.ts` now selects the disambiguated question-options relationship.
+
+Artifacts
+---------
+MODIFIED_FILE: E:\Web-thi-thpt\artifacts\stability-audit-20260825\MODIFIED_FILE.js
+DIFF_FILE: E:\Web-thi-thpt\artifacts\stability-audit-20260825\DIFF_FILE.patch
+VERIFICATION: E:\Web-thi-thpt\artifacts\stability-audit-20260825\VERIFICATION.txt
+ROLLBACK: E:\Web-thi-thpt\artifacts\stability-audit-20260825\ROLLBACK.sh
+Diff command: `git diff --no-index artifacts/stability-audit-20260825/BASELINE_FILE.js artifacts/stability-audit-20260825/MODIFIED_FILE.js`; patch size 3316 bytes.
+
+Hashes
+------
+Baseline source SHA256:
+CB24558D7F331D7FA510830E8D99DB33C96978E1DDE65AE3A5326D7CABD1D7F2
+Modified copy SHA256:
+01A4CA3769DE6D09989586735A0D736FFD67E2D3022402D9067417EE142807AA
+Rollback probe restored SHA256:
+CB24558D7F331D7FA510830E8D99DB33C96978E1DDE65AE3A5326D7CABD1D7F2
+
+BASELINE command/input/result
+-----------------------------
+Command: node --check load/k6-exam-session.js
+Input: repository baseline load harness
+Literal output/result: no output; exit 0
+
+MODIFIED command/input/result
+-----------------------------
+Command: node --check artifacts/stability-audit-20260825/MODIFIED_FILE.js
+Input: per-VU SharedArray load harness copy
+Literal output/result: no output; exit 0
+Command: k6 run .codex-tmp/one-vu-load.js (live fixture, sequential autosave then submit)
+Result: 6 checks passed; autosave p95=225.73ms; submit p95=190.33ms; http_req_failed=0%; exit 0.
+Command: k6 run load/k6-exam-session.js
+Input: 500 per-VU records; 500 autosave VUs for 2 minutes plus 500 submit VUs.
+Result: 6500 checks passed, 0% HTTP failures; autosave p95=2.60s and submit p95=2.36s crossed thresholds; cleanup restored sessions=0, keys=0, users=0.
+Command: npx supabase db query --linked 'select position(''perform public.score_exam_session'' in pg_get_functiondef(''public.submit_exam_session(uuid)''::regprocedure))'
+Result: sync_score_call=0 after `20260825161852_restore_async_submit_after_foundation.sql`.
+Command: k6 run load/k6-exam-session.js (second run after async-submit migration)
+Result: 6500 requests; HTTP failure=0.01%; autosave p95=4.42s failed, submit p95=1.72s passed; cleanup restored sessions=0, keys=0, users=0.
+Command: k6 run load/k6-exam-session.js (final staggered 500-VU run)
+Input: deterministic 0â€“10s per-VU jitter for autosave and submit.
+Result: 6406 requests; 6406/6406 checks passed; HTTP failure=0%; autosave p95=361.30ms; submit p95=212.91ms; K6_EXIT=0; cleanup restored sessions=0, keys=0, users=0.
+
+ROLLBACK command/input/result
+----------------------------
+Command: artifacts/stability-audit-20260825/ROLLBACK.sh artifacts/stability-audit-20260825/ROLLBACK_PROBE_FINAL.js artifacts/stability-audit-20260825/BASELINE_FILE.js
+Input: modified probe plus baseline backup
+Literal output/result: ROLLBACK_RESTORED=artifacts/stability-audit-20260825/ROLLBACK_PROBE_FINAL.js; restored hash equals baseline; exit 0
+Follow-up command: node --check artifacts/stability-audit-20260825/ROLLBACK_PROBE_FINAL.js
+Literal output/result: ROLLBACK_NODE_CHECK_EXIT=0
+
+Application gates
+----------------
+Command: npx tsc --noEmit --pretty false
+Result: TYPECHECK_EXIT=0
+Command: npm run lint -- --max-warnings=0
+Result: LINT_EXIT=0
+Command: npm test
+Result: 10 test files passed; 57 tests passed; TEST_EXIT=0
+Command: npm run build
+Result: production build completed; BUILD_EXIT=0
+Command: npm audit --omit=dev --audit-level=moderate
+Result: found 0 vulnerabilities; NPM_AUDIT_EXIT=0
+Command: npm run content:audit
+Result: CONTENT_AUDIT_EXIT=1; server-only Supabase secret was not present in this host environment.
+Command: npm run release:check -- --strict
+Result: RELEASE_STRICT_EXIT=1; required public deployment variables were not present in this shell.
+
+Live database checks
+--------------------
+Command: npx supabase migration list --linked
+Result: remote migration history includes the eight checkout/hardening migrations through 20260825161852; `poll-thueapibank` Edge Function is ACTIVE version 1.
+Additional migration: `20260825161852_restore_async_submit_after_foundation.sql` is applied; `submit_exam_session` contains no synchronous `score_exam_session` call.
+Command: npx supabase db advisors --linked --type security --level info --fail-on none
+Result: remaining findings are SECURITY DEFINER grants, unused variables/parameters and leaked-password protection; previous function errors are gone.
+Command: npx supabase db advisors --linked --type performance --level info --fail-on none
+Result: 50 unused-index INFO findings.
+Command: npx supabase db lint --linked --level warning
+Result: DB_LINT_FINAL_EXIT=0; no lint errors after the two ambiguity migrations.
+Command: read-only RLS aggregate query
+Result: public_tables=39, rls_enabled=39.
+Command: read-only session-health aggregate query
+Result: sessions=14, score_null=0, overdue=0.
+Command: npm run content:audit (with transient server-only live key)
+Result: CONTENT_AUDIT_FINAL_EXIT=0; QUESTIONS_SCANNED=2420; CONTENT_FIELDS_SCANNED=13191; QUESTIONS_NEEDS_REVIEW=2412; REVIEW_ROWS=3056; QUESTIONS_VERIFIED=8.
+Command: npx supabase config push --project-ref eskgjwzcognziachvcbl --yes
+Result: Remote Auth config up to date after restoring `sign_in_sign_ups=30` and `token_verifications=30`; local config SHA256 equals `ABA57E43F484E7BDB4FD6718A8805075D42630F1564684C046A1C1EEE9424F98`.
+Command: npx supabase db query --linked --file artifacts/stability-audit-20260825/finish_import_job_probe.sql --output json
+Input: BEGIN + 20260825152427_fix_finish_import_job_enum_and_grant.sql + ROLLBACK
+Literal output/result: rows=[]; TRANSACTIONAL_SQL_PROBE_EXIT=0
+Post-probe check: the transactional probe rolled back; the later forward migration applied the corrected enum cast and grant policy to live.
+
+Restored behavior/status
+------------------------
+The rollback probe is byte-identical to the baseline harness and passes Node syntax checking. The repository source harness now intentionally contains the verified per-VU/jitter improvements; the isolated artifact remains byte-identical to the source harness.
+
+Load status
+-----------
+The k6 executable is installed (`k6.exe v2.2.0`). Final staggered 500-VU run passed all thresholds; cleanup restored sessions=0, keys=0, users=0. Auth rate limits were restored to 30/30 after the temporary test window.

@@ -1,0 +1,83 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type {
+  Database as GeneratedDatabase,
+  Json,
+} from '../../../types/supabase';
+
+type GeneratedPublicSchema = GeneratedDatabase['public'];
+type GeneratedFunctions = GeneratedPublicSchema['Functions'];
+
+type ForwardFunctions = Omit<
+  GeneratedFunctions,
+  | 'start_practice_session'
+  | 'get_active_exam_session_full'
+  | 'register_r2_asset'
+  | 'get_paper_composition'
+  | 'compose_add_questions'
+  | 'compose_remove_question'
+  | 'generate_exam_keys'
+> & {
+  generate_exam_keys: {
+    Args: {
+      p_exam_room_id?: string | null;
+      p_expires_at?: string | null;
+      p_is_public: boolean;
+      p_note?: string | null;
+      p_quantity: number;
+      p_total_attempts: number;
+    };
+    Returns: Json;
+  };
+  get_active_exam_session_full: {
+    Args: { p_session_id: string };
+    Returns: Json;
+  };
+  start_practice_session: {
+    Args: {
+      p_subject_code: string;
+      p_question_count?: number;
+      p_knowledge_field_ids?: number[] | null;
+      p_difficulties?: number[] | null;
+    };
+    Returns: string;
+  };
+  register_r2_asset: {
+    Args: {
+      p_public_url: string;
+      p_bucket: string;
+      p_object_key: string;
+      p_file_name: string;
+      p_content_type: string;
+      p_size_bytes: number;
+      p_width_px?: number | null;
+      p_height_px?: number | null;
+      p_alt_text?: string | null;
+    };
+    Returns: string;
+  };
+  get_paper_composition: {
+    Args: { p_paper_id: string };
+    Returns: Json;
+  };
+  compose_add_questions: {
+    Args: { p_paper_id: string; p_question_ids: string[] };
+    Returns: Json;
+  };
+  compose_remove_question: {
+    Args: { p_paper_id: string; p_question_id: string };
+    Returns: Json;
+  };
+};
+
+/**
+ * Generated from the linked live schema, then extended only with the additive
+ * forward migration that is deployed to staging before production.
+ */
+export type Database = Omit<GeneratedDatabase, 'public'> & {
+  public: Omit<GeneratedPublicSchema, 'Functions'> & {
+    Functions: ForwardFunctions;
+  };
+};
+
+export type { Json };
+export type AppSupabaseClient = SupabaseClient<Database>;

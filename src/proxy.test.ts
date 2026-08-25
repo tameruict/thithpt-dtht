@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isSupabaseAuthCookie } from './proxy';
+import { buildContentSecurityPolicy, isSupabaseAuthCookie } from './proxy';
 
 const REF = 'eskgjwzcognziachvcbl';
 
@@ -24,5 +24,16 @@ describe('isSupabaseAuthCookie', () => {
     expect(isSupabaseAuthCookie('theme')).toBe(false);
     expect(isSupabaseAuthCookie('sb-something-else')).toBe(false);
     expect(isSupabaseAuthCookie('my-auth-token')).toBe(false);
+  });
+});
+
+describe('buildContentSecurityPolicy', () => {
+  it('binds scripts to the request nonce and blocks framing/objects', () => {
+    const policy = buildContentSecurityPolicy('nonce-value');
+
+    expect(policy).toContain("'nonce-nonce-value'");
+    expect(policy).toContain("object-src 'none'");
+    expect(policy).toContain("frame-ancestors 'none'");
+    expect(policy).toContain('https://*.supabase.co');
   });
 });

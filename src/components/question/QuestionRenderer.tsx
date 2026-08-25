@@ -2,7 +2,14 @@
 
 import { useMemo, useRef, useState } from 'react';
 import type { ClipboardEvent, FocusEvent, KeyboardEvent } from 'react';
-import katex from 'katex';
+import Image from 'next/image';
+import ReactMarkdown from 'react-markdown';
+import rehypeKatex from 'rehype-katex';
+import rehypeRaw from 'rehype-raw';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import { validateMathContent } from '@/lib/math-content';
 import type { ExamQuestionType } from '@/lib/supabase/exam-data';
 import styles from '@/styles/question-renderer.module.css';
 
@@ -12,6 +19,8 @@ export type RenderableQuestionOption = {
   content: string;
   imageUrl: string | null;
   imageAltText: string | null;
+  imageWidth?: number | null;
+  imageHeight?: number | null;
   correct?: boolean;
 };
 
@@ -29,9 +38,12 @@ export type RenderableQuestion = {
   content: string;
   imageUrl: string | null;
   imageAltText: string | null;
+  imageWidth?: number | null;
+  imageHeight?: number | null;
   options: RenderableQuestionOption[];
   trueFalseItems: RenderableTrueFalseItem[];
   maxPoints?: number;
+  contentFormatVersion?: number;
 };
 
 type QuestionRendererProps = {
@@ -186,65 +198,62 @@ function ShortAnswerInput({
   );
 }
 
-export function MathText({ value }: { value: string }) {
-  const parts = useMemo(() => {
-    const tokens: Array<
-      | { type: 'text'; value: string }
-      | { type: 'math'; value: string; display: boolean }
-    > = [];
-    const pattern = /\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g;
-    let cursor = 0;
-    let match: RegExpExecArray | null;
+const mathSanitizeSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    code: [...(defaultSchema.attributes?.code ?? []), 'className'],
+    th: [...(defaultSchema.attributes?.th ?? []), 'colSpan', 'rowSpan', 'scope'],
+    td: [...(defaultSchema.attributes?.td ?? []), 'colSpan', 'rowSpan'],
+  },
+};
 
-    while ((match = pattern.exec(value))) {
-      if (match.index > cursor) {
-        tokens.push({ type: 'text', value: value.slice(cursor, match.index) });
-      }
-      tokens.push({
-        type: 'math',
-        value: match[1] ?? match[2],
-        display: Boolean(match[1]),
-      });
-      cursor = pattern.lastIndex;
-    }
-    if (cursor < value.length) {
-      tokens.push({ type: 'text', value: value.slice(cursor) });
-    }
-    return tokens;
-  }, [value]);
+export function MathText({ value }: { value: string }) {
+  const validation = useMemo(() => validateMathContent(value), [value]);
+  const errorSummary = validation.issues
+    .filter((issue) => issue.severity === 'error')
+    .map((issue) => issue.message)
+    .join(' ');
 
   return (
-    <>
-      {parts.map((part, index) => {
-        if (part.type === 'text') {
-          return <span key={index}>{part.value}</span>;
-        }
-
-        return (
-          <span
-            key={index}
-            className={part.display ? styles.displayMath : styles.inlineMath}
-            dangerouslySetInnerHTML={{
-              __html: katex.renderToString(part.value, {
-                displayMode: part.display,
-                throwOnError: false,
-                trust: false,
-                strict: 'warn',
-              }),
-            }}
-          />
-        );
-      })}
-    </>
+    <div
+      className={`${styles.mathContent} ${validation.valid ? '' : styles.invalidMath}`}
+      data-math-valid={validation.valid ? 'true' : 'false'}
+      title={errorSummary || undefined}
+    >
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[
+          rehypeRaw,
+          [rehypeSanitize, mathSanitizeSchema],
+          [rehypeKatex, { trust: false, strict: 'warn', throwOnError: false }],
+        ]}
+        components={{
+          p: ({ children }) => <span className={styles.mathParagraph}>{children}</span>,
+          a: ({ children }) => <span>{children}</span>,
+        }}
+      >
+        {validation.normalized}
+      </ReactMarkdown>
+      {!validation.valid ? (
+        <span className={styles.mathError} role="status">
+          Công thức cần được quản trị viên kiểm tra.
+        </span>
+      ) : null}
+    </div>
   );
 }
 
 function QuestionImage({
   url,
   alt,
+  width,
+  height,
 }: {
   url: string;
   alt: string | null;
+  width?: number | null;
+  height?: number | null;
 }) {
   const [failed, setFailed] = useState(false);
 
@@ -257,13 +266,13 @@ function QuestionImage({
   }
 
   return (
-    // R2 hosts are registry-driven and cannot be enumerated in next/image config.
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
+    <Image
       className={styles.questionImage}
       src={url}
       alt={alt ?? ''}
-      loading="lazy"
+      width={width ?? 1200}
+      height={height ?? 800}
+      sizes="(max-width: 768px) 92vw, 760px"
       onError={() => setFailed(true)}
     />
   );
@@ -302,6 +311,8 @@ export default function QuestionRenderer({
               key={question.imageUrl}
               url={question.imageUrl}
               alt={question.imageAltText}
+              width={question.imageWidth}
+              height={question.imageHeight}
             />
           ) : null}
         </>
@@ -325,15 +336,17 @@ export default function QuestionRenderer({
                 onChange={() => onSelectOption?.(option.id, option.label)}
               />
               <span className={styles.optionBody}>
-                <span>
+                <div>
                   <strong>{option.label}.</strong>{' '}
                   <MathText value={option.content} />
-                </span>
+                </div>
                 {option.imageUrl ? (
                   <QuestionImage
                     key={option.imageUrl}
                     url={option.imageUrl}
                     alt={option.imageAltText}
+                    width={option.imageWidth}
+                    height={option.imageHeight}
                   />
                 ) : null}
               </span>
@@ -346,10 +359,10 @@ export default function QuestionRenderer({
         <div className={styles.trueFalseList}>
           {question.trueFalseItems.map((item) => (
             <div key={item.id} className={styles.trueFalseItem}>
-              <span>
+              <div>
                 {item.label ? <strong>{item.label}) </strong> : null}
                 <MathText value={item.content} />
-              </span>
+              </div>
               {showSolutions ? (
                 <em>{item.correct ? 'Đúng' : 'Sai'}</em>
               ) : (

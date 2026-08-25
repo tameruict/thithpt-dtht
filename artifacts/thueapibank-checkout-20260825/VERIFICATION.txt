@@ -1,0 +1,99 @@
+Current: E:\Web-thi-thpt / ThueAPIBank polling checkout implemented locally / deploy staging only after real contract and secrets are configured
+
+GIT_BRANCH=fix/exam-session-scoring-lifecycle
+GIT_HEAD=45830e06c7b89e56d6054f8de3b9ecb60fce502c
+CHANGED_FIELD=payment provider path: provider-specific webhook -> provider='thueapibank' normalized polling event -> public.process_bank_payment
+LIVE_DATABASE_MUTATED=false
+LIVE_ROLLBACK_STATUS=checkout_relations_after_rollback=0
+KEY_PURCHASE_ENABLED=unchanged; default remains false/unset
+
+ARTIFACTS
+MODIFIED_FILE=E:\Web-thi-thpt\artifacts\thueapibank-checkout-20260825\MODIFIED_FILE.zip
+DIFF_FILE=E:\Web-thi-thpt\artifacts\thueapibank-checkout-20260825\DIFF_FILE.patch
+VERIFICATION=E:\Web-thi-thpt\artifacts\thueapibank-checkout-20260825\VERIFICATION.txt
+ROLLBACK=E:\Web-thi-thpt\artifacts\thueapibank-checkout-20260825\ROLLBACK.sh
+ORIGINAL_HASHES=E:\Web-thi-thpt\artifacts\thueapibank-checkout-20260825\BASELINE_SHA256.txt
+MODIFIED_HASHES=E:\Web-thi-thpt\artifacts\thueapibank-checkout-20260825\MODIFIED_SHA256.txt
+ORIGINAL_ARCHIVE=E:\Web-thi-thpt\artifacts\thueapibank-checkout-20260825\ORIGINAL_FILES.zip
+INTEGRATION_INPUT=E:\Web-thi-thpt\artifacts\thueapibank-checkout-20260825\INTEGRATION_VERIFY.sql
+
+BASELINE
+COMMAND=npm test -- --reporter=dot
+INPUT=working tree before ThueAPIBank edits; baseline files captured in artifacts\thueapibank-checkout-20260825\baseline
+LITERAL_RESULT=Test Files  9 passed (9); Tests  50 passed (50); Duration 29.05s
+EXIT_STATUS=0
+ORIGINAL_HASH_RESULT=15 baseline file SHA-256 values recorded; ORIGINAL_FILES.zip bytes=43239
+
+MODIFIED_UNIT
+COMMAND=npm test -- --reporter=dot
+INPUT=modified working tree
+LITERAL_RESULT=Test Files  10 passed (10); Tests  57 passed (57); Duration 1.50s
+EXIT_STATUS=0
+
+MODIFIED_TYPECHECK
+COMMAND=npx tsc --noEmit
+INPUT=modified working tree
+LITERAL_OUTPUT=<empty>
+EXIT_STATUS=0
+
+MODIFIED_LINT
+COMMAND=npm run lint -- --max-warnings=0
+INPUT=modified working tree
+LITERAL_OUTPUT=> web-thi-thpt-next@0.1.0 lint; > eslint --max-warnings=0
+EXIT_STATUS=0
+
+MODIFIED_EDGE_FUNCTION
+COMMAND=npx --yes deno check supabase/functions/poll-thueapibank/index.ts
+INPUT=supabase/functions/poll-thueapibank/index.ts
+LITERAL_OUTPUT=Check supabase/functions/poll-thueapibank/index.ts
+EXIT_STATUS=0
+
+MODIFIED_BUILD
+COMMAND=npm run build
+INPUT=modified working tree; Next.js 16.3.1
+LITERAL_RESULT=Compiled successfully in 29.7s; Finished TypeScript in 26.1s; generated 11/11 static pages; route /api/admin/payments/poll present
+EXIT_STATUS=0
+
+MODIFIED_RELEASE_GUARD
+COMMAND=npm run release:check
+INPUT=default environment
+LITERAL_OUTPUT=FORBIDDEN_PUBLIC_SECRET=none; KEY_PURCHASE_ENABLED=unset; MISSING_CHECKOUT_ENV=none; RELEASE_CHECK_RESULT=pass
+EXIT_STATUS=0
+COMMAND=node scripts/release-check.mjs with KEY_PURCHASE_ENABLED=true and PAYMENT_PROVIDER/PAYMENT_BANK_CODE/PAYMENT_BANK_ACCOUNT/PAYMENT_ACCOUNT_NAME/THUEAPIBANK_POLL_SECRET removed
+INPUT=enabled checkout with missing server-only configuration
+LITERAL_OUTPUT=MISSING_CHECKOUT_ENV=PAYMENT_PROVIDER,PAYMENT_BANK_CODE,PAYMENT_BANK_ACCOUNT,PAYMENT_ACCOUNT_NAME,THUEAPIBANK_POLL_SECRET; PAYMENT_PROVIDER must be thueapibank when checkout is enabled.
+EXIT_STATUS=1
+EXPECTED_STATUS=guard rejected unsafe/incomplete release
+
+MODIFIED_DATABASE
+COMMAND=npx supabase db query --linked --file %TEMP%\thueapibank-integration-rollback.sql --output table
+INPUT_SHA256=1081f7b2f91809cc9f01b2d6f26e7e7e7d249812de19592b562c62fd56b185fc
+INPUT=production foundation + key checkout + ThueAPIBank migration + transactional fulfillment/idempotency/lease assertions + ROLLBACK
+LITERAL_OUTPUT=PASS: fulfilled=1 event=1 key=1 duplicate=true lease_exclusive=true rollback=true
+EXIT_STATUS=0
+RESTORED_STATUS=follow-up read returned checkout_relations_after_rollback=0
+
+MODIFIED_SQL_CONTRACT
+COMMAND=npx supabase db query --linked --file %TEMP%\thueapibank-transactional-verify.sql --output table
+INPUT_SHA256=20d579aa67b7fb3214e6bace01fe7dd0e79f8943ba0465d887733b16668ddf9a
+INPUT=three forward migrations + 31 pgTAP schema/RLS/function/lease assertions + ROLLBACK
+LITERAL_OUTPUT=ok 31 - lease owner advances cursor only after success
+EXIT_STATUS=0
+
+LIVE_ADVISORS
+COMMAND=npx supabase db advisors --linked --type all --level error --fail-on none
+INPUT=linked live database; unchanged by this implementation
+LITERAL_OUTPUT=No issues found
+EXIT_STATUS=0
+
+ROLLBACK
+COMMAND=bash -lc "cd artifacts/thueapibank-checkout-20260825/rollback-probe-final && bash artifacts/thueapibank-checkout-20260825/ROLLBACK.sh && sha256sum -c artifacts/thueapibank-checkout-20260825/BASELINE_SHA256.txt >/tmp/thueapi-final-hashes.log && test -f supabase/migrations/20260821114952_sepay_checkout.sql && test ! -e supabase/migrations/20260825141704_thueapibank_polling_checkout.sql && echo ROLLBACK_HASH_MATCH=yes && echo RESTORED_BEHAVIOR=sepay_baseline_files_present"
+INPUT=separate copy of modified files plus baseline snapshot and executable ROLLBACK.sh
+LITERAL_OUTPUT=ROLLBACK_RESULT=restored; ROLLBACK_HASH_MATCH=yes; RESTORED_BEHAVIOR=sepay_baseline_files_present
+EXIT_STATUS=0
+RESTORED_BEHAVIOR=all 15 captured originals matched SHA-256; new poller/migration files were absent in the rollback copy
+LEAVE_MODIFIED_STATUS=main working tree remains on ThueAPIBank implementation
+
+MODIFIED_FILE_SHA256=463526de704adb06f164738872129308724c767840f50f0f293a54844b812471
+DIFF_FILE_SHA256=271fec27c5df7b54329c64c4b1b43720019194e481d2cdf69dc3c38c93d1af2e
+ACTIVE_SEPAY_REFS=none in src, supabase, scripts, .env.example, README.md, package.json

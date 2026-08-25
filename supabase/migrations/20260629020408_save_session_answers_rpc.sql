@@ -79,10 +79,8 @@ begin
   end if;
 end;
 $function$;
-
 revoke all on function public.save_session_answers(uuid, jsonb)
   from public, anon;
 grant execute on function public.save_session_answers(uuid, jsonb)
   to authenticated;
-
 notify pgrst, 'reload schema';

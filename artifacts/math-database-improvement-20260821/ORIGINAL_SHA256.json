@@ -1,0 +1,46 @@
+﻿[
+    {
+        "Path":  "package.json",
+        "SHA256":  "CFA3EE3DEB902D36C7CA53AC9F73A46A935D51467A9688098450BDC9B3ACD520"
+    },
+    {
+        "Path":  "package-lock.json",
+        "SHA256":  "4EFDD2380E0766D7A061417D5EA15887418E055CC71EE20F4FC17C841AE263F2"
+    },
+    {
+        "Path":  "README.md",
+        "SHA256":  "337CF3CAB6E1E08AF9210662D7D218D7F1EE4BF833618303353177334C0E18D9"
+    },
+    {
+        "Path":  "DEPLOYMENT_STAGING_RUNBOOK.md",
+        "SHA256":  "4FEC19706DB4568B342B11CD3C3520BACF578A0145715AD0933263C2643CFC36"
+    },
+    {
+        "Path":  "src\\components\\question\\QuestionRenderer.tsx",
+        "SHA256":  "98F29AB872319E003FFD6B9EC3D9F506C773A4A7A7F16D8C0266FAF10CDD082E"
+    },
+    {
+        "Path":  "src\\components\\question\\QuestionRenderer.test.ts",
+        "SHA256":  "D89CFF8248CDD0DD41E80B883BB3AA87C5E968F631FE27D255D4C77448F20551"
+    },
+    {
+        "Path":  "src\\styles\\question-renderer.module.css",
+        "SHA256":  "DFAFE05A3807D3E4733B50C6E58A40AB4E55EE7379C532713B03FC90416501A2"
+    },
+    {
+        "Path":  "src\\lib\\authoring\\parser.ts",
+        "SHA256":  "C64D28A630DB948A3C6790969F5D0FCF220B35EDD7C60B61CC42711B226F6F83"
+    },
+    {
+        "Path":  "src\\lib\\authoring\\parser.test.ts",
+        "SHA256":  "731B86880C626F8A3928D9FA6907804F55DD99F086A4FBDDC84903E6B884E1B5"
+    },
+    {
+        "Path":  "src\\lib\\supabase\\database.ts",
+        "SHA256":  "D4F5D5F1B9EB59C8E895CC27E69CB91BC980D71CE46507B188F10D730F6BEF64"
+    },
+    {
+        "Path":  "src\\lib\\supabase\\exam-data.ts",
+        "SHA256":  "8B58FDDF78E46BC8AEB465E0AA3B0202E96689BADAD6DAF67C9563E23B4762F3"
+    }
+]

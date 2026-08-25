@@ -18,7 +18,7 @@ import QuestionRenderer, {
   serializeShortAnswerForScoring,
   type RenderableQuestion,
 } from '@/components/question/QuestionRenderer';
-import { useExamStore } from '@/store/useExamStore';
+import { useExamStore, type CandidateInfo } from '@/store/useExamStore';
 import styles from '@/styles/exam.module.css';
 
 type TrueFalseDraft = Record<string, 'true' | 'false'>;
@@ -61,6 +61,8 @@ function toRenderableQuestion(question: ExamSessionQuestion): RenderableQuestion
     content: question.content,
     imageUrl: question.imageUrl,
     imageAltText: question.imageAltText,
+    imageWidth: question.imageWidth,
+    imageHeight: question.imageHeight,
     maxPoints: question.maxPoints,
     options: question.options.map((option) => ({
       id: option.id,
@@ -68,6 +70,8 @@ function toRenderableQuestion(question: ExamSessionQuestion): RenderableQuestion
       content: option.content,
       imageUrl: option.imageUrl,
       imageAltText: option.imageAltText,
+      imageWidth: option.imageWidth,
+      imageHeight: option.imageHeight,
     })),
     trueFalseItems: question.trueFalseItems.map((item) => ({
       id: item.id,
@@ -77,7 +81,13 @@ function toRenderableQuestion(question: ExamSessionQuestion): RenderableQuestion
   };
 }
 
-export default function ExamPage() {
+export default function ExamPage({
+  sessionId,
+  candidate,
+}: {
+  sessionId?: string;
+  candidate?: CandidateInfo;
+}) {
   const router = useRouter();
   const {
     hasHydrated,
@@ -89,13 +99,16 @@ export default function ExamPage() {
     setCurrentQuestion,
     marked,
     toggleMark,
-    candidateInfo,
-    roomKey,
-    currentSessionId,
+    candidateInfo: storedCandidateInfo,
+    roomKey: storedRoomKey,
+    currentSessionId: storedSessionId,
     examDraft,
     setDraft,
     clearDraft,
   } = useExamStore();
+  const currentSessionId = sessionId ?? storedSessionId;
+  const candidateInfo = candidate ?? storedCandidateInfo;
+  const roomKey = storedRoomKey ?? (sessionId ? 'SESSION' : null);
 
   // Tạo client 1 lần và tái sử dụng trong mọi handlers
   const supabase = useMemo(() => createClient(), []);
@@ -117,6 +130,9 @@ export default function ExamPage() {
   const [isFullscreen, setIsFullscreen] = useState(
     () => typeof document !== 'undefined' && Boolean(document.fullscreenElement),
   );
+  const [tabLockState, setTabLockState] = useState<'checking' | 'primary' | 'blocked'>(
+    'checking',
+  );
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSubmittedRef = useRef(false);
@@ -124,6 +140,62 @@ export default function ExamPage() {
   // Buffer ghi đáp án: gom và khử trùng theo câu hỏi trước khi flush.
   const dirtyRef = useRef<Map<string, SessionAnswerInput>>(new Map());
   const flushPromiseRef = useRef<Promise<boolean> | null>(null);
+
+  useEffect(() => {
+    if (!currentSessionId) return;
+
+    const lockKey = `exam-session-lock:${currentSessionId}`;
+    const tabId = crypto.randomUUID();
+    const leaseMs = 15_000;
+
+    const readLock = () => {
+      try {
+        return JSON.parse(localStorage.getItem(lockKey) ?? 'null') as {
+          tabId?: string;
+          expiresAt?: number;
+        } | null;
+      } catch {
+        return null;
+      }
+    };
+
+    const acquireOrRefresh = () => {
+      const now = Date.now();
+      const current = readLock();
+      if (
+        !current?.tabId ||
+        current.tabId === tabId ||
+        Number(current.expiresAt ?? 0) <= now
+      ) {
+        localStorage.setItem(
+          lockKey,
+          JSON.stringify({ tabId, expiresAt: now + leaseMs }),
+        );
+        setTabLockState(readLock()?.tabId === tabId ? 'primary' : 'blocked');
+      } else {
+        setTabLockState('blocked');
+      }
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === lockKey) acquireOrRefresh();
+    };
+    const release = () => {
+      if (readLock()?.tabId === tabId) localStorage.removeItem(lockKey);
+    };
+
+    acquireOrRefresh();
+    const interval = window.setInterval(acquireOrRefresh, 5_000);
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('pagehide', release);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('pagehide', release);
+      release();
+    };
+  }, [currentSessionId]);
 
   useEffect(() => {
     if (!hasHydrated) return;
@@ -154,7 +226,7 @@ export default function ExamPage() {
 
         // Phiên đã kết thúc hoặc đã hết giờ -> không cho làm bài, sang trang kết quả.
         if (data.session.status !== 'in_progress' || Date.now() >= deadlineMs) {
-          router.replace('/result');
+          router.replace(`/result/${currentSessionId}`);
           return;
         }
 
@@ -381,6 +453,16 @@ export default function ExamPage() {
     };
   }, [flush]);
 
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (dirtyRef.current.size === 0) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
   // Lưu bản nháp cục bộ (debounce) để resume nhanh khi reload.
   useEffect(() => {
     if (isLoading || !examData || !currentSessionId) return;
@@ -453,7 +535,7 @@ export default function ExamPage() {
     // Không lưu tiến trình sau khi kết thúc: xóa bản nháp; GIỮ currentSessionId
     // để trang /result tải được kết quả + đáp án.
     clearDraft();
-    router.push('/result');
+    router.push(`/result/${currentSessionId}`);
   }, [clearDraft, currentSessionId, flush, router, showSaveIndicator, supabase]);
 
   const handleConfirmSubmit = useCallback(async () => {
@@ -627,8 +709,27 @@ export default function ExamPage() {
 
 
 
-  if (!hasHydrated || !roomKey || !candidateInfo || !currentSessionId) {
+  if (
+    !hasHydrated ||
+    !roomKey ||
+    !candidateInfo ||
+    !currentSessionId ||
+    tabLockState === 'checking'
+  ) {
     return null;
+  }
+
+  if (tabLockState === 'blocked') {
+    return (
+      <div className={styles.screen}>
+        <div className={styles.fullscreenPrompt} role="alert">
+          <p>Phiên thi đang mở ở một tab khác. Hãy đóng tab kia rồi tải lại trang này.</p>
+          <button type="button" onClick={() => window.location.reload()}>
+            Thử lại
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (

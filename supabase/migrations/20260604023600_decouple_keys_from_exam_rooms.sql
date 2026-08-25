@@ -1,24 +1,17 @@
 alter table public.key_batches
   alter column exam_room_id drop not null;
-
 alter table public.exam_keys
   alter column exam_room_id drop not null;
-
 update public.exam_keys
 set exam_room_id = null
 where exam_room_id is not null;
-
 update public.key_batches
 set exam_room_id = null
 where exam_room_id is not null;
-
 drop index if exists public.key_batches_room_created_idx;
-
 create index if not exists key_batches_created_idx
   on public.key_batches(created_at desc);
-
 drop policy if exists "Published exam rooms are readable" on public.exam_rooms;
-
 create policy "Published exam rooms are readable"
 on public.exam_rooms
 for select
@@ -27,9 +20,7 @@ using (
   private.is_staff()
   or status = 'published'
 );
-
 drop policy if exists "Users can start sessions for their active keys" on public.exam_sessions;
-
 create policy "Users can start sessions for their active keys"
 on public.exam_sessions
 for insert
@@ -55,7 +46,6 @@ with check (
     )
   )
 );
-
 create or replace view public.admin_exam_key_overview
 with (security_invoker = true)
 as
@@ -83,10 +73,8 @@ left join public.subjects s on s.code = er.subject_code
 left join public.students st on st.id = ek.assigned_to
 left join public.key_batches kb on kb.id = ek.batch_id
 where private.is_staff();
-
 drop function if exists public.generate_exam_keys(uuid, int, timestamptz, text);
 drop function if exists public.generate_exam_keys(int, timestamptz, text, int);
-
 create or replace function public.generate_exam_keys(
   p_quantity int,
   p_expires_at timestamptz default null,
@@ -208,11 +196,8 @@ begin
   end loop;
 end;
 $$;
-
 revoke all on function public.generate_exam_keys(int, timestamptz, text, int)
   from public, anon;
-
 grant execute on function public.generate_exam_keys(int, timestamptz, text, int)
   to authenticated;
-
 grant select on public.admin_exam_key_overview to authenticated;

@@ -1,0 +1,87 @@
+'use server';
+
+import { randomUUID } from 'node:crypto';
+import { isKeyPurchaseEnabled } from '@/lib/payments/config';
+import { createClient } from '@/lib/supabase/server';
+
+export type CreatePurchaseOrderResult =
+  | {
+      ok: true;
+      order: {
+        orderId: string;
+        paymentCode: string;
+        amount: number;
+        currency: string;
+        status: string;
+        expiresAt: string | null;
+        productSnapshot: Record<string, unknown>;
+      };
+    }
+  | { ok: false; error: string };
+
+function asRecord(value: unknown) {
+  return value && typeof value === 'object'
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+export async function createPurchaseOrder(
+  productId: string,
+  idempotencyKey: string = randomUUID(),
+): Promise<CreatePurchaseOrderResult> {
+  if (!isKeyPurchaseEnabled()) {
+    return { ok: false, error: 'CHECKOUT_DISABLED' };
+  }
+
+  if (!/^[0-9a-f-]{36}$/i.test(productId)) {
+    return { ok: false, error: 'PRODUCT_ID_INVALID' };
+  }
+  if (!/^[a-zA-Z0-9._:-]{12,120}$/.test(idempotencyKey)) {
+    return { ok: false, error: 'IDEMPOTENCY_KEY_INVALID' };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return { ok: false, error: 'NOT_AUTHENTICATED' };
+  }
+
+  const { data, error } = await supabase.rpc('create_purchase_order', {
+    p_product_id: productId,
+    p_idempotency_key: idempotencyKey,
+  });
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  const order = asRecord(data);
+  const snapshot = asRecord(order?.product_snapshot);
+  if (
+    !order ||
+    typeof order.order_id !== 'string' ||
+    typeof order.payment_code !== 'string' ||
+    typeof order.amount !== 'number' ||
+    typeof order.currency !== 'string' ||
+    typeof order.status !== 'string'
+  ) {
+    return { ok: false, error: 'PURCHASE_ORDER_RESPONSE_INVALID' };
+  }
+
+  return {
+    ok: true,
+    order: {
+      orderId: order.order_id,
+      paymentCode: order.payment_code,
+      amount: order.amount,
+      currency: order.currency,
+      status: order.status,
+      expiresAt: typeof order.expires_at === 'string' ? order.expires_at : null,
+      productSnapshot: snapshot ?? {},
+    },
+  };
+}

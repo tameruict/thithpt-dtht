@@ -4,10 +4,8 @@ set subject_code = eb.subject_code,
 from public.exam_blueprints eb
 where eb.id = er.blueprint_id
   and er.subject_code is distinct from eb.subject_code;
-
 alter table public.exam_rooms
   drop constraint if exists exam_rooms_blueprint_id_subject_code_fkey;
-
 do $$
 begin
   if not exists (
@@ -24,7 +22,6 @@ begin
   end if;
 end;
 $$;
-
 create or replace function private.fn_sync_room_subject_code()
 returns trigger
 language plpgsql
@@ -46,14 +43,12 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_sync_room_subject_code on public.exam_rooms;
 create trigger trg_sync_room_subject_code
   before insert or update of blueprint_id, subject_code
   on public.exam_rooms
   for each row
   execute function private.fn_sync_room_subject_code();
-
 create or replace view public.v_exam_rooms_full
 with (security_invoker = true)
 as
@@ -82,13 +77,9 @@ select
 from public.exam_rooms er
 join public.exam_blueprints eb on eb.id = er.blueprint_id
 join public.subjects s on s.code = eb.subject_code;
-
 grant select on public.v_exam_rooms_full to authenticated;
-
 comment on function private.fn_sync_room_subject_code() is
   'Keeps exam_rooms.subject_code derived from exam_rooms.blueprint_id.';
-
 comment on view public.v_exam_rooms_full is
   'Exam rooms with subject and blueprint details derived through the room blueprint.';
-
 notify pgrst, 'reload schema';

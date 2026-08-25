@@ -2,6 +2,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
+import sharp from 'sharp';
 import { collectAuthoringImages, parseAuthoringSource } from '@/lib/authoring/parser';
 import { getAuthoringTemplate } from '@/lib/authoring/templates';
 import type {
@@ -13,12 +14,14 @@ import type {
 } from '@/lib/authoring/types';
 import {
   MAX_IMAGE_BYTES,
+  deleteR2Object,
   imageExtension,
   isAllowedImageType,
   putR2Object,
+  r2BucketName,
   r2PublicUrl,
 } from '@/lib/r2/client';
-import { requireStaff } from '@/lib/supabase/staff';
+import { requireAdmin } from '@/lib/supabase/admin';
 
 type DocumentRecord = {
   id: string;
@@ -150,7 +153,7 @@ function getActionError(error: unknown) {
 }
 
 export async function loadAuthoringWorkspaceData(): Promise<AuthoringWorkspaceData> {
-  const { supabase } = await requireStaff();
+  const { supabase } = await requireAdmin();
   const [documentsResult, subjectsResult, knowledgeFieldsResult, papersResult] =
     await Promise.all([
     supabase
@@ -205,7 +208,7 @@ export async function createKnowledgeField(input: {
   parentId?: number | null;
 }) {
   try {
-    const { supabase } = await requireStaff();
+    const { supabase } = await requireAdmin();
     const subjectCode = input.subjectCode.trim().toUpperCase();
     const name = input.name.trim();
     const grade = input.grade ?? null;
@@ -274,7 +277,7 @@ export async function createAuthoringDocument(input: {
   seedSource?: string;
 }) {
   try {
-    const { supabase, user } = await requireStaff();
+    const { supabase, user } = await requireAdmin();
     const title = input.title.trim() || 'Bản nháp chưa đặt tên';
     const subjectCode = input.subjectCode.trim().toUpperCase();
     let paperId: string | null = null;
@@ -358,7 +361,7 @@ export async function saveAuthoringDocument(input: {
   latexSource: string;
 }) {
   try {
-    const { supabase } = await requireStaff();
+    const { supabase } = await requireAdmin();
     const { data, error } = await supabase.rpc('save_authoring_document', {
       p_document_id: input.documentId,
       p_expected_revision: input.expectedRevision,
@@ -385,7 +388,7 @@ export async function publishAuthoringDocument(input: {
   latexSource: string;
 }) {
   try {
-    const { supabase } = await requireStaff();
+    const { supabase } = await requireAdmin();
     const { data: document, error: documentError } = await supabase
       .from('exam_authoring_documents')
       .select('id,mode,subject_code,revision,published_revision,latex_source')
@@ -491,8 +494,10 @@ export async function publishAuthoringDocument(input: {
 // (private.resolve_authoring_image) chấp nhận URL. Trả về URL public + alt để
 // client chèn macro \image[alt={...}]{url}.
 export async function uploadAuthoringImage(formData: FormData) {
+  let uploadedObjectKey: string | null = null;
+
   try {
-    const { supabase } = await requireStaff();
+    const { supabase } = await requireAdmin();
 
     const file = formData.get('file');
     const alt = String(formData.get('alt') ?? '')
@@ -514,19 +519,36 @@ export async function uploadAuthoringImage(formData: FormData) {
 
     const body = new Uint8Array(await file.arrayBuffer());
     const key = `authoring/${randomUUID()}.${imageExtension(file.type)}`;
+    const metadata = await sharp(body).metadata();
 
     await putR2Object({ key, body, contentType: file.type });
+    uploadedObjectKey = key;
     const url = r2PublicUrl(key);
 
     const { error } = await supabase.rpc('register_r2_asset', {
       p_public_url: url,
+      p_bucket: r2BucketName(),
+      p_object_key: key,
+      p_file_name: file.name || key.split('/').at(-1) || key,
       p_content_type: file.type,
       p_size_bytes: file.size,
+      p_width_px: metadata.width ?? null,
+      p_height_px: metadata.height ?? null,
+      p_alt_text: alt || null,
     });
     if (error) throw error;
 
+    uploadedObjectKey = null;
     return { ok: true as const, url, alt };
   } catch (error) {
-    return { ok: false as const, error: getActionError(error) };
+    let message = getActionError(error);
+    if (uploadedObjectKey) {
+      try {
+        await deleteR2Object(uploadedObjectKey);
+      } catch {
+        message += ' Object R2 tạm thời cần được dọn thủ công.';
+      }
+    }
+    return { ok: false as const, error: message };
   }
 }

@@ -1,0 +1,11 @@
+COMMAND: npx supabase db push --linked --dry-run
+INPUT: cwd=E:\Web-thi-thpt
+Initialising login role...
+DRY RUN: migrations will *not* be pushed to the database.
+Connecting to remote database...
+Would push these migrations:
+ • 20260820234029_production_foundation_v1.sql
+Finished supabase db push.
+A new version of Supabase CLI is available: v2.115.0 (currently installed v2.105.0)
+We recommend updating regularly for new features and bug fixes: https://supabase.com/docs/guides/cli/getting-started#updating-the-supabase-cli
+EXIT_STATUS: 0
