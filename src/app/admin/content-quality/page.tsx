@@ -17,7 +17,6 @@ export default async function ContentQualityPage() {
   const { data, error } = await supabase.rpc('get_question_content_review_queue', {
     p_status: 'pending',
     p_limit: 100,
-    p_after: null,
   });
 
   if (error) {
@@ -32,4 +31,3 @@ export default async function ContentQualityPage() {
 
   return <ContentQualityClient reviews={toReviews(data)} />;
 }
-

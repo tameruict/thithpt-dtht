@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CheckCircle, Flag, Maximize, Moon, Sun, AlertTriangle, X, Eye } from 'lucide-react';
+import { CheckCircle, Flag, Maximize, Moon, Sun, AlertTriangle, X, Eye, Timer } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import {
   fetchExamSessionData,
@@ -752,7 +752,7 @@ export default function ExamPage({
         </div>
         <div className={styles.headerRight}>
           <div className={`${styles.timer} ${timerWarning === 'critical' ? styles.timerCritical : timerWarning === 'warning' ? styles.timerWarning : ''}`}>
-            <span>⏱</span> <span>{formatTime(timeLeft)}</span>
+            <Timer size={18} aria-hidden="true" /> <span>{formatTime(timeLeft)}</span>
           </div>
           <div className={styles.connection}>
             <span className={`${styles.connectionDot} ${saveStatus === 'error' ? styles.connectionError : ''}`}></span>
@@ -815,15 +815,7 @@ export default function ExamPage({
           >
             A+
           </button>
-          <select
-            className={styles.zoomSelect}
-            value={zoom}
-            onChange={(e) => setZoom(Number(e.target.value))}
-          >
-            <option value={100}>100%</option>
-            <option value={125}>125%</option>
-            <option value={150}>150%</option>
-          </select>
+          <span className={styles.zoomValue}>{zoom}%</span>
           <button className="btn secondary small" onClick={() => setZoom(100)}>
             Đặt lại
           </button>

@@ -237,3 +237,24 @@
     margin: 0 auto;
   }
 }
+.expiry {
+  margin: 8px 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.terminalOrder {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--warning) 9%, var(--surface));
+}
+
+.terminalOrder p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}

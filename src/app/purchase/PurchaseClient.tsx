@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Check, Clipboard, Copy, RefreshCw } from 'lucide-react';
+import { Check, Clipboard, Copy, RefreshCw, ShieldCheck } from 'lucide-react';
 import { createPurchaseOrder } from './actions';
 import { createClient } from '@/lib/supabase/client';
 import styles from '@/styles/purchase.module.css';
@@ -20,6 +20,32 @@ export type PurchaseProduct = {
 };
 
 export const PURCHASE_SCOPE_LABEL = 'Dùng cho tất cả phòng thi và tự luyện';
+
+const TERMINAL_ORDER_STATUSES = new Set(['fulfilled', 'failed', 'expired', 'revoked']);
+
+export function purchaseOrderStatusLabel(status: string) {
+  switch (status) {
+    case 'pending': return 'Chờ chuyển khoản';
+    case 'paid': return 'Đã nhận tiền';
+    case 'fulfilled': return 'Đã cấp key';
+    case 'expired': return 'Đã hết hạn';
+    case 'failed': return 'Cần kiểm tra';
+    case 'revoked': return 'Đã thu hồi';
+    default: return status;
+  }
+}
+
+export function purchaseErrorLabel(error: string) {
+  const labels: Record<string, string> = {
+    CHECKOUT_DISABLED: 'Kênh mua key đang tạm đóng.',
+    CHECKOUT_CONFIGURATION_INVALID: 'Kênh thanh toán chưa sẵn sàng.',
+    NOT_AUTHENTICATED: 'Vui lòng đăng nhập trước khi mua key.',
+    PRODUCT_NOT_AVAILABLE: 'Gói này đã ngừng bán. Hãy chọn gói khác.',
+    PRODUCT_LOOKUP_FAILED: 'Chưa tải được thông tin gói. Vui lòng thử lại.',
+    PAYMENT_CURRENCY_UNSUPPORTED: 'Gói thanh toán phải sử dụng VND.',
+  };
+  return labels[error] ?? error;
+}
 
 export type CheckoutBankDetails = {
   bankCode: string;
@@ -122,7 +148,7 @@ export default function PurchaseClient({
   }, [order]);
 
   useEffect(() => {
-    if (!order || order.status === 'fulfilled' || order.status === 'failed') {
+    if (!order || TERMINAL_ORDER_STATUSES.has(order.status)) {
       return;
     }
     const interval = window.setInterval(() => {
@@ -148,11 +174,11 @@ export default function PurchaseClient({
     try {
       const result = await createPurchaseOrder(selected.id, idempotencyKey);
       if (!result.ok) {
-        setFeedback(result.error);
+        setFeedback(purchaseErrorLabel(result.error));
         return;
       }
       if (result.order.currency !== 'VND') {
-        setFeedback('PAYMENT_CURRENCY_UNSUPPORTED');
+        setFeedback(purchaseErrorLabel('PAYMENT_CURRENCY_UNSUPPORTED'));
         return;
       }
       setOrder({
@@ -237,7 +263,7 @@ export default function PurchaseClient({
             <section className={styles.card}>
               <div className={styles.orderHeader}>
                 <div>
-                  <h2>Đơn {order.status}</h2>
+                  <h2>{purchaseOrderStatusLabel(order.status)}</h2>
                   <small>{order.orderId}</small>
                 </div>
                 <button
@@ -264,6 +290,16 @@ export default function PurchaseClient({
                     </button>
                   </div>
                   <Link href="/subjects">Đi đến môn thi</Link>
+                </div>
+              ) : TERMINAL_ORDER_STATUSES.has(order.status) ? (
+                <div className={styles.terminalOrder} role="status">
+                  <ShieldCheck size={22} />
+                  <div>
+                    <strong>{purchaseOrderStatusLabel(order.status)}</strong>
+                    <p>
+                      Đơn không còn nhận thanh toán. Hãy tạo đơn mới và dùng đúng nội dung chuyển khoản.
+                    </p>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -312,6 +348,26 @@ export default function PurchaseClient({
                     Hệ thống tự kiểm tra mỗi 4 giây. Chuyển đúng số tiền và giữ
                     nguyên nội dung thanh toán.
                   </p>
+                  {order.expiresAt ? (
+                    <p className={styles.expiry}>
+                      Đơn hết hạn lúc {new Intl.DateTimeFormat('vi-VN', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                      }).format(new Date(order.expiresAt))}.
+                    </p>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="btn outline"
+                    onClick={() => void refreshOrder()}
+                    disabled={isRefreshing}
+                  >
+                    <RefreshCw size={16} />
+                    {isRefreshing ? 'Đang kiểm tra...' : 'Đã chuyển, kiểm tra ngay'}
+                  </button>
                 </>
               )}
             </section>

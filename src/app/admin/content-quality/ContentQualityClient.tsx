@@ -50,7 +50,6 @@ export default function ContentQualityClient({ reviews }: { reviews: ContentRevi
           <p>Admin · Chất lượng nội dung</p>
           <h1>Duyệt Markdown + KaTeX</h1>
         </div>
-        <a href="/admin/authoring">Mở workspace soạn đề</a>
       </header>
 
       <p className={styles.summary}>{reviews.length} đề xuất đang chờ duyệt.</p>

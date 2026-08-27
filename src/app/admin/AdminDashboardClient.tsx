@@ -1048,7 +1048,7 @@ export default function AdminDashboardClient() {
 
   const handleDeleteRoom = async (room: ExamRoom) => {
     if (!hasConfiguredSupabase) return;
-    if (!window.confirm(`Lưu trữ phòng ${room.code}? Phòng sẽ bị ẩn nhưng dữ liệu thi được giữ nguyên.`)) {
+    if (!window.confirm(`Lưu trữ phòng ${room.code}? Phòng sẽ bị ẩn; thí sinh chỉ còn xem điểm, không xem được đề thi, bài làm hoặc đáp án.`)) {
       return;
     }
 
@@ -1243,10 +1243,10 @@ export default function AdminDashboardClient() {
     try {
       const supabase = createClient();
       const { data, error } = await supabase.rpc('generate_exam_keys', {
-        p_exam_room_id: null,
+        p_exam_room_id: null as unknown as string,
         p_quantity: quantity,
-        p_expires_at: expiresAt,
-        p_note: keyNote.trim() || null,
+        p_expires_at: expiresAt as string,
+        p_note: (keyNote.trim() || null) as unknown as string,
         p_total_attempts: totalAttempts,
         p_is_public: isPublicKey,
       });
@@ -1374,7 +1374,6 @@ export default function AdminDashboardClient() {
           <span>Admin THPT</span>
         </div>
         <nav className={styles.nav}>
-          <Link href="/admin/authoring" transitionTypes={['nav-forward']}><FilePenLine size={18} /> Soạn đề</Link>
           <Link href="/admin/key-products" transitionTypes={['nav-forward']}><KeyRound size={18} /> Gói mua key</Link>
           <Link href="/admin/purchases" transitionTypes={['nav-forward']}><ClipboardCheck size={18} /> Đơn ThueAPIBank</Link>
           <a href="#results"><BarChart3 size={18} /> Kết quả thi</a>
@@ -1393,7 +1392,7 @@ export default function AdminDashboardClient() {
         <header className={styles.header}>
           <div>
             <h1>Quản trị hệ thống thi</h1>
-            <p>Soạn đề, mở môn học, cấp key và theo dõi học viên trong một màn hình.</p>
+            <p>Mở môn học, cấp key và theo dõi học viên trong một màn hình.</p>
           </div>
           <button className="btn" type="button" onClick={scrollToKeys}>
             <Plus size={16} />
@@ -1572,21 +1571,6 @@ export default function AdminDashboardClient() {
                 <p>Câu hỏi hiển thị từ bảng questions trong Supabase.</p>
               </div>
               <span className={styles.status}>{isLoadingCatalog ? 'Đang tải' : 'Dữ liệu DB'}</span>
-            </div>
-            <div className={styles.form}>
-              <p>
-                Workspace LaTeX mới hỗ trợ preview trực tiếp, autosave, xuất bản
-                atomic và ảnh Cloudflare R2 trong câu hỏi hoặc từng lựa chọn.
-              </p>
-              <button
-                className="btn"
-                type="button"
-                onClick={() => router.push('/admin/authoring', { transitionTypes: ['nav-forward'] })}
-                disabled={!hasConfiguredSupabase || subjects.length === 0}
-              >
-                <FilePenLine size={16} />
-                Mở trang soạn đề
-              </button>
             </div>
 
             {catalogFeedback ? <p className={styles.feedback}>{catalogFeedback}</p> : null}

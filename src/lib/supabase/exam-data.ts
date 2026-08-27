@@ -577,8 +577,8 @@ export async function startPracticeSession(
     p_question_count: input.questionCount,
     p_knowledge_field_ids: input.knowledgeFieldIds?.length
       ? input.knowledgeFieldIds
-      : null,
-    p_difficulties: input.difficulties?.length ? input.difficulties : null,
+      : undefined,
+    p_difficulties: input.difficulties?.length ? input.difficulties : undefined,
   });
 
   if (error) throw error;
@@ -761,6 +761,7 @@ export type SessionReview = {
     score: number | null;
     maxScore: number;
     examRoomId: string;
+    roomDeleted: boolean;
     roomName: string;
     roomCode: string;
     durationMinutes: number;
@@ -915,6 +916,7 @@ export async function fetchSessionReview(
       score: s.score === null || s.score === undefined ? null : Number(s.score),
       maxScore: Number(s.max_score ?? 10),
       examRoomId: String(s.exam_room_id),
+      roomDeleted: Boolean(s.room_deleted),
       roomName: String(s.room_name ?? ''),
       roomCode: String(s.room_code ?? ''),
       durationMinutes: Number(s.duration_minutes ?? 50),

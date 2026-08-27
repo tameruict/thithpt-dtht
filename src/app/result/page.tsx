@@ -341,6 +341,7 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
   const isPractice = (review?.session.roomCode ?? '')
     .toUpperCase()
     .startsWith('PRACTICE');
+  const isArchivedRoom = Boolean(review?.session.roomDeleted);
 
   /* ─── Derived data ──────────────────────────────────── */
   const reviewItems = useMemo(
@@ -538,10 +539,17 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
               )}
 
               {/* Detailed Answer Review — ẩn với phòng luyện tập (PRACTICE) */}
-              {isPractice ? (
+              {isArchivedRoom ? (
+                <section className={styles.card}>
+                  <h3 className={styles.reviewTitle}>Phòng thi đã được gỡ</h3>
+                  <p className={styles.restrictedReviewNotice}>
+                    Phòng thi đã bị gỡ — chỉ hiển thị điểm. Đề thi, bài làm và đáp án không còn được hiển thị.
+                  </p>
+                </section>
+              ) : isPractice ? (
                 <section className={styles.card}>
                   <h3 className={styles.reviewTitle}>Xem lại bài làm</h3>
-                  <p style={{ color: 'var(--muted)', fontWeight: 600 }}>
+                  <p className={styles.restrictedReviewNotice}>
                     Phòng luyện tập không hiển thị đáp án chi tiết để bạn tự ôn lại.
                   </p>
                 </section>
@@ -585,7 +593,7 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
                   </div>
                   <div className={styles.reviewList}>
                     {filteredReviewItems.length === 0 && (
-                      <p style={{ textAlign: 'center', color: 'var(--muted)', fontWeight: 700 }}>
+                      <p className={styles.emptyReviewNotice}>
                         Không có câu hỏi nào ở bộ lọc này.
                       </p>
                     )}
@@ -607,7 +615,6 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
                             type="button"
                             className={styles.reviewItemHead}
                             onClick={() => toggleExpand(item.question.id)}
-                            style={{ cursor: 'pointer', width: '100%', border: 'none', background: 'inherit' }}
                           >
                             <span className={styles.reviewItemNo}>
                               Câu {item.question.displayNo} — {questionTypeLabel(item.question.type)}

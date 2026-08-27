@@ -10,6 +10,8 @@ vi.mock('@/lib/supabase/client', () => ({
 import {
   buildVietQrUrl,
   PURCHASE_SCOPE_LABEL,
+  purchaseErrorLabel,
+  purchaseOrderStatusLabel,
 } from '../../app/purchase/PurchaseClient';
 
 describe('VietQR checkout URL', () => {
@@ -43,5 +45,11 @@ describe('VietQR checkout URL', () => {
         { amount: 10, currency: 'USD', paymentCode: 'THPTABC123456789' },
       ),
     ).toBe('');
+  });
+
+  it('localizes terminal order states and actionable checkout errors', () => {
+    expect(purchaseOrderStatusLabel('fulfilled')).toBe('Đã cấp key');
+    expect(purchaseOrderStatusLabel('expired')).toBe('Đã hết hạn');
+    expect(purchaseErrorLabel('PRODUCT_NOT_AVAILABLE')).toContain('ngừng bán');
   });
 });
