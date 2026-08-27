@@ -404,3 +404,4 @@ on public.exam_keys
 for select
 to authenticated
 using (assigned_to = (select auth.uid()) or private.is_staff());
+;

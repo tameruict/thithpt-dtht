@@ -1,0 +1,23 @@
+COMMAND: k6 run load/k6-exam-session.js
+INPUT: 500 per-VU records from audit-20260825-500a
+SCENARIOS: 500 autosave VUs for 2m; 500 submit VUs at 2m
+TOTAL_REQUESTS: 6500
+CHECKS: 6499/6500 passed
+HTTP_FAILURE_RATE: 0.01%
+AUTOSAVE_P95: 4.42s (threshold <800ms FAILED)
+SUBMIT_P95: 1.72s (threshold <2s PASSED)
+AUTOSAVE_P90: 967.81ms
+SUBMIT_P90: 1.67s
+MAX_LATENCY: 5.11s
+K6_EXIT: 99 (autosave threshold crossed)
+
+POST-LOAD CLEANUP:
+sessions=0, keys=0, users=0 for run-id audit-20260825-500a
+cleanup command exit=0
+
+POST-LOAD DATABASE:
+14 pre-existing submitted sessions, 0 null scores, 0 overdue sessions.
+
+PG_STAT_STATEMENTS:
+save_session_answers mean DB execution 6.23 ms over 12005 calls.
+submit_exam_session mean DB execution 5.32 ms over 1017 calls.

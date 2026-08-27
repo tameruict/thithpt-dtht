@@ -1,0 +1,58 @@
+IMPLEMENTATION: release-automation-20260821
+BRANCH: fix/exam-session-scoring-lifecycle
+CHANGED_FIELD: package.json scripts.release:check
+ORIGINAL_PACKAGE_SHA256: 40a3e0fa8e3a55540c572d9a3e95819b620b9fa30a3d0d4ad09cb24dc0151e57
+MODIFIED_FILE_SHA256: d3621e8f36f9d452be2f070674e77076e4f7c852c8c1094e12ff3ea8e024d8a2
+DIFF_FILE_SHA256: b36191421a52161286353ad6342cc40ef31c54fc3fc27b49a19bbec7471b31df
+ROLLBACK_SH_SHA256: 62eba94c70c0b27583e1c06f79bc7781cc18fba687de4f4a61cfdf9c148720c2
+
+ARTIFACTS
+MODIFIED_FILE=E:\Web-thi-thpt\artifacts\release-automation-20260821\MODIFIED_FILE
+DIFF_FILE=E:\Web-thi-thpt\artifacts\release-automation-20260821\DIFF_FILE.patch
+VERIFICATION=E:\Web-thi-thpt\artifacts\release-automation-20260821\VERIFICATION.txt
+ROLLBACK=E:\Web-thi-thpt\artifacts\release-automation-20260821\ROLLBACK.sh
+
+BASELINE
+COMMAND: node -e "const p=require('originals/package.json'); console.log(Boolean(p.scripts['release:check']))"
+INPUT: original package fixture recovered from the prior verified implementation state
+LITERAL_OUTPUT: BASELINE_RELEASE_SCRIPT=false
+EXIT_STATUS: 0
+
+MODIFIED
+COMMAND: npm run release:check
+INPUT: cwd=E:\Web-thi-thpt; report mode without deployment secrets
+LITERAL_OUTPUT: RELEASE_CHECK_MODE=report | MISSING_PREVIEW_ENV=NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,NEXT_PUBLIC_TURNSTILE_SITE_KEY | FORBIDDEN_PUBLIC_SECRET=none | KEY_PURCHASE_ENABLED=unset | RELEASE_CHECK_RESULT=pass
+EXIT_STATUS: 0
+
+COMMAND: node --check scripts/release-check.mjs && node --check load/k6-exam-session.js
+INPUT: cwd=E:\Web-thi-thpt
+LITERAL_OUTPUT: RELEASE_SCRIPT_PARSE_EXIT=0 | K6_SCRIPT_PARSE_EXIT=0
+EXIT_STATUS: 0
+
+COMMAND: npm run release:check -- --strict
+INPUT: NEXT_PUBLIC_SUPABASE_URL=https://preview.invalid.supabase.co; NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_ci_placeholder; NEXT_PUBLIC_TURNSTILE_SITE_KEY=1x00000000000000000000AA; KEY_PURCHASE_ENABLED=false
+LITERAL_OUTPUT: RELEASE_CHECK_MODE=strict | MISSING_PREVIEW_ENV=none | FORBIDDEN_PUBLIC_SECRET=none | KEY_PURCHASE_ENABLED=false | RELEASE_CHECK_RESULT=pass
+EXIT_STATUS: 0
+
+COMMAND: npx tsc --noEmit; npm run lint -- --max-warnings=0; npm test; npm run build; npm audit --omit=dev
+INPUT: cwd=E:\Web-thi-thpt
+LITERAL_OUTPUT: TSC_EXIT=0 | LINT_EXIT=0 | Test Files 7 passed (7) | Tests 36 passed (36) | BUILD_EXIT=0 | found 0 vulnerabilities | AUDIT_EXIT=0
+EXIT_STATUS: 0
+
+COMMAND: Python yaml.safe_load('.github/workflows/quality-gates.yml')
+INPUT: workflow file
+LITERAL_OUTPUT: WORKFLOW_YAML=valid
+EXIT_STATUS: 0
+
+ROLLBACK
+COMMAND: copy modified package/workflow/script/k6/runbook to E:\Web-thi-thpt\.codex-tmp\release-rollback-test-20260821; TARGET_ROOT=/e/Web-thi-thpt/.codex-tmp/release-rollback-test-20260821 ROLLBACK.sh
+INPUT: original_package_sha256=40a3e0fa8e3a55540c572d9a3e95819b620b9fa30a3d0d4ad09cb24dc0151e57
+LITERAL_OUTPUT: ROLLBACK_RESULT=release_automation_restored | RESTORED_PACKAGE_MATCH=True | NEW_FILES_ABSENT=True
+EXIT_STATUS: 0
+RESTORED_BEHAVIOR_STATUS: original package restored; release script, workflow, k6 scenario and runbook removed from the test copy
+
+REPOSITORY_ALIGNMENT
+TARGET_REPOSITORY=https://github.com/tameruict/anhtamthoday
+TARGET_MAIN=a00afa675d35b7254d815fd2fe700febb3947075
+CHECKOUT_HEAD=45830e06c7b89e56d6054f8de3b9ecb60fce502c
+RELATION: target main is an ancestor of the checkout head

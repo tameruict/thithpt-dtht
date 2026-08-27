@@ -220,6 +220,13 @@
   white-space: nowrap;
 }
 
+.subjectActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .subjectName {
   display: block;
   color: var(--text);
@@ -544,6 +551,10 @@
 
   .subjectItem :global(.btn.small) {
     width: 100%;
+  }
+
+  .subjectActions {
+    justify-content: stretch;
   }
 
   .infoRow {

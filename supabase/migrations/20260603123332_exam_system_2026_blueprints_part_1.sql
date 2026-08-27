@@ -282,3 +282,4 @@ create table public.exam_room_questions (
   primary key (exam_room_id, blueprint_section_id, seq),
   unique (exam_room_id, question_id)
 );
+;

@@ -1,0 +1,7 @@
+COMMAND: MCP execute_sql(<contents of supabase\migrations\20260820234029_production_foundation_v1.sql> + <contents of supabase\tests\production_foundation_test.sql>)
+INPUT: migration_sha256=5a921221eace23aef64ba5739c34a7558b015d3fcfff9553e81a690dea6f0a05; pgtap_sha256=f5c7aac45e12b8adb99d23479065a63add83b84d2c0222cf40db6ace72c16715; linked live schema; SQL test ends with ROLLBACK
+LITERAL_OUTPUT: ok 18 - legacy staff compatibility wrapper is admin-only
+EXIT_STATUS: 0
+RESTORED_QUERY: select room_mode_column, grading_column, new_migration_recorded, pg_jsonschema_schema, production_table
+RESTORED_RESULT: room_mode_column=false; grading_column=false; new_migration_recorded=false; pg_jsonschema_schema=public; production_table=null; remote_migration_count=63
+RESTORED_STATUS: live schema and migration history unchanged

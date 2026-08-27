@@ -1,5 +1,6 @@
 import { parse as parseLatexAst } from '@unified-latex/unified-latex-util-parse';
 import type { ExamQuestionType } from '@/lib/supabase/exam-data';
+import { validateMathContent } from '@/lib/math-content';
 import type {
   AuthoringImage,
   AuthoringMode,
@@ -196,6 +197,25 @@ export function getQuestionMetadataAtPosition(
   };
 }
 
+export type QuestionRangeAtPosition = {
+  index: number;
+  start: number;
+  end: number;
+};
+
+/** Trả về vị trí (offset) khối \begin{question}...\end{question} chứa con trỏ. */
+export function getQuestionRangeAtPosition(
+  source: string,
+  position: number,
+): QuestionRangeAtPosition | null {
+  const blocks = extractEnvironments(source, 'question');
+  const index = blocks.findIndex(
+    (block) => position >= block.start && position <= block.end,
+  );
+  if (index < 0) return null;
+  return { index, start: blocks[index].start, end: blocks[index].end };
+}
+
 export function updateQuestionMetadataAtPosition(
   source: string,
   position: number,
@@ -331,6 +351,26 @@ function cleanContent(source: string) {
     .trim();
 }
 
+function validateAuthoringMath(
+  errors: AuthoringParseError[],
+  source: string,
+  value: string,
+  fallbackOffset: number,
+  fieldLabel: string,
+) {
+  const validation = validateMathContent(value);
+  for (const issue of validation.issues) {
+    if (issue.severity !== 'error') continue;
+    addError(
+      errors,
+      source,
+      fallbackOffset + issue.offset,
+      `${fieldLabel}: ${issue.message}`,
+    );
+  }
+  return validation.normalized;
+}
+
 function parseQuestion(
   source: string,
   block: EnvironmentBlock,
@@ -398,7 +438,14 @@ function parseQuestion(
         'Ảnh lựa chọn cần URL và alt text.',
       );
     }
-    const content = cleanContent(removeRanges(choice.body, images));
+    const rawContent = cleanContent(removeRanges(choice.body, images));
+    const content = validateAuthoringMath(
+      errors,
+      source,
+      rawContent,
+      block.start + choice.start,
+      `Lựa chọn ${index + 1}`,
+    );
     if (!content && !images[0]?.image) {
       addError(
         errors,
@@ -436,11 +483,18 @@ function parseQuestion(
         'Mệnh đề cần thuộc tính correct=true hoặc correct=false.',
       );
     }
+    const statementContent = validateAuthoringMath(
+      errors,
+      source,
+      cleanContent(statement.body),
+      block.start + statement.start,
+      `Mệnh đề ${index + 1}`,
+    );
     return {
       label:
         statementAttributes.get('label')?.trim() ??
         String.fromCharCode(97 + index),
-      content: cleanContent(statement.body),
+      content: statementContent,
       correct: correctValue === 'true',
     };
   });
@@ -487,7 +541,13 @@ function parseQuestion(
     addError(errors, source, block.start, 'Câu trả lời ngắn cần macro \\answer{...}.');
   }
 
-  const content = cleanContent(questionBody);
+  const content = validateAuthoringMath(
+    errors,
+    source,
+    cleanContent(questionBody),
+    block.bodyStart,
+    'Nội dung câu hỏi',
+  );
   if (!content && !questionImages[0]?.image) {
     addError(errors, source, block.start, 'Câu hỏi cần nội dung hoặc ảnh.');
   }
@@ -499,7 +559,15 @@ function parseQuestion(
     type: rawType,
     difficulty,
     content,
-    explanation: explanations[0]?.value.trim() || null,
+    explanation: explanations[0]?.value.trim()
+      ? validateAuthoringMath(
+          errors,
+          source,
+          explanations[0].value.trim(),
+          block.start + explanations[0].start,
+          'Lời giải',
+        )
+      : null,
     image: questionImages[0]?.image ?? null,
     options,
     trueFalseItems,

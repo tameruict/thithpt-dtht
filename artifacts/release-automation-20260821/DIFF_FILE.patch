@@ -1,0 +1,232 @@
+diff --git "a/E:\\Web-thi-thpt\\artifacts\\release-automation-20260821\\originals\\package.json" b/package.json
+index 8f1d6d4..40b88ed 100644
+--- "a/E:\\Web-thi-thpt\\artifacts\\release-automation-20260821\\originals\\package.json"
++++ b/package.json
+@@ -7,7 +7,8 @@
+     "build": "next build",
+     "start": "next start",
+     "lint": "eslint",
+-    "test": "vitest run"
++    "test": "vitest run",
++    "release:check": "node scripts/release-check.mjs"
+   },
+   "dependencies": {
+     "@aws-sdk/client-s3": "^3.1095.0",
+diff --git a/.github/workflows/quality-gates.yml b/.github/workflows/quality-gates.yml
+new file mode 100644
+index 0000000..31ea011
+--- /dev/null
++++ b/.github/workflows/quality-gates.yml
+@@ -0,0 +1,31 @@
++name: Quality gates
++
++on:
++  pull_request:
++  push:
++    branches: [main]
++
++permissions:
++  contents: read
++
++jobs:
++  application:
++    runs-on: ubuntu-latest
++    timeout-minutes: 20
++    env:
++      NEXT_PUBLIC_SUPABASE_URL: https://preview.invalid.supabase.co
++      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
++      KEY_PURCHASE_ENABLED: "false"
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 22
++          cache: npm
++      - run: npm ci
++      - run: npm run release:check
++      - run: npx tsc --noEmit
++      - run: npm run lint -- --max-warnings=0
++      - run: npm test
++      - run: npm run build
++      - run: npm audit --omit=dev
+diff --git a/scripts/release-check.mjs b/scripts/release-check.mjs
+new file mode 100644
+index 0000000..46a9fab
+--- /dev/null
++++ b/scripts/release-check.mjs
+@@ -0,0 +1,36 @@
++const strict = process.argv.includes('--strict');
++
++const requiredForPreview = [
++  'NEXT_PUBLIC_SUPABASE_URL',
++  'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
++  'NEXT_PUBLIC_TURNSTILE_SITE_KEY',
++];
++
++const missing = requiredForPreview.filter((name) => !process.env[name]?.trim());
++const forbidden = [
++  'NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY',
++  'NEXT_PUBLIC_SUPABASE_SECRET_KEY',
++].filter((name) => process.env[name]?.trim());
++const purchaseEnabled = process.env.KEY_PURCHASE_ENABLED?.trim();
++
++console.log(`RELEASE_CHECK_MODE=${strict ? 'strict' : 'report'}`);
++console.log(`MISSING_PREVIEW_ENV=${missing.join(',') || 'none'}`);
++console.log(`FORBIDDEN_PUBLIC_SECRET=${forbidden.join(',') || 'none'}`);
++console.log(`KEY_PURCHASE_ENABLED=${purchaseEnabled || 'unset'}`);
++
++if (forbidden.length > 0) {
++  console.error('Release configuration exposes a server-only Supabase secret.');
++  process.exit(1);
++}
++
++if (purchaseEnabled && purchaseEnabled !== 'false') {
++  console.error('KEY_PURCHASE_ENABLED must remain false for this release.');
++  process.exit(1);
++}
++
++if (strict && missing.length > 0) {
++  console.error('Preview deployment is missing required public configuration.');
++  process.exit(1);
++}
++
++console.log('RELEASE_CHECK_RESULT=pass');
+diff --git a/load/k6-exam-session.js b/load/k6-exam-session.js
+new file mode 100644
+index 0000000..5393c73
+--- /dev/null
++++ b/load/k6-exam-session.js
+@@ -0,0 +1,74 @@
++import http from 'k6/http';
++import { check, sleep } from 'k6';
++
++const baseUrl = __ENV.BASE_URL;
++const accessToken = __ENV.ACCESS_TOKEN;
++const sessionId = __ENV.SESSION_ID;
++const sessionQuestionId = __ENV.SESSION_QUESTION_ID;
++
++if (!baseUrl || !accessToken || !sessionId || !sessionQuestionId) {
++  throw new Error(
++    'BASE_URL, ACCESS_TOKEN, SESSION_ID and SESSION_QUESTION_ID are required.',
++  );
++}
++
++export const options = {
++  scenarios: {
++    autosave: {
++      executor: 'constant-vus',
++      vus: 500,
++      duration: '2m',
++      exec: 'autosave',
++    },
++    submit_wave: {
++      executor: 'per-vu-iterations',
++      vus: 500,
++      iterations: 1,
++      startTime: '2m',
++      maxDuration: '30s',
++      exec: 'submit',
++    },
++  },
++  thresholds: {
++    http_req_failed: ['rate<0.01'],
++    'http_req_duration{operation:autosave}': ['p(95)<800'],
++    'http_req_duration{operation:submit}': ['p(95)<2000'],
++  },
++};
++
++const headers = {
++  apikey: __ENV.PUBLISHABLE_KEY || '',
++  Authorization: `Bearer ${accessToken}`,
++  'Content-Type': 'application/json',
++};
++
++export function autosave() {
++  const response = http.post(
++    `${baseUrl}/rest/v1/rpc/save_session_answers`,
++    JSON.stringify({
++      p_session_id: sessionId,
++      p_answers: [
++        {
++          session_question_id: sessionQuestionId,
++          selected_option_id: null,
++          short_answer_text: null,
++          answer_json: { value: `load-${__VU}-${__ITER}` },
++        },
++      ],
++    }),
++    { headers, tags: { operation: 'autosave' } },
++  );
++
++  check(response, { 'autosave accepted': (r) => r.status === 200 });
++  sleep(10);
++}
++
++export function submit() {
++  const response = http.post(
++    `${baseUrl}/rest/v1/rpc/submit_exam_session`,
++    JSON.stringify({ p_session_id: sessionId }),
++    { headers, tags: { operation: 'submit' } },
++  );
++
++  check(response, { 'submit accepted': (r) => r.status === 200 });
++}
+diff --git a/DEPLOYMENT_STAGING_RUNBOOK.md b/DEPLOYMENT_STAGING_RUNBOOK.md
+new file mode 100644
+index 0000000..7a94cd6
+--- /dev/null
++++ b/DEPLOYMENT_STAGING_RUNBOOK.md
+@@ -0,0 +1,53 @@
++# Staging and Vercel release runbook
++
++## 1. Provision preview services
++
++1. Enable Supabase Branching for the organization and create a branch from live.
++2. Set Vercel Preview environment variables to that branch's URL and publishable key.
++3. Keep `KEY_PURCHASE_ENABLED=false`.
++4. Set `NEXT_PUBLIC_TURNSTILE_SITE_KEY` in Vercel Preview.
++5. In Supabase Auth > Protection, enable Cloudflare Turnstile with its secret key, require a 10-character password with letter and digit, and enable leaked-password protection.
++
++## 2. Verify and migrate staging
++
++```powershell
++npm ci
++npm run release:check -- --strict
++npx tsc --noEmit
++npm run lint -- --max-warnings=0
++npm test
++npx supabase db push --linked --dry-run
++npx supabase db push --linked
++npm run build
++npm audit --omit=dev
++```
++
++The migration list must contain only `20260820234029_production_foundation_v1.sql` before the push.
++
++## 3. Exercise preview
++
++- Register/login/reset with Turnstile enabled.
++- Verify admin-only routes as a student and an admin.
++- Start/resume an exam, autosave, submit, and inspect the grading state.
++- Start a practice session and verify the server-selected question set and charge ledger.
++- Upload an R2 image; force the registry write to fail in a test environment and verify the compensating delete.
++
++## 4. Load test
++
++Run only with an isolated staging test student/session:
++
++```bash
++k6 run \
++  -e BASE_URL=https://STAGING_PROJECT.supabase.co \
++  -e PUBLISHABLE_KEY=... \
++  -e ACCESS_TOKEN=... \
++  -e SESSION_ID=... \
++  -e SESSION_QUESTION_ID=... \
++  load/k6-exam-session.js
++```
++
++The test enforces fewer than 1% request failures, p95 autosave under 800 ms, and p95 submit under 2 s.
++
++## 5. Promote and rollback
++
++Promote the validated Vercel Preview and migration only after the gates pass. To reverse repository changes, use `artifacts/production-improvement-20260821/ROLLBACK.sh`; database rollback stays additive and uses the tested migration transaction path in `VERIFICATION.txt`.

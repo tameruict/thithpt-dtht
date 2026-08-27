@@ -1,0 +1,2922 @@
+--- a/.env.example
++++ b/.env.example
+@@ -9,14 +9,21 @@
+ R2_BUCKET_NAME=
+ R2_PUBLIC_URL=
+ 
+-# Server-only Supabase key used by the SePay webhook. Never prefix with NEXT_PUBLIC_.
++# Server-only Supabase key used by maintenance scripts. Never prefix with NEXT_PUBLIC_.
+ SUPABASE_SECRET_KEY=
+ 
+-# Server-only SePay webhook and receiving-account configuration.
+-SEPAY_WEBHOOK_API_KEY=
+-SEPAY_BANK_CODE=
+-SEPAY_BANK_ACCOUNT=
+-SEPAY_ACCOUNT_NAME=
++# Server-only checkout configuration used by Next.js.
++PAYMENT_PROVIDER=thueapibank
++PAYMENT_BANK_CODE=
++PAYMENT_BANK_ACCOUNT=
++PAYMENT_ACCOUNT_NAME=
++THUEAPIBANK_POLL_SECRET=
+ 
+ # Set true only after staging/Test Mode verification.
+ KEY_PURCHASE_ENABLED=false
++
++# Supabase Edge Function secrets (set with `supabase secrets set`; never expose
++# these as NEXT_PUBLIC_*). The contract JSON is copied from the highest usable
++# V1/V2/V3 contract after login and must not contain the API key itself.
++THUEAPIBANK_API_KEY=
++THUEAPIBANK_CONTRACT_JSON=
+--- a/scripts/release-check.mjs
++++ b/scripts/release-check.mjs
+@@ -10,15 +10,20 @@
+ const forbidden = [
+   'NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY',
+   'NEXT_PUBLIC_SUPABASE_SECRET_KEY',
+-  'NEXT_PUBLIC_SEPAY_WEBHOOK_API_KEY',
+-].filter((name) => process.env[name]?.trim());
++  ...Object.keys(process.env).filter(
++    (name) =>
++      name.startsWith('NEXT_PUBLIC_THUEAPIBANK_') ||
++      name.startsWith('NEXT_PUBLIC_PAYMENT_BANK_') ||
++      name === 'NEXT_PUBLIC_PAYMENT_ACCOUNT_NAME',
++  ),
++].filter((name, index, values) => process.env[name]?.trim() && values.indexOf(name) === index);
+ const purchaseEnabled = process.env.KEY_PURCHASE_ENABLED?.trim();
+ const checkoutEnv = [
+-  'SUPABASE_SECRET_KEY',
+-  'SEPAY_WEBHOOK_API_KEY',
+-  'SEPAY_BANK_CODE',
+-  'SEPAY_BANK_ACCOUNT',
+-  'SEPAY_ACCOUNT_NAME',
++  'PAYMENT_PROVIDER',
++  'PAYMENT_BANK_CODE',
++  'PAYMENT_BANK_ACCOUNT',
++  'PAYMENT_ACCOUNT_NAME',
++  'THUEAPIBANK_POLL_SECRET',
+ ];
+ const missingCheckoutEnv =
+   purchaseEnabled?.toLowerCase() === 'true'
+@@ -41,6 +46,14 @@
+   process.exit(1);
+ }
+ 
++if (
++  purchaseEnabled?.toLowerCase() === 'true' &&
++  process.env.PAYMENT_PROVIDER?.trim().toLowerCase() !== 'thueapibank'
++) {
++  console.error('PAYMENT_PROVIDER must be thueapibank when checkout is enabled.');
++  process.exit(1);
++}
++
+ if (missingCheckoutEnv.length > 0) {
+   console.error('Checkout is enabled but server-only payment configuration is incomplete.');
+   process.exit(1);
+--- a/src/lib/payments/config.ts
++++ b/src/lib/payments/config.ts
+@@ -1,7 +1,7 @@
+ import 'server-only';
+ 
+-export type SepayConfig = {
+-  webhookApiKey: string;
++export type PaymentConfig = {
++  provider: 'thueapibank';
+   bankCode: string;
+   bankAccount: string;
+   accountName: string;
+@@ -11,12 +11,12 @@
+   return process.env.KEY_PURCHASE_ENABLED?.trim().toLowerCase() === 'true';
+ }
+ 
+-export function getSepayConfig(): SepayConfig {
++export function getPaymentConfig(): PaymentConfig {
+   const values = {
+-    webhookApiKey: process.env.SEPAY_WEBHOOK_API_KEY?.trim() ?? '',
+-    bankCode: process.env.SEPAY_BANK_CODE?.trim() ?? '',
+-    bankAccount: process.env.SEPAY_BANK_ACCOUNT?.trim() ?? '',
+-    accountName: process.env.SEPAY_ACCOUNT_NAME?.trim() ?? '',
++    provider: process.env.PAYMENT_PROVIDER?.trim().toLowerCase() ?? '',
++    bankCode: process.env.PAYMENT_BANK_CODE?.trim() ?? '',
++    bankAccount: process.env.PAYMENT_BANK_ACCOUNT?.trim() ?? '',
++    accountName: process.env.PAYMENT_ACCOUNT_NAME?.trim() ?? '',
+   };
+ 
+   const missing = Object.entries(values)
+@@ -24,17 +24,33 @@
+     .map(([key]) => key);
+ 
+   if (missing.length > 0) {
+-    throw new Error('Missing SePay server configuration: ' + missing.join(', '));
++    throw new Error('Missing payment server configuration: ' + missing.join(', '));
+   }
+ 
+-  return values;
++  if (values.provider !== 'thueapibank') {
++    throw new Error('Unsupported payment provider.');
++  }
++
++  return values as PaymentConfig;
+ }
+ 
+ export function getCheckoutBankDetails() {
+-  const config = getSepayConfig();
++  const config = getPaymentConfig();
+   return {
+     bankCode: config.bankCode,
+     bankAccount: config.bankAccount,
+     accountName: config.accountName,
+   };
+ }
++
++export function getPaymentPollFunctionConfig() {
++  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? '';
++  const pollSecret = process.env.THUEAPIBANK_POLL_SECRET?.trim() ?? '';
++  if (!supabaseUrl || !pollSecret) {
++    throw new Error('Missing ThueAPIBank poll function configuration.');
++  }
++  return {
++    url: `${supabaseUrl.replace(/\/$/, '')}/functions/v1/poll-thueapibank`,
++    pollSecret,
++  };
++}
+--- a/src/lib/payments/sepay.ts
++++ /dev/null
+@@ -1,96 +0,0 @@
+-export type SepayWebhookPayload = {
+-  id: string | number;
+-  code?: string | null;
+-  content?: string | null;
+-  description?: string | null;
+-  transferAmount: string | number;
+-  transferType: string;
+-  accountNumber: string;
+-  referenceCode?: string | null;
+-  [key: string]: unknown;
+-};
+-
+-export type ParsedSepayPayment = {
+-  eventId: string;
+-  amount: number;
+-  transferType: string;
+-  accountNumber: string;
+-  providerReference: string;
+-  paymentCode: string;
+-};
+-
+-export type SepayParseResult =
+-  | { ok: true; value: ParsedSepayPayment }
+-  | { ok: false; error: string };
+-
+-const paymentCodePattern = /\b(THPT[A-Z0-9]{8,24})\b/i;
+-
+-function asTrimmedString(value: unknown) {
+-  return typeof value === 'string' ? value.trim() : '';
+-}
+-
+-export function extractSepayPaymentCode(payload: Pick<
+-  SepayWebhookPayload,
+-  'code' | 'content' | 'description' | 'referenceCode'
+->) {
+-  const candidates = [
+-    payload.code,
+-    payload.content,
+-    payload.description,
+-    payload.referenceCode,
+-  ];
+-
+-  for (const candidate of candidates) {
+-    const value = asTrimmedString(candidate);
+-    const match = value.match(paymentCodePattern);
+-    if (match) return match[1].toUpperCase();
+-  }
+-
+-  return '';
+-}
+-
+-export function parseSepayPaymentPayload(
+-  input: unknown,
+-): SepayParseResult {
+-  if (!input || typeof input !== 'object') {
+-    return { ok: false, error: 'PAYLOAD_INVALID' };
+-  }
+-
+-  const payload = input as Partial<SepayWebhookPayload>;
+-  const eventId = String(payload.id ?? '').trim();
+-  const amount = Number(payload.transferAmount);
+-  const transferType = asTrimmedString(payload.transferType).toLowerCase();
+-  const accountNumber = asTrimmedString(payload.accountNumber);
+-
+-  if (!eventId) return { ok: false, error: 'EVENT_ID_REQUIRED' };
+-  if (!Number.isSafeInteger(amount) || amount < 0) {
+-    return { ok: false, error: 'TRANSFER_AMOUNT_INVALID' };
+-  }
+-  if (!transferType) return { ok: false, error: 'TRANSFER_TYPE_REQUIRED' };
+-  if (!accountNumber) return { ok: false, error: 'ACCOUNT_NUMBER_REQUIRED' };
+-
+-  return {
+-    ok: true,
+-    value: {
+-      eventId,
+-      amount,
+-      transferType,
+-      accountNumber,
+-      providerReference: asTrimmedString(payload.referenceCode),
+-      paymentCode: extractSepayPaymentCode(payload),
+-    },
+-  };
+-}
+-
+-export function isSepayApiKeyHeader(
+-  authorizationHeader: string | null | undefined,
+-  expectedApiKey: string,
+-) {
+-  const match = authorizationHeader?.match(/^Apikey\s+(.+)$/i);
+-  return Boolean(
+-    expectedApiKey &&
+-      match &&
+-      match[1].trim().length > 0 &&
+-      match[1].trim() === expectedApiKey,
+-  );
+-}
+--- a/src/lib/payments/sepay.test.ts
++++ /dev/null
+@@ -1,70 +0,0 @@
+-import { describe, expect, it } from 'vitest';
+-import {
+-  extractSepayPaymentCode,
+-  isSepayApiKeyHeader,
+-  parseSepayPaymentPayload,
+-} from './sepay';
+-
+-describe('SePay webhook parser', () => {
+-  const payload = {
+-    id: 92704,
+-    code: '',
+-    content: 'Thanh toan THPTABC123456789',
+-    transferAmount: 125000,
+-    transferType: 'in',
+-    accountNumber: '1017588888',
+-    referenceCode: 'FT24012345678',
+-  };
+-
+-  it('normalizes the documented payload and extracts payment code from content', () => {
+-    const result = parseSepayPaymentPayload(payload);
+-    expect(result).toEqual({
+-      ok: true,
+-      value: {
+-        eventId: '92704',
+-        amount: 125000,
+-        transferType: 'in',
+-        accountNumber: '1017588888',
+-        providerReference: 'FT24012345678',
+-        paymentCode: 'THPTABC123456789',
+-      },
+-    });
+-  });
+-
+-  it('prefers a payment code in the provider code field', () => {
+-    expect(
+-      extractSepayPaymentCode({
+-        code: 'THPTZZZ123456789',
+-        content: 'THPTAAA123456789',
+-        description: null,
+-        referenceCode: null,
+-      }),
+-    ).toBe('THPTZZZ123456789');
+-  });
+-
+-  it('rejects missing event, amount, transfer type, or account', () => {
+-    expect(parseSepayPaymentPayload({ ...payload, id: '' })).toEqual({
+-      ok: false,
+-      error: 'EVENT_ID_REQUIRED',
+-    });
+-    expect(parseSepayPaymentPayload({ ...payload, transferAmount: 'x' })).toEqual({
+-      ok: false,
+-      error: 'TRANSFER_AMOUNT_INVALID',
+-    });
+-    expect(parseSepayPaymentPayload({ ...payload, transferType: '' })).toEqual({
+-      ok: false,
+-      error: 'TRANSFER_TYPE_REQUIRED',
+-    });
+-    expect(parseSepayPaymentPayload({ ...payload, accountNumber: '' })).toEqual({
+-      ok: false,
+-      error: 'ACCOUNT_NUMBER_REQUIRED',
+-    });
+-  });
+-
+-  it('validates the Apikey header shape without exposing the secret', () => {
+-    expect(isSepayApiKeyHeader('Apikey test-secret', 'test-secret')).toBe(true);
+-    expect(isSepayApiKeyHeader('apikey test-secret', 'test-secret')).toBe(true);
+-    expect(isSepayApiKeyHeader('Bearer test-secret', 'test-secret')).toBe(false);
+-    expect(isSepayApiKeyHeader('Apikey other', 'test-secret')).toBe(false);
+-  });
+-});
+--- a/src/app/api/payments/sepay/webhook/route.ts
++++ /dev/null
+@@ -1,73 +0,0 @@
+-import { createHash } from 'node:crypto';
+-import { isKeyPurchaseEnabled, getSepayConfig } from '@/lib/payments/config';
+-import {
+-  isSepayApiKeyHeader,
+-  parseSepayPaymentPayload,
+-} from '@/lib/payments/sepay';
+-import { createServiceClient } from '@/lib/supabase/service';
+-import type { Json } from '@/lib/supabase/database';
+-
+-export const runtime = 'nodejs';
+-export const dynamic = 'force-dynamic';
+-
+-function json(body: Record<string, unknown>, status: number) {
+-  return Response.json(body, { status });
+-}
+-
+-export async function POST(request: Request) {
+-  if (!isKeyPurchaseEnabled()) {
+-    return json({ success: false, error: 'CHECKOUT_DISABLED' }, 503);
+-  }
+-
+-  let config;
+-  try {
+-    config = getSepayConfig();
+-  } catch {
+-    return json({ success: false, error: 'WEBHOOK_NOT_CONFIGURED' }, 503);
+-  }
+-
+-  if (
+-    !isSepayApiKeyHeader(
+-      request.headers.get('authorization'),
+-      config.webhookApiKey,
+-    )
+-  ) {
+-    return json({ success: false, error: 'UNAUTHORIZED' }, 401);
+-  }
+-
+-  const rawBody = await request.text();
+-  let payload: unknown;
+-  try {
+-    payload = JSON.parse(rawBody);
+-  } catch {
+-    return json({ success: false, error: 'PAYLOAD_INVALID' }, 400);
+-  }
+-
+-  const parsed = parseSepayPaymentPayload(payload);
+-  if (!parsed.ok) {
+-    return json({ success: false, error: parsed.error }, 422);
+-  }
+-
+-  const digest = createHash('sha256').update(rawBody, 'utf8').digest('hex');
+-  const supabase = createServiceClient();
+-  const { data, error } = await supabase.rpc('process_sepay_payment', {
+-    p_provider_event_id: parsed.value.eventId,
+-    p_payment_code: parsed.value.paymentCode,
+-    p_amount: parsed.value.amount,
+-    p_transfer_type: parsed.value.transferType,
+-    p_account_number: parsed.value.accountNumber,
+-    p_expected_account_number: config.bankAccount,
+-    p_provider_reference: parsed.value.providerReference || null,
+-    p_payload: payload as Json,
+-    p_payload_sha256: digest,
+-  });
+-
+-  if (error) {
+-    return json({ success: false, error: 'PAYMENT_PROCESSING_FAILED' }, 500);
+-  }
+-
+-  // Invalid account/amount/type and unmatched codes are durable reconciliation
+-  // events. A 2xx response prevents SePay from retrying a transaction that
+-  // cannot result in entitlement.
+-  return json({ success: true, result: data }, 200);
+-}
+--- a/src/app/purchase/PurchaseClient.tsx
++++ b/src/app/purchase/PurchaseClient.tsx
+@@ -158,7 +158,7 @@
+         <div>
+           <p className={styles.eyebrow}>THANH TOÁN KEY</p>
+           <h1>Mua key luyện tập và thi</h1>
+-          <p>Key được cấp sau khi hệ thống xác nhận đúng giao dịch SePay.</p>
++          <p>Key được cấp sau khi hệ thống xác nhận đúng giao dịch ThueAPIBank.</p>
+         </div>
+         <div className={styles.links}>
+           <Link href="/subjects">Môn thi</Link>
+@@ -251,7 +251,7 @@
+                     {qrUrl ? (
+                       <Image
+                         src={qrUrl}
+-                        alt="QR chuyển khoản SePay"
++                        alt="QR chuyển khoản mua key"
+                         width={220}
+                         height={220}
+                         unoptimized
+@@ -304,8 +304,8 @@
+               <Clipboard size={28} />
+               <h2>Thanh toán tự động</h2>
+               <p>
+-                Sau khi chuyển khoản, SePay gửi webhook về máy chủ. Đơn lặp
+-                hoặc giao dịch sai sẽ được lưu để quản trị viên đối soát.
++                Sau khi chuyển khoản, hệ thống chủ động đối soát ThueAPIBank.
++                Đơn lặp hoặc giao dịch sai được lưu để quản trị viên xử lý.
+               </p>
+             </section>
+           )}
+--- a/src/app/admin/purchases/PurchasesClient.tsx
++++ b/src/app/admin/purchases/PurchasesClient.tsx
+@@ -2,7 +2,7 @@
+ 
+ import { useCallback, useEffect, useState } from 'react';
+ import Link from 'next/link';
+-import { RefreshCw, RotateCcw, ShieldAlert } from 'lucide-react';
++import { Play, RefreshCw, RotateCcw, ShieldAlert } from 'lucide-react';
+ import { createClient } from '@/lib/supabase/client';
+ import styles from '@/styles/adminPurchase.module.css';
+ 
+@@ -30,12 +30,24 @@
+   processing_error: string | null;
+ };
+ 
++type ProviderState = {
++  provider: string;
++  cursor: string | null;
++  locked_until: string | null;
++  last_polled_at: string | null;
++  last_success_at: string | null;
++  last_error_code: string | null;
++  auto_fulfillment_enabled: boolean;
++};
++
+ export default function PurchasesClient() {
+   const [orders, setOrders] = useState<Purchase[]>([]);
+   const [events, setEvents] = useState<PaymentEvent[]>([]);
++  const [providerState, setProviderState] = useState<ProviderState | null>(null);
+   const [statusFilter, setStatusFilter] = useState('');
+   const [feedback, setFeedback] = useState('');
+   const [loading, setLoading] = useState(true);
++  const [polling, setPolling] = useState(false);
+ 
+   const load = useCallback(async () => {
+     setLoading(true);
+@@ -49,7 +61,7 @@
+       .limit(200);
+     if (statusFilter) orderQuery = orderQuery.eq('status', statusFilter);
+ 
+-    const [orderResult, eventResult] = await Promise.all([
++    const [orderResult, eventResult, providerResult] = await Promise.all([
+       orderQuery,
+       supabase
+         .from('payment_events')
+@@ -57,12 +69,25 @@
+         .not('processing_error', 'is', null)
+         .order('received_at', { ascending: false })
+         .limit(200),
++      supabase
++        .from('payment_provider_state')
++        .select(
++          'provider,cursor,locked_until,last_polled_at,last_success_at,last_error_code,auto_fulfillment_enabled',
++        )
++        .eq('provider', 'thueapibank')
++        .maybeSingle(),
+     ]);
+-    if (orderResult.error || eventResult.error) {
+-      setFeedback(orderResult.error?.message ?? eventResult.error?.message ?? '');
++    if (orderResult.error || eventResult.error || providerResult.error) {
++      setFeedback(
++        orderResult.error?.message ??
++          eventResult.error?.message ??
++          providerResult.error?.message ??
++          '',
++      );
+     } else {
+       setOrders((orderResult.data ?? []) as Purchase[]);
+       setEvents((eventResult.data ?? []) as PaymentEvent[]);
++      setProviderState((providerResult.data as ProviderState | null) ?? null);
+     }
+     setLoading(false);
+   }, [statusFilter]);
+@@ -94,21 +119,75 @@
+     await load();
+   };
+ 
++  const pollNow = async () => {
++    setPolling(true);
++    setFeedback('');
++    try {
++      const response = await fetch('/api/admin/payments/poll', {
++        method: 'POST',
++      });
++      const result = (await response.json()) as {
++        success?: boolean;
++        processed?: number;
++        error?: string;
++      };
++      setFeedback(
++        result.success
++          ? `Đã đồng bộ ThueAPIBank: ${result.processed ?? 0} giao dịch.`
++          : result.error ?? 'POLL_FAILED',
++      );
++      await load();
++    } catch {
++      setFeedback('POLLER_UNREACHABLE');
++    } finally {
++      setPolling(false);
++    }
++  };
++
+   return (
+     <main className={styles.page}>
+       <div className={styles.topbar}>
+         <div>
+-          <p className={styles.eyebrow}>ADMIN · SEPAY</p>
++          <p className={styles.eyebrow}>ADMIN · THUEAPIBANK</p>
+           <h1>Đơn mua key</h1>
+           <p>Đối soát đơn, xem giao dịch chưa khớp và retry fulfillment.</p>
+         </div>
+         <div className={styles.links}>
++          <button
++            type="button"
++            className={styles.syncButton}
++            onClick={() => void pollNow()}
++            disabled={polling}
++          >
++            <Play size={15} />
++            {polling ? 'Đang đồng bộ...' : 'Đồng bộ ThueAPIBank ngay'}
++          </button>
+           <Link href="/admin/key-products">Gói key</Link>
+           <Link href="/admin">Dashboard</Link>
+         </div>
+       </div>
+ 
+       {feedback ? <p className={styles.error}>{feedback}</p> : null}
++      <section className={styles.providerStatus}>
++        <div>
++          <span>Tự động cấp key</span>
++          <strong>
++            {providerState?.auto_fulfillment_enabled ? 'Đang bật' : 'Đang tắt'}
++          </strong>
++        </div>
++        <div>
++          <span>Poll thành công gần nhất</span>
++          <strong>
++            {providerState?.last_success_at
++              ? new Date(providerState.last_success_at).toLocaleString('vi-VN')
++              : 'Chưa có'}
++          </strong>
++        </div>
++        <div>
++          <span>Lỗi gần nhất</span>
++          <strong>{providerState?.last_error_code ?? 'Không có'}</strong>
++        </div>
++      </section>
+       <section className={styles.card}>
+         <div className={styles.sectionHeader}>
+           <h2>Orders</h2>
+@@ -183,7 +262,7 @@
+       </section>
+ 
+       <section className={styles.card}>
+-        <h2>Giao dịch SePay chưa khớp/lỗi</h2>
++        <h2>Giao dịch ThueAPIBank chưa khớp/lỗi</h2>
+         <div className={styles.eventList}>
+           {events.map((event) => (
+             <div className={styles.eventRow} key={event.id}>
+--- a/src/app/admin/AdminDashboardClient.tsx
++++ b/src/app/admin/AdminDashboardClient.tsx
+@@ -1376,7 +1376,7 @@
+         <nav className={styles.nav}>
+           <Link href="/admin/authoring" transitionTypes={['nav-forward']}><FilePenLine size={18} /> Soạn đề</Link>
+           <Link href="/admin/key-products" transitionTypes={['nav-forward']}><KeyRound size={18} /> Gói mua key</Link>
+-          <Link href="/admin/purchases" transitionTypes={['nav-forward']}><ClipboardCheck size={18} /> Đơn SePay</Link>
++          <Link href="/admin/purchases" transitionTypes={['nav-forward']}><ClipboardCheck size={18} /> Đơn ThueAPIBank</Link>
+           <a href="#results"><BarChart3 size={18} /> Kết quả thi</a>
+           <a href="#rooms"><DoorOpen size={18} /> Phòng thi</a>
+           <a href="#subjects"><BookOpenCheck size={18} /> Môn học</a>
+--- a/src/lib/supabase/database.ts
++++ b/src/lib/supabase/database.ts
+@@ -95,6 +95,30 @@
+     received_at: string;
+     processed_at: string | null;
+     processing_error: string | null;
++    transaction_at: string | null;
++    direction: string | null;
++    amount: number | null;
++    content: string | null;
++    account_number: string | null;
++    bank_code: string | null;
++    provider_reference: string | null;
++  };
++  Insert: never;
++  Update: never;
++  Relationships: [];
++};
++
++type PaymentProviderStateTable = {
++  Row: {
++    provider: string;
++    cursor: string | null;
++    locked_until: string | null;
++    lock_owner: string | null;
++    last_polled_at: string | null;
++    last_success_at: string | null;
++    last_error_code: string | null;
++    auto_fulfillment_enabled: boolean;
++    updated_at: string;
+   };
+   Insert: never;
+   Update: never;
+@@ -105,6 +129,7 @@
+   key_products: KeyProductTable;
+   purchase_orders: PurchaseOrderTable;
+   payment_events: PaymentEventTable;
++  payment_provider_state: PaymentProviderStateTable;
+   exam_keys: GeneratedTables['exam_keys'] & {
+     Row: GeneratedTables['exam_keys']['Row'] & {
+       source_order_id: string | null;
+@@ -134,17 +159,42 @@
+     Args: { p_product_id: string; p_idempotency_key: string };
+     Returns: Json;
+   };
+-  process_sepay_payment: {
+-    Args: {
++  process_bank_payment: {
++    Args: {
++      p_provider: string;
+       p_provider_event_id: string;
++      p_transaction_at: string;
++      p_direction: string;
++      p_amount: number;
++      p_content: string;
+       p_payment_code: string;
+-      p_amount: number;
+-      p_transfer_type: string;
+       p_account_number: string;
+       p_expected_account_number: string;
++      p_bank_code: string;
++      p_expected_bank_code: string;
+       p_provider_reference: string | null;
+       p_payload: Json;
+       p_payload_sha256: string;
++    };
++    Returns: Json;
++  };
++  claim_payment_provider_lease: {
++    Args: {
++      p_provider: string;
++      p_owner: string;
++      p_lease_seconds?: number;
++      p_force?: boolean;
++    };
++    Returns: Json;
++  };
++  complete_payment_provider_poll: {
++    Args: {
++      p_provider: string;
++      p_owner: string;
++      p_cursor: string | null;
++      p_success: boolean;
++      p_error_code?: string | null;
++      p_disable_auto_fulfillment?: boolean;
+     };
+     Returns: Json;
+   };
+--- a/src/styles/adminPurchase.module.css
++++ b/src/styles/adminPurchase.module.css
+@@ -38,6 +38,51 @@
+ .links a {
+   color: #2563eb;
+   font-weight: 700;
++}
++
++.syncButton {
++  display: inline-flex;
++  align-items: center;
++  gap: 7px;
++  border: 0;
++  border-radius: 9px;
++  padding: 9px 12px;
++  background: #2563eb;
++  color: white;
++  font-weight: 800;
++  cursor: pointer;
++}
++
++.syncButton:disabled {
++  cursor: wait;
++  opacity: .65;
++}
++
++.providerStatus {
++  max-width: 1200px;
++  margin: 0 auto 20px;
++  display: grid;
++  grid-template-columns: repeat(3, minmax(0, 1fr));
++  gap: 12px;
++}
++
++.providerStatus > div {
++  display: grid;
++  gap: 5px;
++  padding: 14px 16px;
++  border: 1px solid #dbe4f0;
++  border-radius: 12px;
++  background: white;
++}
++
++.providerStatus span {
++  color: #667085;
++  font-size: 12px;
++}
++
++.providerStatus strong {
++  overflow-wrap: anywhere;
++  color: #101828;
+ }
+ 
+ .adminGrid {
+@@ -212,5 +257,10 @@
+ 
+   .links {
+     margin-top: 18px;
+-  }
+-}
++    flex-wrap: wrap;
++  }
++
++  .providerStatus {
++    grid-template-columns: 1fr;
++  }
++}
+--- a/supabase/config.toml
++++ b/supabase/config.toml
+@@ -388,6 +388,13 @@
+ # The Deno major version to use.
+ deno_version = 2
+ 
++# Cron and the authenticated admin proxy call this internal function with the
++# shared x-poll-secret header. JWT verification is disabled at the gateway so
++# both new publishable/secret keys and legacy JWT keys behave consistently;
++# the function performs its own constant-time secret check before any DB/API IO.
++[functions.poll-thueapibank]
++verify_jwt = false
++
+ # [edge_runtime.secrets]
+ # secret_key = "env(SECRET_VALUE)"
+ 
+--- a/supabase/migrations/20260821114952_sepay_checkout.sql
++++ b/supabase/migrations/20260821114952_key_checkout.sql
+@@ -1,4 +1,4 @@
+--- SePay checkout and purchased global-key entitlement.
++-- Bank checkout and purchased global-key entitlement.
+ -- Forward-only: tolerates the optional foundation tables already existing while
+ -- creating the same contract when this migration is applied to live directly.
+ 
+@@ -147,7 +147,7 @@
+   where source_order_id is not null;
+ 
+ -- The event row is intentionally append-only. The service role reaches it only
+--- through process_sepay_payment; dashboard users can read errors but cannot
++-- through the bank processor in the follow-up migration; dashboard users can read errors but cannot
+ -- mutate provider evidence.
+ create or replace function private.prevent_payment_event_mutation()
+ returns trigger
+@@ -309,7 +309,7 @@
+           'unused',
+           expiry,
+           order_row.amount,
+-          'sepay:' || coalesce(nullif(trim(p_provider_reference), ''), order_row.payment_code),
++          'legacy_bank:' || coalesce(nullif(trim(p_provider_reference), ''), order_row.payment_code),
+           false,
+           p_order_id
+         );
+@@ -326,7 +326,7 @@
+ 
+   update public.purchase_orders
+   set status = 'fulfilled',
+-      provider = coalesce(provider, 'sepay'),
++      provider = coalesce(provider, 'legacy_bank'),
+       provider_order_ref = coalesce(
+         provider_order_ref,
+         nullif(trim(p_provider_reference), '')
+@@ -477,240 +477,6 @@
+ grant execute on function public.create_purchase_order(uuid, text)
+   to authenticated;
+ 
+-create or replace function public.process_sepay_payment(
+-  p_provider_event_id text,
+-  p_payment_code text,
+-  p_amount integer,
+-  p_transfer_type text,
+-  p_account_number text,
+-  p_expected_account_number text,
+-  p_provider_reference text,
+-  p_payload jsonb,
+-  p_payload_sha256 text
+-)
+-returns jsonb
+-language plpgsql
+-security definer
+-set search_path to ''
+-as $$
+-declare
+-  order_row public.purchase_orders%rowtype;
+-  event_row public.payment_events%rowtype;
+-  result jsonb;
+-  existing_status text;
+-  existing_key_code text;
+-  event_type text;
+-  processing_error text;
+-begin
+-  if coalesce((select auth.jwt() ->> 'role'), '') <> 'service_role' then
+-    raise exception 'SERVICE_ROLE_ONLY';
+-  end if;
+-
+-  if nullif(trim(p_provider_event_id), '') is null then
+-    raise exception 'PROVIDER_EVENT_ID_REQUIRED';
+-  end if;
+-
+-  if p_payload_sha256 !~ '^[0-9a-f]{64}$' then
+-    raise exception 'PAYLOAD_HASH_INVALID';
+-  end if;
+-
+-  select *
+-  into event_row
+-  from public.payment_events
+-  where provider = 'sepay'
+-    and provider_event_id = trim(p_provider_event_id);
+-
+-  if found then
+-    select purchase.status, key.code
+-    into existing_status, existing_key_code
+-    from public.purchase_orders purchase
+-    left join public.exam_keys key on key.source_order_id = purchase.id
+-    where purchase.id = event_row.order_id;
+-
+-    return jsonb_build_object(
+-      'duplicate', true,
+-      'accepted', event_row.processing_error is null,
+-      'event_id', event_row.id,
+-      'order_id', event_row.order_id,
+-      'status', coalesce(existing_status, 'unmatched'),
+-      'key_code', existing_key_code
+-    );
+-  end if;
+-
+-  select *
+-  into order_row
+-  from public.purchase_orders
+-  where upper(payment_code) = upper(trim(coalesce(p_payment_code, '')))
+-  for update;
+-
+-  if not found then
+-    insert into public.payment_events (
+-      provider,
+-      provider_event_id,
+-      event_type,
+-      payload_sha256,
+-      payload,
+-      processed_at,
+-      processing_error
+-    ) values (
+-      'sepay',
+-      trim(p_provider_event_id),
+-      'unmatched',
+-      lower(p_payload_sha256),
+-      coalesce(p_payload, '{}'::jsonb),
+-      now(),
+-      'PAYMENT_CODE_NOT_FOUND'
+-    );
+-
+-    return jsonb_build_object(
+-      'duplicate', false,
+-      'accepted', false,
+-      'status', 'unmatched',
+-      'error', 'PAYMENT_CODE_NOT_FOUND'
+-    );
+-  end if;
+-
+-  if lower(trim(coalesce(p_transfer_type, ''))) <> 'in' then
+-    event_type := 'invalid_transfer';
+-    processing_error := 'TRANSFER_TYPE_NOT_IN';
+-  elsif p_amount is null or p_amount <> order_row.amount then
+-    event_type := 'invalid_amount';
+-    processing_error := 'PAYMENT_AMOUNT_MISMATCH';
+-  elsif nullif(trim(coalesce(p_account_number, '')), '') is null
+-     or nullif(trim(coalesce(p_expected_account_number, '')), '') is null
+-     or trim(p_account_number) <> trim(p_expected_account_number) then
+-    event_type := 'invalid_account';
+-    processing_error := 'PAYMENT_ACCOUNT_MISMATCH';
+-  else
+-    event_type := 'payment_received';
+-    processing_error := null;
+-  end if;
+-
+-  if processing_error is not null then
+-    insert into public.payment_events (
+-      order_id,
+-      provider,
+-      provider_event_id,
+-      event_type,
+-      payload_sha256,
+-      payload,
+-      received_at,
+-      processed_at,
+-      processing_error
+-    ) values (
+-      order_row.id,
+-      'sepay',
+-      trim(p_provider_event_id),
+-      event_type,
+-      lower(p_payload_sha256),
+-      coalesce(p_payload, '{}'::jsonb),
+-      now(),
+-      now(),
+-      processing_error
+-    );
+-
+-    return jsonb_build_object(
+-      'duplicate', false,
+-      'accepted', false,
+-      'status', order_row.status,
+-      'order_id', order_row.id,
+-      'error', processing_error
+-    );
+-  end if;
+-
+-  if order_row.expires_at is not null and order_row.expires_at <= now() then
+-    processing_error := 'PURCHASE_ORDER_EXPIRED';
+-    insert into public.payment_events (
+-      order_id,
+-      provider,
+-      provider_event_id,
+-      event_type,
+-      payload_sha256,
+-      payload,
+-      received_at,
+-      processed_at,
+-      processing_error
+-    ) values (
+-      order_row.id,
+-      'sepay',
+-      trim(p_provider_event_id),
+-      'expired_order',
+-      lower(p_payload_sha256),
+-      coalesce(p_payload, '{}'::jsonb),
+-      now(),
+-      now(),
+-      processing_error
+-    );
+-
+-    update public.purchase_orders
+-    set status = 'failed', failed_at = now(), failure_code = processing_error
+-    where id = order_row.id and status = 'pending';
+-
+-    return jsonb_build_object(
+-      'duplicate', false,
+-      'accepted', false,
+-      'status', 'failed',
+-      'order_id', order_row.id,
+-      'error', processing_error
+-    );
+-  end if;
+-
+-  insert into public.payment_events (
+-    order_id,
+-    provider,
+-    provider_event_id,
+-    event_type,
+-    payload_sha256,
+-    payload,
+-    received_at,
+-    processed_at
+-  ) values (
+-    order_row.id,
+-    'sepay',
+-    trim(p_provider_event_id),
+-    'payment_received',
+-    lower(p_payload_sha256),
+-    coalesce(p_payload, '{}'::jsonb),
+-    now(),
+-    now()
+-  );
+-
+-  update public.purchase_orders
+-  set status = case when status = 'pending' then 'paid' else status end,
+-      provider = 'sepay',
+-      provider_order_ref = coalesce(
+-        nullif(trim(p_provider_reference), ''),
+-        trim(p_provider_event_id)
+-      ),
+-      paid_at = coalesce(paid_at, now()),
+-      updated_at = now()
+-  where id = order_row.id;
+-
+-  result := private.fulfill_purchase_order(
+-    order_row.id,
+-    coalesce(nullif(trim(p_provider_reference), ''), trim(p_provider_event_id))
+-  );
+-
+-  return jsonb_build_object(
+-    'duplicate', false,
+-    'accepted', true,
+-    'event_id', (
+-      select id
+-      from public.payment_events
+-      where provider = 'sepay'
+-        and provider_event_id = trim(p_provider_event_id)
+-    )
+-  ) || result;
+-end;
+-$$;
+-
+-revoke all on function public.process_sepay_payment(
+-  text, text, integer, text, text, text, text, jsonb, text
+-) from public, anon, authenticated;
+-grant execute on function public.process_sepay_payment(
+-  text, text, integer, text, text, text, text, jsonb, text
+-) to service_role;
+-
+ create or replace function public.reconcile_purchase_order(p_order_id uuid)
+ returns jsonb
+ language plpgsql
+--- a/supabase/tests/sepay_checkout_test.sql
++++ b/supabase/tests/thueapibank_checkout_test.sql
+@@ -3,10 +3,10 @@
+ create extension if not exists pgtap with schema extensions;
+ set local search_path = public, extensions;
+ 
+-select plan(23);
++select plan(31);
+ 
+ select has_column('public', 'key_products', 'valid_days',
+-  'products can snapshot an entitlement expiry');
++  'products snapshot an entitlement expiry');
+ select has_column('public', 'purchase_orders', 'payment_code',
+   'orders expose a transfer code');
+ select has_column('public', 'purchase_orders', 'expires_at',
+@@ -15,7 +15,17 @@
+   'fulfilled orders own one key');
+ 
+ select has_table('public', 'payment_events',
+-  'immutable SePay evidence table exists');
++  'immutable bank payment evidence exists');
++select has_table('public', 'payment_provider_state',
++  'poll cursor and lease state exists');
++select has_column('public', 'payment_events', 'transaction_at',
++  'normalized transaction time is retained');
++select has_column('public', 'payment_events', 'direction',
++  'normalized transaction direction is retained');
++select has_column('public', 'payment_provider_state', 'last_success_at',
++  'last successful poll is observable');
++select has_column('public', 'payment_provider_state', 'auto_fulfillment_enabled',
++  'provider auth failures can stop fulfillment');
+ select has_index('public', 'payment_events', 'payment_events_provider_provider_event_id_key',
+   'provider event IDs are unique');
+ select has_index('public', 'exam_keys', 'exam_keys_source_order_unique',
+@@ -30,10 +40,27 @@
+ );
+ select function_returns(
+   'public',
+-  'process_sepay_payment',
+-  array['text', 'text', 'integer', 'text', 'text', 'text', 'text', 'jsonb', 'text'],
++  'process_bank_payment',
++  array[
++    'text', 'text', 'timestamp with time zone', 'text', 'integer', 'text',
++    'text', 'text', 'text', 'text', 'text', 'text', 'jsonb', 'text'
++  ],
+   'jsonb',
+-  'SePay events are processed through one idempotent RPC'
++  'normalized bank events use one idempotent RPC'
++);
++select function_returns(
++  'public',
++  'claim_payment_provider_lease',
++  array['text', 'uuid', 'integer', 'boolean'],
++  'jsonb',
++  'poll workers claim a database lease'
++);
++select function_returns(
++  'public',
++  'complete_payment_provider_poll',
++  array['text', 'uuid', 'text', 'boolean', 'text', 'boolean'],
++  'jsonb',
++  'poll workers release the lease and advance cursor'
+ );
+ select function_returns(
+   'public',
+@@ -51,12 +78,13 @@
+ );
+ 
+ select is_definer('public', 'create_purchase_order',
+-  array['uuid', 'text'], 'order creation is guarded by the database');
+-select is_definer('public', 'process_sepay_payment',
+-  array['text', 'text', 'integer', 'text', 'text', 'text', 'text', 'jsonb', 'text'],
+-  'webhook fulfillment is guarded by the database');
+-select is_definer('public', 'reconcile_purchase_order',
+-  array['uuid'], 'reconciliation is admin-gated');
++  array['uuid', 'text'], 'order creation is database guarded');
++select is_definer('public', 'process_bank_payment',
++  array[
++    'text', 'text', 'timestamp with time zone', 'text', 'integer', 'text',
++    'text', 'text', 'text', 'text', 'text', 'text', 'jsonb', 'text'
++  ],
++  'bank fulfillment is database guarded');
+ 
+ select results_eq(
+   $$select has_table_privilege('anon', 'public.purchase_orders', 'INSERT')$$,
+@@ -64,29 +92,28 @@
+   'anonymous callers cannot insert orders'
+ );
+ select results_eq(
+-  $$select has_table_privilege('authenticated', 'public.purchase_orders', 'INSERT')$$,
+-  array[false],
+-  'authenticated clients cannot insert orders directly'
+-);
+-select results_eq(
+   $$select has_table_privilege('authenticated', 'public.purchase_orders', 'UPDATE')$$,
+   array[false],
+-  'authenticated clients cannot mark orders paid directly'
++  'students cannot mark orders paid'
+ );
+ select results_eq(
+   $$select has_table_privilege('authenticated', 'public.payment_events', 'INSERT')$$,
+   array[false],
+-  'clients cannot forge provider events'
++  'clients cannot forge payment evidence'
+ );
+ select results_eq(
+-  $$select has_function_privilege('anon', 'public.process_sepay_payment(text,text,integer,text,text,text,text,jsonb,text)', 'EXECUTE')$$,
++  $$select has_table_privilege('authenticated', 'public.payment_provider_state', 'UPDATE')$$,
+   array[false],
+-  'anonymous callers cannot execute webhook fulfillment'
++  'clients cannot alter poll leases or cursor'
+ );
+ select results_eq(
+-  $$select has_function_privilege('authenticated', 'public.process_sepay_payment(text,text,integer,text,text,text,text,jsonb,text)', 'EXECUTE')$$,
++  $$select has_function_privilege(
++    'authenticated',
++    'public.process_bank_payment(text,text,timestamptz,text,integer,text,text,text,text,text,text,text,jsonb,text)',
++    'EXECUTE'
++  )$$,
+   array[false],
+-  'student sessions cannot execute webhook fulfillment'
++  'student sessions cannot execute fulfillment'
+ );
+ select results_eq(
+   $$select relrowsecurity from pg_class where oid='public.payment_events'::regclass$$,
+@@ -94,14 +121,49 @@
+   'payment evidence has RLS'
+ );
+ select results_eq(
+-  $$select position('PAYMENT_EVENT_IMMUTABLE' in pg_get_functiondef('private.prevent_payment_event_mutation()'::regprocedure)) > 0$$,
++  $$select relrowsecurity from pg_class where oid='public.payment_provider_state'::regclass$$,
+   array[true],
+-  'payment evidence has an immutable trigger'
++  'provider state has RLS'
+ );
+ select results_eq(
+-  $$select count(*)::bigint from public.key_products where valid_days is not null and valid_days <= 0$$,
+-  array[0::bigint],
+-  'configured product expiries remain positive'
++  $$select position('p_provider' in lower(pg_get_functiondef(
++    'public.process_bank_payment(text,text,timestamptz,text,integer,text,text,text,text,text,text,text,jsonb,text)'::regprocedure
++  ))) > 0$$,
++  array[true],
++  'generic bank processor receives provider as an explicit field'
++);
++
++select is(
++  (public.claim_payment_provider_lease(
++    'thueapibank',
++    '11111111-1111-4111-8111-111111111111'::uuid,
++    20,
++    false
++  ) ->> 'acquired')::boolean,
++  true,
++  'first poll worker acquires the lease'
++);
++select is(
++  (public.claim_payment_provider_lease(
++    'thueapibank',
++    '22222222-2222-4222-8222-222222222222'::uuid,
++    20,
++    false
++  ) ->> 'acquired')::boolean,
++  false,
++  'second concurrent poll worker skips the provider call'
++);
++select is(
++  public.complete_payment_provider_poll(
++    'thueapibank',
++    '11111111-1111-4111-8111-111111111111'::uuid,
++    'cursor-after-success',
++    true,
++    null,
++    false
++  ) ->> 'cursor',
++  'cursor-after-success',
++  'lease owner advances cursor only after success'
+ );
+ 
+ select * from finish();
+--- /dev/null
++++ b/src/lib/payments/thueapibank.test.ts
+@@ -0,0 +1,177 @@
++import { describe, expect, it } from 'vitest';
++import {
++  buildProviderRequest,
++  extractPaymentCode,
++  highestContractVersion,
++  parseProviderPage,
++  parseThueApiBankContract,
++  ThueApiBankError,
++} from '../../../supabase/functions/_shared/thueapibank';
++
++const rawContract = {
++  version: 'v3',
++  baseUrl: 'https://bank.example.test/',
++  endpoint: '/api/v3/transactions',
++  method: 'GET',
++  auth: { location: 'header', name: 'X-API-Key', prefix: '' },
++  pagination: {
++    requestCursorName: 'cursor',
++    responseCursorPath: 'data.next_cursor',
++  },
++  response: { itemsPath: 'data.transactions' },
++  fields: {
++    providerEventId: 'transaction.id',
++    transactionAt: 'transaction.created_at',
++    direction: 'transaction.type',
++    amount: 'transaction.amount',
++    content: 'transaction.description',
++    accountNumber: 'account.number',
++    bankCode: 'account.bank',
++    providerReference: 'transaction.reference',
++  },
++  directionValues: { in: ['credit'], out: ['debit'] },
++};
++
++function transaction(overrides: Record<string, unknown> = {}) {
++  return {
++    transaction: {
++      id: 'tx-100',
++      created_at: '25/08/2026 14:10:05',
++      type: 'credit',
++      amount: '125.000',
++      description: 'THPTABC123456789',
++      reference: 'FT260825100',
++      ...(overrides.transaction as object | undefined),
++    },
++    account: {
++      number: ' 1017 588 888 ',
++      bank: 'vcb',
++      ...(overrides.account as object | undefined),
++    },
++  };
++}
++
++describe('ThueAPIBank contract adapter', () => {
++  it('normalizes a successful page and Asia/Ho_Chi_Minh timestamp', () => {
++    const contract = parseThueApiBankContract(rawContract);
++    expect(
++      parseProviderPage(
++        {
++          data: {
++            transactions: [transaction()],
++            next_cursor: 'cursor-2',
++          },
++        },
++        contract,
++      ),
++    ).toEqual({
++      nextCursor: 'cursor-2',
++      events: [
++        {
++          provider: 'thueapibank',
++          providerEventId: 'tx-100',
++          transactionAt: '2026-08-25T07:10:05.000Z',
++          direction: 'in',
++          amount: 125000,
++          content: 'THPTABC123456789',
++          accountNumber: '1017588888',
++          bankCode: 'VCB',
++          providerReference: 'FT260825100',
++          raw: transaction(),
++        },
++      ],
++    });
++  });
++
++  it('accepts an empty list and a provider without cursor support', () => {
++    const contract = parseThueApiBankContract({
++      ...rawContract,
++      pagination: { requestCursorName: null, responseCursorPath: null },
++    });
++    expect(parseProviderPage({ data: { transactions: [] } }, contract)).toEqual({
++      events: [],
++      nextCursor: null,
++    });
++  });
++
++  it('builds header and query authentication without exposing it in both places', () => {
++    const headerContract = parseThueApiBankContract(rawContract);
++    const headerRequest = buildProviderRequest(headerContract, 'secret', 'cursor-1');
++    expect(headerRequest.url).toBe(
++      'https://bank.example.test/api/v3/transactions?cursor=cursor-1',
++    );
++    expect(headerRequest.init.headers.get('X-API-Key')).toBe('secret');
++
++    const queryContract = parseThueApiBankContract({
++      ...rawContract,
++      auth: { location: 'query', name: 'api_key', prefix: '' },
++    });
++    const queryRequest = buildProviderRequest(queryContract, 'secret', null);
++    expect(queryRequest.url).toContain('api_key=secret');
++    expect(queryRequest.init.headers.has('api_key')).toBe(false);
++  });
++
++  it('rejects malformed pages, unstable IDs, invalid directions, and duplicate IDs', () => {
++    const contract = parseThueApiBankContract(rawContract);
++    expect(() => parseProviderPage({ data: {} }, contract)).toThrowError(
++      expect.objectContaining({ code: 'PROVIDER_ITEMS_MALFORMED' }),
++    );
++    expect(() =>
++      parseProviderPage(
++        {
++          data: {
++            transactions: [transaction({ transaction: { id: '' } })],
++          },
++        },
++        contract,
++      ),
++    ).toThrowError(expect.objectContaining({ code: 'STABLE_EVENT_ID_REQUIRED' }));
++    expect(() =>
++      parseProviderPage(
++        {
++          data: {
++            transactions: [transaction({ transaction: { type: 'unknown' } })],
++          },
++        },
++        contract,
++      ),
++    ).toThrowError(
++      expect.objectContaining({ code: 'TRANSACTION_DIRECTION_INVALID' }),
++    );
++    expect(() =>
++      parseProviderPage(
++        { data: { transactions: [transaction(), transaction()] } },
++        contract,
++      ),
++    ).toThrowError(
++      expect.objectContaining({ code: 'PROVIDER_EVENT_ID_DUPLICATED_IN_PAGE' }),
++    );
++  });
++
++  it('requires exactly one payment code in content', () => {
++    expect(extractPaymentCode('Thanh toan THPTABC123456789')).toBe(
++      'THPTABC123456789',
++    );
++    expect(extractPaymentCode('khong co ma')).toBe('');
++    expect(
++      extractPaymentCode('THPTABC123456789 va THPTZZZ123456789'),
++    ).toBe('');
++    expect(extractPaymentCode('XTHPTABC123456789Y')).toBe('');
++  });
++
++  it('chooses the highest validated V1/V2/V3 contract', () => {
++    const contracts = ['v1', 'v3', 'v2'].map((version) =>
++      parseThueApiBankContract({ ...rawContract, version }),
++    );
++    expect(highestContractVersion(contracts)?.version).toBe('v3');
++  });
++
++  it('requires HTTPS and a complete field mapping', () => {
++    expect(() =>
++      parseThueApiBankContract({ ...rawContract, baseUrl: 'http://bank.test/' }),
++    ).toThrowError(expect.objectContaining({ code: 'CONTRACT_BASE_URL_HTTPS_REQUIRED' }));
++    expect(() =>
++      parseThueApiBankContract({ ...rawContract, fields: {} }),
++    ).toThrow(ThueApiBankError);
++  });
++});
+--- /dev/null
++++ b/src/app/api/admin/payments/poll/route.ts
+@@ -0,0 +1,53 @@
++import {
++  getPaymentPollFunctionConfig,
++  isKeyPurchaseEnabled,
++} from '@/lib/payments/config';
++import { requireAdmin } from '@/lib/supabase/admin';
++
++export const runtime = 'nodejs';
++export const dynamic = 'force-dynamic';
++
++function json(body: Record<string, unknown>, status: number) {
++  return Response.json(body, {
++    status,
++    headers: { 'Cache-Control': 'no-store' },
++  });
++}
++
++export async function POST() {
++  await requireAdmin();
++  if (!isKeyPurchaseEnabled()) {
++    return json({ success: false, error: 'CHECKOUT_DISABLED' }, 503);
++  }
++
++  let config;
++  try {
++    config = getPaymentPollFunctionConfig();
++  } catch {
++    return json({ success: false, error: 'POLLER_NOT_CONFIGURED' }, 503);
++  }
++
++  const controller = new AbortController();
++  const timeout = setTimeout(() => controller.abort(), 12000);
++  try {
++    const response = await fetch(config.url, {
++      method: 'POST',
++      headers: {
++        'Content-Type': 'application/json',
++        'x-poll-secret': config.pollSecret,
++      },
++      body: JSON.stringify({ force: true, source: 'admin' }),
++      cache: 'no-store',
++      signal: controller.signal,
++    });
++    const result = await response.json().catch(() => ({
++      success: false,
++      error: 'POLLER_RESPONSE_INVALID',
++    }));
++    return json(result as Record<string, unknown>, response.status);
++  } catch {
++    return json({ success: false, error: 'POLLER_UNREACHABLE' }, 502);
++  } finally {
++    clearTimeout(timeout);
++  }
++}
+--- /dev/null
++++ b/supabase/migrations/20260825141704_thueapibank_polling_checkout.sql
+@@ -0,0 +1,637 @@
++-- Replace the provider-specific webhook path with a generic, idempotent bank
++-- payment processor and a leased ThueAPIBank polling state machine.
++--
++-- This migration is intentionally forward-only. The preceding checkout
++-- migration has not been applied to production yet, but staging applies both
++-- migrations in order so this file only generalizes the resulting contract.
++
++create table if not exists public.payment_provider_state (
++  provider text primary key check (provider ~ '^[a-z0-9][a-z0-9_-]{1,31}$'),
++  cursor text,
++  locked_until timestamptz,
++  lock_owner uuid,
++  last_polled_at timestamptz,
++  last_success_at timestamptz,
++  last_error_code text,
++  auto_fulfillment_enabled boolean not null default true,
++  updated_at timestamptz not null default now()
++);
++
++insert into public.payment_provider_state (provider)
++values ('thueapibank')
++on conflict (provider) do nothing;
++
++alter table public.payment_provider_state enable row level security;
++
++drop policy if exists payment_provider_state_admin_read
++  on public.payment_provider_state;
++create policy payment_provider_state_admin_read
++on public.payment_provider_state for select to authenticated
++using (private.is_admin());
++
++revoke all on public.payment_provider_state from anon, authenticated;
++grant select on public.payment_provider_state to authenticated;
++
++drop trigger if exists payment_provider_state_updated_at
++  on public.payment_provider_state;
++create trigger payment_provider_state_updated_at
++before update on public.payment_provider_state
++for each row execute function private.touch_updated_at();
++
++alter table public.payment_events
++  add column if not exists transaction_at timestamptz,
++  add column if not exists direction text,
++  add column if not exists amount integer,
++  add column if not exists content text,
++  add column if not exists account_number text,
++  add column if not exists bank_code text,
++  add column if not exists provider_reference text;
++
++do $$
++begin
++  if not exists (
++    select 1
++    from pg_constraint
++    where conname = 'payment_events_direction_valid'
++      and conrelid = 'public.payment_events'::regclass
++  ) then
++    alter table public.payment_events
++      add constraint payment_events_direction_valid
++      check (direction is null or direction in ('in', 'out'));
++  end if;
++end
++$$;
++
++create index if not exists payment_events_provider_transaction_idx
++  on public.payment_events (provider, transaction_at desc);
++
++create or replace function private.fulfill_purchase_order(
++  p_order_id uuid,
++  p_provider text,
++  p_provider_reference text default null
++)
++returns jsonb
++language plpgsql
++security definer
++set search_path to ''
++as $$
++declare
++  order_row public.purchase_orders%rowtype;
++  key_row public.exam_keys%rowtype;
++  key_id uuid;
++  key_code text;
++  expiry timestamptz;
++  attempt_count integer;
++  valid_days integer;
++  payment_reference text;
++begin
++  if nullif(trim(p_provider), '') is null then
++    raise exception 'PAYMENT_PROVIDER_REQUIRED';
++  end if;
++
++  select *
++  into order_row
++  from public.purchase_orders
++  where id = p_order_id
++  for update;
++
++  if not found then
++    raise exception 'PURCHASE_ORDER_NOT_FOUND';
++  end if;
++
++  if order_row.status in ('cancelled', 'refunded') then
++    raise exception 'PURCHASE_ORDER_NOT_PAYABLE';
++  end if;
++
++  attempt_count := greatest(
++    (order_row.product_snapshot ->> 'attempt_count')::integer,
++    1
++  );
++  valid_days := nullif(order_row.product_snapshot ->> 'valid_days', '')::integer;
++  expiry := case
++    when valid_days is null then null
++    else now() + make_interval(days => valid_days)
++  end;
++  payment_reference := lower(trim(p_provider)) || ':' || coalesce(
++    nullif(trim(p_provider_reference), ''),
++    order_row.payment_code
++  );
++
++  select *
++  into key_row
++  from public.exam_keys
++  where source_order_id = p_order_id
++  for update;
++
++  if not found then
++    insert into public.students (id, full_name)
++    select profile.id, profile.full_name
++    from public.profiles as profile
++    where profile.id = order_row.student_id
++    on conflict (id) do nothing;
++
++    loop
++      key_id := extensions.gen_random_uuid();
++      key_code := 'BUY-' || upper(replace(substr(key_id::text, 1, 16), '-', ''));
++      begin
++        insert into public.exam_keys (
++          id,
++          code,
++          exam_room_id,
++          batch_id,
++          assigned_to,
++          total_attempts,
++          used_attempts,
++          status,
++          expires_at,
++          price_paid,
++          payment_ref,
++          is_public,
++          source_order_id
++        ) values (
++          key_id,
++          key_code,
++          null,
++          null,
++          order_row.student_id,
++          attempt_count,
++          0,
++          'unused',
++          expiry,
++          order_row.amount,
++          payment_reference,
++          false,
++          p_order_id
++        );
++        exit;
++      exception
++        when unique_violation then
++          key_id := null;
++      end;
++    end loop;
++  else
++    key_id := key_row.id;
++    key_code := key_row.code;
++  end if;
++
++  update public.purchase_orders
++  set status = 'fulfilled',
++      provider = coalesce(provider, lower(trim(p_provider))),
++      provider_order_ref = coalesce(
++        provider_order_ref,
++        nullif(trim(p_provider_reference), '')
++      ),
++      paid_at = coalesce(paid_at, now()),
++      fulfilled_at = coalesce(fulfilled_at, now()),
++      failure_code = null,
++      updated_at = now()
++  where id = p_order_id;
++
++  return jsonb_build_object(
++    'order_id', p_order_id,
++    'status', 'fulfilled',
++    'key_id', key_id,
++    'key_code', key_code
++  );
++end;
++$$;
++
++revoke all on function private.fulfill_purchase_order(uuid, text, text)
++  from public, anon, authenticated;
++
++create or replace function public.process_bank_payment(
++  p_provider text,
++  p_provider_event_id text,
++  p_transaction_at timestamptz,
++  p_direction text,
++  p_amount integer,
++  p_content text,
++  p_payment_code text,
++  p_account_number text,
++  p_expected_account_number text,
++  p_bank_code text,
++  p_expected_bank_code text,
++  p_provider_reference text,
++  p_payload jsonb,
++  p_payload_sha256 text
++)
++returns jsonb
++language plpgsql
++security definer
++set search_path to ''
++as $$
++declare
++  order_row public.purchase_orders%rowtype;
++  event_row public.payment_events%rowtype;
++  result jsonb;
++  existing_status text;
++  existing_key_code text;
++  normalized_provider text := lower(trim(coalesce(p_provider, '')));
++  normalized_payment_code text := upper(trim(coalesce(p_payment_code, '')));
++  normalized_direction text := lower(trim(coalesce(p_direction, '')));
++  normalized_account text := regexp_replace(
++    coalesce(p_account_number, ''),
++    '[[:space:]]+',
++    '',
++    'g'
++  );
++  expected_account text := regexp_replace(
++    coalesce(p_expected_account_number, ''),
++    '[[:space:]]+',
++    '',
++    'g'
++  );
++  normalized_bank text := upper(trim(coalesce(p_bank_code, '')));
++  expected_bank text := upper(trim(coalesce(p_expected_bank_code, '')));
++  content_codes text[];
++  event_type text;
++  processing_error text;
++begin
++  if normalized_provider !~ '^[a-z0-9][a-z0-9_-]{1,31}$' then
++    raise exception 'PAYMENT_PROVIDER_INVALID';
++  end if;
++  if nullif(trim(p_provider_event_id), '') is null then
++    raise exception 'PROVIDER_EVENT_ID_REQUIRED';
++  end if;
++  if p_transaction_at is null then
++    raise exception 'TRANSACTION_TIME_REQUIRED';
++  end if;
++  if p_payload_sha256 !~ '^[0-9a-f]{64}$' then
++    raise exception 'PAYLOAD_HASH_INVALID';
++  end if;
++
++  select *
++  into event_row
++  from public.payment_events
++  where provider = normalized_provider
++    and provider_event_id = trim(p_provider_event_id);
++
++  if found then
++    select purchase.status, key.code
++    into existing_status, existing_key_code
++    from public.purchase_orders as purchase
++    left join public.exam_keys as key on key.source_order_id = purchase.id
++    where purchase.id = event_row.order_id;
++
++    return jsonb_build_object(
++      'duplicate', true,
++      'accepted', event_row.processing_error is null,
++      'event_id', event_row.id,
++      'order_id', event_row.order_id,
++      'status', coalesce(existing_status, 'unmatched'),
++      'key_code', existing_key_code
++    );
++  end if;
++
++  select array_agg(matches[1])
++  into content_codes
++  from regexp_matches(
++    upper(coalesce(p_content, '')),
++    '(THPT[A-Z0-9]{8,24})',
++    'g'
++  ) as matches;
++
++  if coalesce(array_length(content_codes, 1), 0) <> 1
++     or content_codes[1] <> normalized_payment_code then
++    event_type := 'invalid_payment_code';
++    processing_error := 'PAYMENT_CODE_INVALID_OR_AMBIGUOUS';
++  end if;
++
++  if processing_error is null then
++    select *
++    into order_row
++    from public.purchase_orders
++    where upper(payment_code) = normalized_payment_code
++    for update;
++
++    if not found then
++      event_type := 'unmatched';
++      processing_error := 'PAYMENT_CODE_NOT_FOUND';
++    end if;
++  end if;
++
++  if processing_error is null then
++    if normalized_direction <> 'in' then
++      event_type := 'invalid_transfer';
++      processing_error := 'TRANSFER_TYPE_NOT_IN';
++    elsif p_amount is null or p_amount <> order_row.amount then
++      event_type := 'invalid_amount';
++      processing_error := 'PAYMENT_AMOUNT_MISMATCH';
++    elsif normalized_account = '' or expected_account = ''
++       or normalized_account <> expected_account then
++      event_type := 'invalid_account';
++      processing_error := 'PAYMENT_ACCOUNT_MISMATCH';
++    elsif expected_bank <> '' and normalized_bank <> expected_bank then
++      event_type := 'invalid_bank';
++      processing_error := 'PAYMENT_BANK_MISMATCH';
++    elsif p_transaction_at < order_row.created_at then
++      event_type := 'invalid_time';
++      processing_error := 'TRANSACTION_BEFORE_ORDER';
++    elsif order_row.expires_at is not null
++       and p_transaction_at > order_row.expires_at then
++      event_type := 'expired_order';
++      processing_error := 'PURCHASE_ORDER_EXPIRED';
++    elsif order_row.status not in ('pending', 'paid') then
++      event_type := 'invalid_order_state';
++      processing_error := 'PURCHASE_ORDER_NOT_PENDING';
++    else
++      event_type := 'payment_received';
++    end if;
++  end if;
++
++  insert into public.payment_events (
++    order_id,
++    provider,
++    provider_event_id,
++    event_type,
++    payload_sha256,
++    payload,
++    transaction_at,
++    direction,
++    amount,
++    content,
++    account_number,
++    bank_code,
++    provider_reference,
++    received_at,
++    processed_at,
++    processing_error
++  ) values (
++    order_row.id,
++    normalized_provider,
++    trim(p_provider_event_id),
++    event_type,
++    lower(p_payload_sha256),
++    coalesce(p_payload, '{}'::jsonb),
++    p_transaction_at,
++    case when normalized_direction in ('in', 'out') then normalized_direction else null end,
++    p_amount,
++    left(coalesce(p_content, ''), 1000),
++    nullif(normalized_account, ''),
++    nullif(normalized_bank, ''),
++    nullif(trim(p_provider_reference), ''),
++    now(),
++    now(),
++    processing_error
++  );
++
++  if processing_error is not null then
++    if processing_error = 'PURCHASE_ORDER_EXPIRED' and order_row.id is not null then
++      update public.purchase_orders
++      set status = 'failed',
++          failed_at = now(),
++          failure_code = processing_error,
++          updated_at = now()
++      where id = order_row.id and status = 'pending';
++    end if;
++
++    return jsonb_build_object(
++      'duplicate', false,
++      'accepted', false,
++      'status', coalesce(order_row.status, 'unmatched'),
++      'order_id', order_row.id,
++      'error', processing_error
++    );
++  end if;
++
++  update public.purchase_orders
++  set status = case when status = 'pending' then 'paid' else status end,
++      provider = normalized_provider,
++      provider_order_ref = coalesce(
++        nullif(trim(p_provider_reference), ''),
++        trim(p_provider_event_id)
++      ),
++      paid_at = coalesce(paid_at, p_transaction_at),
++      updated_at = now()
++  where id = order_row.id;
++
++  result := private.fulfill_purchase_order(
++    order_row.id,
++    normalized_provider,
++    coalesce(nullif(trim(p_provider_reference), ''), trim(p_provider_event_id))
++  );
++
++  return jsonb_build_object(
++    'duplicate', false,
++    'accepted', true,
++    'event_id', (
++      select id
++      from public.payment_events
++      where provider = normalized_provider
++        and provider_event_id = trim(p_provider_event_id)
++    )
++  ) || result;
++exception
++  when unique_violation then
++    select *
++    into event_row
++    from public.payment_events
++    where provider = normalized_provider
++      and provider_event_id = trim(p_provider_event_id);
++
++    return jsonb_build_object(
++      'duplicate', true,
++      'accepted', event_row.processing_error is null,
++      'event_id', event_row.id,
++      'order_id', event_row.order_id
++    );
++end;
++$$;
++
++revoke all on function public.process_bank_payment(
++  text, text, timestamptz, text, integer, text, text, text, text,
++  text, text, text, jsonb, text
++) from public, anon, authenticated;
++grant execute on function public.process_bank_payment(
++  text, text, timestamptz, text, integer, text, text, text, text,
++  text, text, text, jsonb, text
++) to service_role;
++
++create or replace function public.claim_payment_provider_lease(
++  p_provider text,
++  p_owner uuid,
++  p_lease_seconds integer default 20,
++  p_force boolean default false
++)
++returns jsonb
++language plpgsql
++security definer
++set search_path to ''
++as $$
++declare
++  state_row public.payment_provider_state%rowtype;
++begin
++  if p_owner is null then
++    raise exception 'LEASE_OWNER_REQUIRED';
++  end if;
++  if p_lease_seconds < 5 or p_lease_seconds > 120 then
++    raise exception 'LEASE_DURATION_INVALID';
++  end if;
++
++  insert into public.payment_provider_state (provider)
++  values (lower(trim(p_provider)))
++  on conflict (provider) do nothing;
++
++  select *
++  into state_row
++  from public.payment_provider_state
++  where provider = lower(trim(p_provider))
++  for update;
++
++  if not state_row.auto_fulfillment_enabled and not p_force then
++    return jsonb_build_object(
++      'acquired', false,
++      'reason', 'AUTO_FULFILLMENT_DISABLED',
++      'last_error_code', state_row.last_error_code
++    );
++  end if;
++
++  if state_row.locked_until is not null
++     and state_row.locked_until > now()
++     and state_row.lock_owner is distinct from p_owner then
++    return jsonb_build_object(
++      'acquired', false,
++      'reason', 'LEASE_HELD',
++      'locked_until', state_row.locked_until
++    );
++  end if;
++
++  update public.payment_provider_state
++  set locked_until = now() + make_interval(secs => p_lease_seconds),
++      lock_owner = p_owner,
++      last_polled_at = now(),
++      auto_fulfillment_enabled = case when p_force then true else auto_fulfillment_enabled end,
++      last_error_code = case when p_force then null else last_error_code end,
++      updated_at = now()
++  where provider = state_row.provider
++  returning * into state_row;
++
++  return jsonb_build_object(
++    'acquired', true,
++    'provider', state_row.provider,
++    'cursor', state_row.cursor,
++    'locked_until', state_row.locked_until
++  );
++end;
++$$;
++
++revoke all on function public.claim_payment_provider_lease(text, uuid, integer, boolean)
++  from public, anon, authenticated;
++grant execute on function public.claim_payment_provider_lease(text, uuid, integer, boolean)
++  to service_role;
++
++create or replace function public.complete_payment_provider_poll(
++  p_provider text,
++  p_owner uuid,
++  p_cursor text,
++  p_success boolean,
++  p_error_code text default null,
++  p_disable_auto_fulfillment boolean default false
++)
++returns jsonb
++language plpgsql
++security definer
++set search_path to ''
++as $$
++declare
++  state_row public.payment_provider_state%rowtype;
++begin
++  select *
++  into state_row
++  from public.payment_provider_state
++  where provider = lower(trim(p_provider))
++  for update;
++
++  if not found then
++    raise exception 'PAYMENT_PROVIDER_STATE_NOT_FOUND';
++  end if;
++  if state_row.lock_owner is distinct from p_owner then
++    raise exception 'PAYMENT_PROVIDER_LEASE_NOT_OWNED';
++  end if;
++
++  update public.payment_provider_state
++  set cursor = case
++        when p_success then coalesce(nullif(p_cursor, ''), cursor)
++        else cursor
++      end,
++      last_success_at = case when p_success then now() else last_success_at end,
++      last_error_code = case
++        when p_success then null
++        else left(coalesce(nullif(trim(p_error_code), ''), 'POLL_FAILED'), 100)
++      end,
++      auto_fulfillment_enabled = case
++        when p_disable_auto_fulfillment then false
++        else auto_fulfillment_enabled
++      end,
++      locked_until = null,
++      lock_owner = null,
++      updated_at = now()
++  where provider = state_row.provider
++  returning * into state_row;
++
++  return jsonb_build_object(
++    'provider', state_row.provider,
++    'success', p_success,
++    'cursor', state_row.cursor,
++    'auto_fulfillment_enabled', state_row.auto_fulfillment_enabled,
++    'last_error_code', state_row.last_error_code
++  );
++end;
++$$;
++
++revoke all on function public.complete_payment_provider_poll(
++  text, uuid, text, boolean, text, boolean
++) from public, anon, authenticated;
++grant execute on function public.complete_payment_provider_poll(
++  text, uuid, text, boolean, text, boolean
++) to service_role;
++
++create or replace function public.reconcile_purchase_order(p_order_id uuid)
++returns jsonb
++language plpgsql
++security definer
++set search_path to ''
++as $$
++declare
++  order_row public.purchase_orders%rowtype;
++begin
++  if not private.is_admin() then
++    raise exception 'ADMIN_ONLY';
++  end if;
++
++  select *
++  into order_row
++  from public.purchase_orders
++  where id = p_order_id
++  for update;
++
++  if not found then
++    raise exception 'PURCHASE_ORDER_NOT_FOUND';
++  end if;
++
++  if order_row.status = 'paid' then
++    return private.fulfill_purchase_order(
++      p_order_id,
++      coalesce(order_row.provider, 'thueapibank'),
++      order_row.provider_order_ref
++    );
++  end if;
++
++  return jsonb_build_object(
++    'order_id', order_row.id,
++    'status', order_row.status,
++    'key_code', (
++      select code from public.exam_keys where source_order_id = order_row.id
++    )
++  );
++end;
++$$;
++
++revoke all on function public.reconcile_purchase_order(uuid)
++  from public, anon;
++grant execute on function public.reconcile_purchase_order(uuid)
++  to authenticated;
++
++drop function if exists private.fulfill_purchase_order(uuid, text);
++
++notify pgrst, 'reload schema';
+--- /dev/null
++++ b/supabase/functions/_shared/thueapibank.ts
+@@ -0,0 +1,363 @@
++export type NormalizedPaymentEvent = {
++  provider: 'thueapibank';
++  providerEventId: string;
++  transactionAt: string;
++  direction: 'in' | 'out';
++  amount: number;
++  content: string;
++  accountNumber: string;
++  bankCode: string;
++  providerReference: string | null;
++  raw: unknown;
++};
++
++export type ThueApiBankContract = {
++  version: 'v1' | 'v2' | 'v3';
++  baseUrl: string;
++  endpoint: string;
++  method: 'GET' | 'POST';
++  auth: {
++    location: 'header' | 'query';
++    name: string;
++    prefix: string;
++  };
++  pagination: {
++    requestCursorName: string | null;
++    responseCursorPath: string | null;
++  };
++  response: {
++    itemsPath: string;
++  };
++  fields: {
++    providerEventId: string;
++    transactionAt: string;
++    direction: string;
++    amount: string;
++    content: string;
++    accountNumber: string;
++    bankCode: string;
++    providerReference: string | null;
++  };
++  directionValues: {
++    in: string[];
++    out: string[];
++  };
++};
++
++export type ProviderPage = {
++  events: NormalizedPaymentEvent[];
++  nextCursor: string | null;
++};
++
++export class ThueApiBankError extends Error {
++  constructor(
++    public readonly code: string,
++    message: string = code,
++  ) {
++    super(message);
++    this.name = 'ThueApiBankError';
++  }
++}
++
++const paymentCodePattern = /(?<![A-Z0-9])(THPT[A-Z0-9]{8,24})(?![A-Z0-9])/gi;
++
++function isRecord(value: unknown): value is Record<string, unknown> {
++  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
++}
++
++function requiredString(
++  record: Record<string, unknown>,
++  field: string,
++  code: string,
++) {
++  const value = record[field];
++  if (typeof value !== 'string' || !value.trim()) {
++    throw new ThueApiBankError(code);
++  }
++  return value.trim();
++}
++
++function optionalString(record: Record<string, unknown>, field: string) {
++  const value = record[field];
++  return typeof value === 'string' && value.trim() ? value.trim() : null;
++}
++
++function readPath(value: unknown, path: string | null): unknown {
++  if (!path) return null;
++  return path.split('.').reduce<unknown>((current, segment) => {
++    if (!isRecord(current)) return undefined;
++    return current[segment];
++  }, value);
++}
++
++function parseStringArray(value: unknown, fallback: string[]) {
++  if (!Array.isArray(value)) return fallback;
++  const normalized = value
++    .filter((item): item is string => typeof item === 'string')
++    .map((item) => item.trim().toLowerCase())
++    .filter(Boolean);
++  return normalized.length > 0 ? normalized : fallback;
++}
++
++export function parseThueApiBankContract(input: unknown): ThueApiBankContract {
++  if (!isRecord(input)) {
++    throw new ThueApiBankError('CONTRACT_INVALID');
++  }
++
++  const version = requiredString(input, 'version', 'CONTRACT_VERSION_REQUIRED');
++  if (!['v1', 'v2', 'v3'].includes(version)) {
++    throw new ThueApiBankError('CONTRACT_VERSION_UNSUPPORTED');
++  }
++
++  const method = optionalString(input, 'method')?.toUpperCase() ?? 'GET';
++  if (method !== 'GET' && method !== 'POST') {
++    throw new ThueApiBankError('CONTRACT_METHOD_UNSUPPORTED');
++  }
++
++  const auth = input.auth;
++  const pagination = input.pagination;
++  const response = input.response;
++  const fields = input.fields;
++  const directionValues = input.directionValues;
++  if (
++    !isRecord(auth) ||
++    !isRecord(pagination) ||
++    !isRecord(response) ||
++    !isRecord(fields)
++  ) {
++    throw new ThueApiBankError('CONTRACT_MAPPING_REQUIRED');
++  }
++
++  const authLocation = requiredString(auth, 'location', 'CONTRACT_AUTH_LOCATION_REQUIRED');
++  if (authLocation !== 'header' && authLocation !== 'query') {
++    throw new ThueApiBankError('CONTRACT_AUTH_LOCATION_INVALID');
++  }
++
++  const baseUrl = requiredString(input, 'baseUrl', 'CONTRACT_BASE_URL_REQUIRED');
++  let parsedBaseUrl: URL;
++  try {
++    parsedBaseUrl = new URL(baseUrl);
++  } catch {
++    throw new ThueApiBankError('CONTRACT_BASE_URL_INVALID');
++  }
++  if (parsedBaseUrl.protocol !== 'https:') {
++    throw new ThueApiBankError('CONTRACT_BASE_URL_HTTPS_REQUIRED');
++  }
++
++  return {
++    version: version as ThueApiBankContract['version'],
++    baseUrl: parsedBaseUrl.toString(),
++    endpoint: requiredString(input, 'endpoint', 'CONTRACT_ENDPOINT_REQUIRED'),
++    method,
++    auth: {
++      location: authLocation,
++      name: requiredString(auth, 'name', 'CONTRACT_AUTH_NAME_REQUIRED'),
++      prefix: optionalString(auth, 'prefix') ?? '',
++    },
++    pagination: {
++      requestCursorName: optionalString(pagination, 'requestCursorName'),
++      responseCursorPath: optionalString(pagination, 'responseCursorPath'),
++    },
++    response: {
++      itemsPath: requiredString(response, 'itemsPath', 'CONTRACT_ITEMS_PATH_REQUIRED'),
++    },
++    fields: {
++      providerEventId: requiredString(fields, 'providerEventId', 'CONTRACT_EVENT_ID_FIELD_REQUIRED'),
++      transactionAt: requiredString(fields, 'transactionAt', 'CONTRACT_TRANSACTION_TIME_FIELD_REQUIRED'),
++      direction: requiredString(fields, 'direction', 'CONTRACT_DIRECTION_FIELD_REQUIRED'),
++      amount: requiredString(fields, 'amount', 'CONTRACT_AMOUNT_FIELD_REQUIRED'),
++      content: requiredString(fields, 'content', 'CONTRACT_CONTENT_FIELD_REQUIRED'),
++      accountNumber: requiredString(fields, 'accountNumber', 'CONTRACT_ACCOUNT_FIELD_REQUIRED'),
++      bankCode: requiredString(fields, 'bankCode', 'CONTRACT_BANK_FIELD_REQUIRED'),
++      providerReference: optionalString(fields, 'providerReference'),
++    },
++    directionValues: {
++      in: parseStringArray(
++        isRecord(directionValues) ? directionValues.in : null,
++        ['in', 'credit', 'received', '+'],
++      ),
++      out: parseStringArray(
++        isRecord(directionValues) ? directionValues.out : null,
++        ['out', 'debit', 'sent', '-'],
++      ),
++    },
++  };
++}
++
++function parseAmount(value: unknown) {
++  if (typeof value === 'number') {
++    if (Number.isSafeInteger(value) && value >= 0) return value;
++    throw new ThueApiBankError('TRANSACTION_AMOUNT_INVALID');
++  }
++  if (typeof value !== 'string') {
++    throw new ThueApiBankError('TRANSACTION_AMOUNT_INVALID');
++  }
++
++  const compact = value.trim().replace(/\s|₫|đ|vnd/gi, '');
++  if (/^\d+$/.test(compact)) return Number(compact);
++  if (/^\d{1,3}(?:[.,]\d{3})+$/.test(compact)) {
++    return Number(compact.replace(/[.,]/g, ''));
++  }
++  if (/^\d+[.,]00$/.test(compact)) {
++    return Number(compact.slice(0, -3));
++  }
++  throw new ThueApiBankError('TRANSACTION_AMOUNT_INVALID');
++}
++
++function parseTransactionTime(value: unknown) {
++  if (typeof value !== 'string' || !value.trim()) {
++    throw new ThueApiBankError('TRANSACTION_TIME_INVALID');
++  }
++  const raw = value.trim();
++  let normalized = raw;
++
++  const vietnameseDate = raw.match(
++    /^(\d{2})\/(\d{2})\/(\d{4})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/,
++  );
++  if (vietnameseDate) {
++    const [, day, month, year, hour, minute, second = '00'] = vietnameseDate;
++    normalized = `${year}-${month}-${day}T${hour}:${minute}:${second}+07:00`;
++  } else if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?$/.test(raw)) {
++    normalized = raw.replace(' ', 'T') + '+07:00';
++  }
++
++  const timestamp = Date.parse(normalized);
++  if (!Number.isFinite(timestamp)) {
++    throw new ThueApiBankError('TRANSACTION_TIME_INVALID');
++  }
++  return new Date(timestamp).toISOString();
++}
++
++function normalizeDirection(value: unknown, contract: ThueApiBankContract) {
++  const normalized = String(value ?? '').trim().toLowerCase();
++  if (contract.directionValues.in.includes(normalized)) return 'in' as const;
++  if (contract.directionValues.out.includes(normalized)) return 'out' as const;
++  throw new ThueApiBankError('TRANSACTION_DIRECTION_INVALID');
++}
++
++function normalizeTransaction(
++  raw: unknown,
++  contract: ThueApiBankContract,
++): NormalizedPaymentEvent {
++  if (!isRecord(raw)) {
++    throw new ThueApiBankError('TRANSACTION_RECORD_INVALID');
++  }
++
++  const eventId = String(readPath(raw, contract.fields.providerEventId) ?? '').trim();
++  const content = String(readPath(raw, contract.fields.content) ?? '').trim();
++  const accountNumber = String(readPath(raw, contract.fields.accountNumber) ?? '')
++    .replace(/\s+/g, '')
++    .trim();
++  const bankCode = String(readPath(raw, contract.fields.bankCode) ?? '')
++    .trim()
++    .toUpperCase();
++
++  if (!eventId) throw new ThueApiBankError('STABLE_EVENT_ID_REQUIRED');
++  if (!accountNumber) throw new ThueApiBankError('TRANSACTION_ACCOUNT_REQUIRED');
++  if (!bankCode) throw new ThueApiBankError('TRANSACTION_BANK_REQUIRED');
++
++  const referenceValue = contract.fields.providerReference
++    ? readPath(raw, contract.fields.providerReference)
++    : null;
++
++  return {
++    provider: 'thueapibank',
++    providerEventId: eventId,
++    transactionAt: parseTransactionTime(readPath(raw, contract.fields.transactionAt)),
++    direction: normalizeDirection(readPath(raw, contract.fields.direction), contract),
++    amount: parseAmount(readPath(raw, contract.fields.amount)),
++    content,
++    accountNumber,
++    bankCode,
++    providerReference:
++      referenceValue === null || referenceValue === undefined
++        ? null
++        : String(referenceValue).trim() || null,
++    raw,
++  };
++}
++
++export function parseProviderPage(
++  payload: unknown,
++  contract: ThueApiBankContract,
++): ProviderPage {
++  const items = readPath(payload, contract.response.itemsPath);
++  if (!Array.isArray(items)) {
++    throw new ThueApiBankError('PROVIDER_ITEMS_MALFORMED');
++  }
++
++  const events = items.map((item) => normalizeTransaction(item, contract));
++  const eventIds = new Set<string>();
++  for (const event of events) {
++    if (eventIds.has(event.providerEventId)) {
++      throw new ThueApiBankError('PROVIDER_EVENT_ID_DUPLICATED_IN_PAGE');
++    }
++    eventIds.add(event.providerEventId);
++  }
++
++  const cursorValue = readPath(payload, contract.pagination.responseCursorPath);
++  return {
++    events,
++    nextCursor:
++      cursorValue === null || cursorValue === undefined
++        ? null
++        : String(cursorValue).trim() || null,
++  };
++}
++
++export function extractPaymentCode(content: string) {
++  const matches = Array.from(content.matchAll(paymentCodePattern), (match) =>
++    match[1].toUpperCase(),
++  );
++  return matches.length === 1 ? matches[0] : '';
++}
++
++export function buildProviderRequest(
++  contract: ThueApiBankContract,
++  apiKey: string,
++  cursor: string | null,
++) {
++  if (!apiKey.trim()) throw new ThueApiBankError('API_KEY_REQUIRED');
++  const url = new URL(contract.endpoint, contract.baseUrl);
++  const headers = new Headers({ Accept: 'application/json' });
++  const credential = contract.auth.prefix + apiKey.trim();
++
++  if (contract.auth.location === 'header') {
++    headers.set(contract.auth.name, credential);
++  } else {
++    url.searchParams.set(contract.auth.name, credential);
++  }
++
++  if (
++    cursor &&
++    contract.pagination.requestCursorName &&
++    contract.method === 'GET'
++  ) {
++    url.searchParams.set(contract.pagination.requestCursorName, cursor);
++  }
++
++  if (contract.method === 'POST') {
++    headers.set('Content-Type', 'application/json');
++  }
++
++  return {
++    url: url.toString(),
++    init: {
++      method: contract.method,
++      headers,
++      body:
++        contract.method === 'POST'
++          ? JSON.stringify(
++              cursor && contract.pagination.requestCursorName
++                ? { [contract.pagination.requestCursorName]: cursor }
++                : {},
++            )
++          : undefined,
++    } satisfies RequestInit,
++  };
++}
++
++export function highestContractVersion(contracts: ThueApiBankContract[]) {
++  const rank = { v1: 1, v2: 2, v3: 3 } as const;
++  return [...contracts].sort((a, b) => rank[b.version] - rank[a.version])[0] ?? null;
++}
+--- /dev/null
++++ b/supabase/functions/poll-thueapibank/index.ts
+@@ -0,0 +1,281 @@
++import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
++import {
++  buildProviderRequest,
++  extractPaymentCode,
++  highestContractVersion,
++  parseProviderPage,
++  parseThueApiBankContract,
++  ThueApiBankError,
++  type NormalizedPaymentEvent,
++  type ThueApiBankContract,
++} from '../_shared/thueapibank.ts';
++
++const provider = 'thueapibank';
++
++type RpcResult = {
++  data: unknown;
++  error: { message?: string } | null;
++};
++
++type ServiceClient = {
++  rpc(name: string, args: Record<string, unknown>): Promise<RpcResult>;
++};
++
++function json(body: Record<string, unknown>, status = 200) {
++  return Response.json(body, {
++    status,
++    headers: { 'Cache-Control': 'no-store' },
++  });
++}
++
++function requiredEnv(name: string) {
++  const value = Deno.env.get(name)?.trim();
++  if (!value) throw new ThueApiBankError(`CONFIG_${name}_REQUIRED`);
++  return value;
++}
++
++function getServiceKey() {
++  const direct =
++    Deno.env.get('SUPABASE_SECRET_KEY')?.trim() ||
++    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')?.trim();
++  if (direct) return direct;
++
++  const secretKeys = Deno.env.get('SUPABASE_SECRET_KEYS');
++  if (secretKeys) {
++    try {
++      const parsed = JSON.parse(secretKeys) as Record<string, unknown>;
++      const defaultKey = parsed.default;
++      if (typeof defaultKey === 'string' && defaultKey.trim()) {
++        return defaultKey.trim();
++      }
++    } catch {
++      // The shortened code below is returned; secret content is never logged.
++    }
++  }
++  throw new ThueApiBankError('CONFIG_SUPABASE_SECRET_KEY_REQUIRED');
++}
++
++function timingSafeEqual(left: string, right: string) {
++  const encoder = new TextEncoder();
++  const leftBytes = encoder.encode(left);
++  const rightBytes = encoder.encode(right);
++  let mismatch = leftBytes.length ^ rightBytes.length;
++  const maxLength = Math.max(leftBytes.length, rightBytes.length);
++  for (let index = 0; index < maxLength; index += 1) {
++    mismatch |= (leftBytes[index] ?? 0) ^ (rightBytes[index] ?? 0);
++  }
++  return mismatch === 0;
++}
++
++function loadContract() {
++  const raw = requiredEnv('THUEAPIBANK_CONTRACT_JSON');
++  let parsed: unknown;
++  try {
++    parsed = JSON.parse(raw);
++  } catch {
++    throw new ThueApiBankError('CONTRACT_JSON_INVALID');
++  }
++
++  const candidates = (Array.isArray(parsed) ? parsed : [parsed]).map(
++    parseThueApiBankContract,
++  );
++  const contract = highestContractVersion(candidates);
++  if (!contract) throw new ThueApiBankError('CONTRACT_REQUIRED');
++  return contract;
++}
++
++function createServiceClient(): ServiceClient {
++  return createClient(requiredEnv('SUPABASE_URL'), getServiceKey(), {
++    auth: {
++      autoRefreshToken: false,
++      persistSession: false,
++      detectSessionInUrl: false,
++    },
++  }) as unknown as ServiceClient;
++}
++
++async function sha256(value: unknown) {
++  const serialized = JSON.stringify(value);
++  const bytes = new TextEncoder().encode(serialized);
++  const digest = await crypto.subtle.digest('SHA-256', bytes);
++  return Array.from(new Uint8Array(digest), (byte) =>
++    byte.toString(16).padStart(2, '0'),
++  ).join('');
++}
++
++async function fetchPage(
++  contract: ThueApiBankContract,
++  apiKey: string,
++  cursor: string | null,
++) {
++  const request = buildProviderRequest(contract, apiKey, cursor);
++  const controller = new AbortController();
++  const timeout = setTimeout(() => controller.abort(), 4500);
++  try {
++    const response = await fetch(request.url, {
++      ...request.init,
++      signal: controller.signal,
++    });
++    if (response.status === 401 || response.status === 403) {
++      throw new ThueApiBankError('PROVIDER_AUTH_FAILED');
++    }
++    if (response.status === 429) {
++      throw new ThueApiBankError('PROVIDER_RATE_LIMITED');
++    }
++    if (response.status >= 500) {
++      throw new ThueApiBankError('PROVIDER_UNAVAILABLE');
++    }
++    if (!response.ok) {
++      throw new ThueApiBankError('PROVIDER_REQUEST_REJECTED');
++    }
++
++    let payload: unknown;
++    try {
++      payload = await response.json();
++    } catch {
++      throw new ThueApiBankError('PROVIDER_RESPONSE_NOT_JSON');
++    }
++    return parseProviderPage(payload, contract);
++  } catch (error) {
++    if (error instanceof ThueApiBankError) throw error;
++    if (error instanceof DOMException && error.name === 'AbortError') {
++      throw new ThueApiBankError('PROVIDER_TIMEOUT');
++    }
++    throw new ThueApiBankError('PROVIDER_NETWORK_ERROR');
++  } finally {
++    clearTimeout(timeout);
++  }
++}
++
++async function processEvent(
++  client: ServiceClient,
++  event: NormalizedPaymentEvent,
++  expectedBankCode: string,
++  expectedAccountNumber: string,
++) {
++  const { error } = await client.rpc('process_bank_payment', {
++    p_provider: event.provider,
++    p_provider_event_id: event.providerEventId,
++    p_transaction_at: event.transactionAt,
++    p_direction: event.direction,
++    p_amount: event.amount,
++    p_content: event.content,
++    p_payment_code: extractPaymentCode(event.content),
++    p_account_number: event.accountNumber,
++    p_expected_account_number: expectedAccountNumber,
++    p_bank_code: event.bankCode,
++    p_expected_bank_code: expectedBankCode,
++    p_provider_reference: event.providerReference,
++    p_payload: event.raw,
++    p_payload_sha256: await sha256(event.raw),
++  });
++  if (error) throw new ThueApiBankError('DATABASE_PAYMENT_PROCESSING_FAILED');
++}
++
++function errorCode(error: unknown) {
++  return error instanceof ThueApiBankError ? error.code : 'POLL_FAILED';
++}
++
++Deno.serve(async (request) => {
++  if (request.method !== 'POST') {
++    return json({ success: false, error: 'METHOD_NOT_ALLOWED' }, 405);
++  }
++  if (Deno.env.get('KEY_PURCHASE_ENABLED')?.trim().toLowerCase() !== 'true') {
++    return json({ success: false, error: 'CHECKOUT_DISABLED' }, 503);
++  }
++
++  let pollSecret: string;
++  try {
++    pollSecret = requiredEnv('THUEAPIBANK_POLL_SECRET');
++  } catch (error) {
++    return json({ success: false, error: errorCode(error) }, 503);
++  }
++  const suppliedSecret = request.headers.get('x-poll-secret') ?? '';
++  if (!timingSafeEqual(suppliedSecret, pollSecret)) {
++    return json({ success: false, error: 'UNAUTHORIZED' }, 401);
++  }
++
++  const body = await request.json().catch(() => ({})) as Record<string, unknown>;
++  const force = body.force === true;
++  const owner = crypto.randomUUID();
++  let client: ServiceClient | null = null;
++  let leaseAcquired = false;
++
++  try {
++    const contract = loadContract();
++    const apiKey = requiredEnv('THUEAPIBANK_API_KEY');
++    const expectedBankCode = requiredEnv('PAYMENT_BANK_CODE').toUpperCase();
++    const expectedAccountNumber = requiredEnv('PAYMENT_BANK_ACCOUNT').replace(/\s+/g, '');
++    client = createServiceClient();
++
++    const leaseResult = await client.rpc('claim_payment_provider_lease', {
++      p_provider: provider,
++      p_owner: owner,
++      p_lease_seconds: 20,
++      p_force: force,
++    });
++    if (leaseResult.error) {
++      throw new ThueApiBankError('DATABASE_LEASE_FAILED');
++    }
++    const lease = leaseResult.data as Record<string, unknown> | null;
++    if (!lease?.acquired) {
++      return json({
++        success: true,
++        skipped: true,
++        reason: typeof lease?.reason === 'string' ? lease.reason : 'LEASE_NOT_ACQUIRED',
++      });
++    }
++    leaseAcquired = true;
++
++    const cursor = typeof lease.cursor === 'string' ? lease.cursor : null;
++    const page = await fetchPage(contract, apiKey, cursor);
++    for (const event of page.events) {
++      await processEvent(client, event, expectedBankCode, expectedAccountNumber);
++    }
++
++    const completion = await client.rpc('complete_payment_provider_poll', {
++      p_provider: provider,
++      p_owner: owner,
++      p_cursor: page.nextCursor,
++      p_success: true,
++      p_error_code: null,
++      p_disable_auto_fulfillment: false,
++    });
++    if (completion.error) {
++      throw new ThueApiBankError('DATABASE_POLL_COMPLETION_FAILED');
++    }
++    leaseAcquired = false;
++
++    return json({
++      success: true,
++      provider,
++      contractVersion: contract.version,
++      processed: page.events.length,
++      cursorAdvanced: Boolean(page.nextCursor),
++    });
++  } catch (error) {
++    const code = errorCode(error);
++    const disableAuto = [
++      'PROVIDER_AUTH_FAILED',
++      'STABLE_EVENT_ID_REQUIRED',
++      'TRANSACTION_DIRECTION_INVALID',
++      'PROVIDER_EVENT_ID_DUPLICATED_IN_PAGE',
++      'PROVIDER_ITEMS_MALFORMED',
++    ].includes(code);
++    if (client && leaseAcquired) {
++      await client.rpc('complete_payment_provider_poll', {
++        p_provider: provider,
++        p_owner: owner,
++        p_cursor: null,
++        p_success: false,
++        p_error_code: code,
++        p_disable_auto_fulfillment: disableAuto,
++      });
++    }
++    console.error(JSON.stringify({ provider, error: code }));
++    return json(
++      { success: false, provider, error: code, autoFulfillmentDisabled: disableAuto },
++      code === 'PROVIDER_AUTH_FAILED' ? 503 : 502,
++    );
++  }
++});
+--- /dev/null
++++ b/supabase/functions/poll-thueapibank/contract.example.json
+@@ -0,0 +1,34 @@
++[
++  {
++    "version": "v3",
++    "baseUrl": "https://REDACTED_PROVIDER_HOST/",
++    "endpoint": "/REDACTED_TRANSACTION_HISTORY_PATH",
++    "method": "GET",
++    "auth": {
++      "location": "header",
++      "name": "REDACTED_API_KEY_HEADER",
++      "prefix": ""
++    },
++    "pagination": {
++      "requestCursorName": "cursor",
++      "responseCursorPath": "data.next_cursor"
++    },
++    "response": {
++      "itemsPath": "data.transactions"
++    },
++    "fields": {
++      "providerEventId": "id",
++      "transactionAt": "transaction_at",
++      "direction": "direction",
++      "amount": "amount",
++      "content": "content",
++      "accountNumber": "account_number",
++      "bankCode": "bank_code",
++      "providerReference": "reference"
++    },
++    "directionValues": {
++      "in": ["in", "credit"],
++      "out": ["out", "debit"]
++    }
++  }
++]
+--- /dev/null
++++ b/supabase/functions/poll-thueapibank/README.md
+@@ -0,0 +1,102 @@
++# poll-thueapibank
++
++Edge Function nội bộ chủ động đọc lịch sử giao dịch ThueAPIBank, chuẩn hóa dữ
++liệu và gọi RPC `process_bank_payment`. Function dùng lease 20 giây trong
++`payment_provider_state`; cursor chỉ tiến sau khi toàn bộ event đã xử lý xong.
++
++## 1. Khóa contract sau đăng nhập
++
++1. Mở tài liệu V1/V2/V3 trong dashboard ThueAPIBank.
++2. Chỉ giữ các version có đủ: event ID ổn định, thời gian, chiều vào/ra, số
++   tiền, nội dung, ngân hàng và tài khoản.
++3. Sao chép `contract.example.json`, thay các giá trị `REDACTED_*` bằng contract
++   thật nhưng không ghi API key vào JSON.
++4. Có thể đưa nhiều contract vào mảng; poller tự chọn version cao nhất hợp lệ.
++5. Giữ `KEY_PURCHASE_ENABLED=false` nếu không có event ID ổn định hoặc không
++   phân biệt được tiền vào/ra.
++
++## 2. Secrets cho staging
++
++```powershell
++supabase secrets set --project-ref <STAGING_REF> `
++  KEY_PURCHASE_ENABLED=false `
++  THUEAPIBANK_API_KEY=<SECRET> `
++  THUEAPIBANK_POLL_SECRET=<RANDOM_SECRET> `
++  THUEAPIBANK_CONTRACT_JSON='<MINIFIED_JSON>' `
++  PAYMENT_BANK_CODE=<BANK_CODE> `
++  PAYMENT_BANK_ACCOUNT=<ACCOUNT_NUMBER> `
++  PAYMENT_ACCOUNT_NAME='<ACCOUNT_NAME>'
++```
++
++Deploy function:
++
++```powershell
++supabase functions deploy poll-thueapibank --project-ref <STAGING_REF> --use-api
++```
++
++`THUEAPIBANK_POLL_SECRET` cũng phải có trong môi trường server-side của Next.js
++để nút **Đồng bộ ThueAPIBank ngay** gọi đúng Edge Function.
++
++## 3. Lịch poll 5 giây
++
++Sau khi deploy function, lưu URL project và poll secret trong Vault rồi tạo job.
++Các placeholder dưới đây được thay trực tiếp trong SQL Editor; không commit giá
++trị thật.
++
++```sql
++create extension if not exists pg_cron with schema pg_catalog;
++create extension if not exists pg_net with schema extensions;
++
++select vault.create_secret(
++  'https://<PROJECT_REF>.supabase.co',
++  'thueapibank_project_url'
++);
++select vault.create_secret(
++  '<THUEAPIBANK_POLL_SECRET>',
++  'thueapibank_poll_secret'
++);
++
++select cron.schedule(
++  'poll-thueapibank-every-5-seconds',
++  '5 seconds',
++  $$
++  select net.http_post(
++    url := (
++      select decrypted_secret
++      from vault.decrypted_secrets
++      where name = 'thueapibank_project_url'
++    ) || '/functions/v1/poll-thueapibank',
++    headers := jsonb_build_object(
++      'Content-Type', 'application/json',
++      'x-poll-secret', (
++        select decrypted_secret
++        from vault.decrypted_secrets
++        where name = 'thueapibank_poll_secret'
++      )
++    ),
++    body := '{"source":"cron"}'::jsonb,
++    timeout_milliseconds := 10000
++  );
++  $$
++);
++```
++
++Tắt job khi rollback vận hành:
++
++```sql
++update cron.job
++set active = false
++where jobname = 'poll-thueapibank-every-5-seconds';
++```
++
++Không xóa `payment_events`, `purchase_orders` hoặc key đã cấp.
++
++## 4. Smoke test
++
++1. Apply migration trên staging và deploy function khi flag vẫn `false`.
++2. Đặt contract/API key staging, bật flag Edge + Next.
++3. Tạo đơn, chuyển đúng số tiền và chỉ dùng mã `THPT...` làm nội dung.
++4. Xác nhận `fulfilled` và key xuất hiện trong `/purchase` cùng `/profile` trong
++   tối đa 15 giây.
++5. Lặp cùng event, chạy hai poll đồng thời, thử sai nội dung/số tiền/tài khoản và
++   xác nhận không tạo thêm key.
+--- a/src/app/admin/key-products/KeyProductsClient.tsx
++++ b/src/app/admin/key-products/KeyProductsClient.tsx
+@@ -159,7 +159,7 @@
+           <p>Cấu hình catalog, bật/tắt hoặc archive sản phẩm.</p>
+         </div>
+         <div className={styles.links}>
+-          <Link href="/admin/purchases">Đơn SePay</Link>
++          <Link href="/admin/purchases">Đơn ThueAPIBank</Link>
+           <Link href="/admin">Dashboard</Link>
+         </div>
+       </div>
+--- a/src/app/room-key/page.tsx
++++ b/src/app/room-key/page.tsx
+@@ -219,7 +219,7 @@
+ 
+         <div className={`${styles.footerLinks} ${styles.centered}`}>
+           <Link href="/purchase" className={styles.forgotLink}>
+-            Mua key qua SePay
++            Mua key tự động
+           </Link>
+           <Link href="/subjects" transitionTypes={['nav-back']} className={styles.forgotLink}>
+             &larr; Quay lại chọn môn và phòng thi
+--- a/tsconfig.json
++++ b/tsconfig.json
+@@ -30,5 +30,10 @@
+     ".next/dev/types/**/*.ts",
+     "**/*.mts"
+   ],
+-  "exclude": ["node_modules", "test-exam-rooms.ts"]
++  "exclude": [
++    "node_modules",
++    "test-exam-rooms.ts",
++    "artifacts",
++    "supabase/functions/*/index.ts"
++  ]
+ }

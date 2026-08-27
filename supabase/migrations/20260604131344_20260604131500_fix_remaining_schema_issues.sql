@@ -1,18 +1,14 @@
 -- 1. Enable Trigrams correctly
 CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS unaccent SCHEMA extensions;
-
 -- Recreate index that failed before
 CREATE INDEX IF NOT EXISTS idx_questions_content_trgm
   ON questions USING GIN (content extensions.gin_trgm_ops);
-
 -- 2. Fix student_key_summary view
 -- First drop the view
 DROP VIEW IF EXISTS public.student_key_summary CASCADE;
-
 -- Now we can drop the gmail column safely
 ALTER TABLE public.students DROP COLUMN IF EXISTS gmail;
-
 -- Recreate the view using profiles.email instead
 create or replace view public.student_key_summary
 with (security_invoker = true)
@@ -59,5 +55,4 @@ left join lateral (
   from public.exam_keys ek
   where ek.assigned_to = st.id
 ) key_stats on true;
-
 grant select on public.student_key_summary to authenticated;

@@ -1,0 +1,145 @@
+﻿ M .gitignore
+ D .next-dev.err.log
+ D .next-dev.out.log
+ M README.md
+ D artifacts/codex-next-dev-3001.err.log
+ D artifacts/codex-next-dev-3001.out.log
+ D artifacts/codex-next-start-3002.err.log
+ D artifacts/codex-next-start-3002.out.log
+ D artifacts/codex-next-start-3003.err.log
+ D artifacts/codex-next-start-3003.out.log
+ D artifacts/reapply-dev.err.log
+ D artifacts/reapply-dev.out.log
+ D artifacts/review-server.err.log
+ D artifacts/review-server.out.log
+ D artifacts/ui-redesign-dev.err.log
+ D artifacts/ui-redesign-dev.out.log
+ M next.config.ts
+ M package-lock.json
+ M package.json
+ M src/app/admin/authoring/actions.ts
+ M src/app/admin/compose/actions.ts
+ M src/app/admin/page.tsx
+ M src/app/exam/page.tsx
+ M src/app/globals.css
+ M src/app/layout.tsx
+ M src/app/page.tsx
+ M src/app/register/page.tsx
+ M src/app/reset-password/page.tsx
+ M src/app/result/page.tsx
+ M src/app/room-key/page.tsx
+ M src/app/subjects/[subjectCode]/page.tsx
+ M src/app/subjects/page.tsx
+ M src/components/question/QuestionRenderer.tsx
+ M src/lib/r2/client.ts
+ M src/lib/supabase/client.ts
+ M src/lib/supabase/exam-data.ts
+ M src/lib/supabase/proxy.ts
+ M src/lib/supabase/server.ts
+ D src/lib/supabase/staff.ts
+ M src/lib/supabase/user-profile.ts
+ M src/proxy.test.ts
+ M src/proxy.ts
+ M src/styles/question-renderer.module.css
+ M src/styles/result.module.css
+ M src/styles/subjects.module.css
+ M supabase/migrations/20260603123332_exam_system_2026_blueprints_part_1.sql
+ M supabase/migrations/20260603123513_exam_system_2026_blueprints_part_2.sql
+ M supabase/migrations/20260603123710_exam_system_2026_blueprints_part_3.sql
+ M supabase/migrations/20260603123843_exam_system_2026_blueprints_part_4.sql
+ M supabase/migrations/20260603124025_exam_system_2026_blueprints_part_5.sql
+ M supabase/migrations/20260604012835_add_student_profile_fields.sql
+ M supabase/migrations/20260604021600_admin_key_generation.sql
+ M supabase/migrations/20260604023600_decouple_keys_from_exam_rooms.sql
+ M supabase/migrations/20260604060719_fix_join_exam_room_resolution.sql
+ M supabase/migrations/20260604100000_fix_auth_roles_and_triggers.sql
+ M supabase/migrations/20260604123405_fix_schema_issues.sql
+ M supabase/migrations/20260604131344_20260604131500_fix_remaining_schema_issues.sql
+ M supabase/migrations/20260604140000_key_single_owner_trigger.sql
+ M supabase/migrations/20260604140100_rpc_activate_exam_key.sql
+ M supabase/migrations/20260604140200_exam_room_papers.sql
+ M supabase/migrations/20260604140300_link_paper_to_key_and_session.sql
+ M supabase/migrations/20260604140400_cleanup_exam_rooms_subject_code.sql
+ M supabase/migrations/20260604140500_session_questions_trigger.sql
+ M supabase/migrations/20260604150600_cleanup_unneeded_subjects.sql
+ M supabase/migrations/20260605000001_submit_session_rpc.sql
+ M supabase/migrations/20260605100040_authoring_workspace_r2_images.sql
+ M supabase/migrations/20260605102445_optimize_authoring_indexes_policies.sql
+ M supabase/migrations/20260605104648_guard_authoring_revision_republish.sql
+ M supabase/migrations/20260605142732_add_authoring_knowledge_metadata.sql
+ M supabase/migrations/20260605144025_hide_authoring_publish_core.sql
+ M supabase/migrations/20260605144433_enforce_authoring_knowledge_integrity.sql
+ M supabase/migrations/20260605144832_cover_authoring_knowledge_foreign_keys.sql
+ M supabase/migrations/20260606101726_fix_submit_exam_session_scoring.sql
+ M supabase/migrations/20260606102117_fix_security_warnings.sql
+ D supabase/migrations/20260628140000_exam_session_lifecycle_due_at.sql
+ D supabase/migrations/20260628140100_get_session_review.sql
+ M supabase/migrations/20260628140200_public_exam_keys.sql
+ D supabase/migrations/20260628142336_global_exam_keys_all_rooms.sql
+ D supabase/migrations/20260628143812_remove_key_room_scope.sql
+ D supabase/migrations/20260628150909_fix_profile_save_rls.sql
+ D supabase/migrations/20260629020000_ensure_student_row_for_exam_join.sql
+ M supabase/migrations/20260629020408_save_session_answers_rpc.sql
+ D supabase/migrations/20260629030000_consolidated_read_rpcs.sql
+ D supabase/migrations/20260629030100_block_answer_review_during_active_exam.sql
+ D supabase/migrations/20260629040000_score_exam_session_and_scored_at.sql
+ D supabase/migrations/20260629050000_get_exam_results_rpc.sql
+ D supabase/migrations/20260629060000_admin_exam_room_summary.sql
+ D supabase/migrations/20260629070000_essay_grading_rpcs.sql
+ D supabase/migrations/20260629080000_session_violation_logging.sql
+ D supabase/migrations/20260726120000_register_r2_asset_rpc.sql
+ D supabase/migrations/20260727120000_compose_paper_from_bank.sql
+ M types/supabase.ts
+?? .env.example
+?? .github/
+?? DEPLOYMENT_STAGING_RUNBOOK.md
+?? KE_HOACH_CAI_THIEN_TOAN_BO_WEB.md
+?? artifacts/math-database-improvement-20260821/
+?? artifacts/production-improvement-20260821/
+?? artifacts/release-automation-20260821/
+?? load/
+?? scripts/release-check.mjs
+?? src/app/admin/AdminDashboardClient.tsx
+?? src/app/error.tsx
+?? src/app/exam/[sessionId]/
+?? src/app/join/
+?? src/app/practice/
+?? src/app/result/[sessionId]/
+?? src/app/subjects/SubjectsClient.tsx
+?? src/app/subjects/[subjectCode]/SubjectExamSetsClient.tsx
+?? src/components/auth/
+?? src/components/providers/
+?? src/lib/supabase/admin.ts
+?? src/lib/supabase/database.ts
+?? src/lib/supabase/password-policy.test.ts
+?? src/lib/supabase/password-policy.ts
+?? src/lib/supabase/session.ts
+?? src/styles/practice.module.css
+?? supabase/migrations/20260605134845_fix_key_expiry_checks.sql
+?? supabase/migrations/20260611073524_seed_math_knowledge_fields.sql
+?? supabase/migrations/20260613090000_rebuild_math_knowledge_taxonomy.sql
+?? supabase/migrations/20260613104013_exam_session_shuffle.sql
+?? supabase/migrations/20260613175428_seed_questions_math_2026.sql
+?? supabase/migrations/20260618070716_keep_only_math_active.sql
+?? supabase/migrations/20260618155224_delete_non_math_subjects.sql
+?? supabase/migrations/20260619114658_restore_room_scoped_exam_keys.sql
+?? supabase/migrations/20260619115243_guard_empty_exam_papers.sql
+?? supabase/migrations/20260623120000_practice_self_serve.sql
+?? supabase/migrations/20260623124938_allow_submitted_session_review.sql
+?? supabase/migrations/20260623182603_backfill_question_images_math_2026.sql
+?? supabase/migrations/20260624041803_optimize_frontend_backend_paths.sql
+?? supabase/migrations/20260624120000_paper_library_room_papers.sql
+?? supabase/migrations/20260624120100_join_exam_via_room_papers.sql
+?? supabase/migrations/20260624130000_scaffold_physics_subject.sql
+?? supabase/migrations/20260627000100_harden_practice_rpc_and_audit_index.sql
+?? supabase/migrations/20260627000200_consolidate_duplicate_rls_policies.sql
+?? supabase/migrations/20260628120000_async_exam_scoring.sql
+?? supabase/migrations/20260628133318_exam_session_lifecycle_due_at.sql
+?? supabase/migrations/20260628133346_get_session_review.sql
+?? supabase/migrations/20260628234747_fix_get_session_review_idor_and_revoke_anon_rpc.sql
+?? supabase/migrations/20260628234814_drop_duplicate_fk_question_correct_options.sql
+?? supabase/migrations/20260628234819_consolidate_session_tf_item_answers_policies.sql
+?? supabase/migrations/20260628234945_revoke_rpc_execute_from_public.sql
+?? supabase/migrations/20260820234029_production_foundation_v1.sql
+?? supabase/migrations_legacy_local_only/
+?? supabase/tests/

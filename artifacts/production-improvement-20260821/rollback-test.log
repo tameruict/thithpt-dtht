@@ -1,0 +1,26 @@
+COMMAND: git worktree add --detach E:\Web-thi-thpt\.codex-tmp\rollback-test-final-20260821 HEAD; git apply DIFF_FILE.patch; TARGET_ROOT=/e/Web-thi-thpt/.codex-tmp/rollback-test-final-20260821 ROLLBACK.sh; vitest run --root E:\Web-thi-thpt\.codex-tmp\rollback-test-final-20260821
+INPUT: HEAD=45830e06c7b89e56d6054f8de3b9ecb60fce502c PATCH_SHA256=6adebbb23b4889b6042b5c6c079f266e482e6ab1cfaff3616e9f1dd230a5cb62
+FORWARD_APPLY_EXIT=0
+FORWARD_MODE_FIELD=True
+ROLLBACK_TARGET=/e/Web-thi-thpt/.codex-tmp/rollback-test-final-20260821
+ROLLBACK_PATCH=/e/Web-thi-thpt/artifacts/production-improvement-20260821/DIFF_FILE.patch
+ROLLBACK_RESULT=restored
+ROLLBACK_EXIT=0
+RESTORED_GIT_STATUS=
+RESTORED_HEAD=45830e06c7b89e56d6054f8de3b9ecb60fce502c
+RESTORED_HEAD_MATCH=True
+RESTORED_PROXY_HASH=81761bbaec1e8f68467617613071e3df955506fd
+EXPECTED_PROXY_HASH=81761bbaec1e8f68467617613071e3df955506fd
+RESTORED_PROXY_MATCH=True
+FOUNDATION_FILE_EXISTS=False
+
+ RUN  v4.1.8 E:/Web-thi-thpt/.codex-tmp/rollback-test-final-20260821
+
+
+ Test Files  6 passed (6)
+      Tests  32 passed (32)
+   Start at  07:29:23
+   Duration  726ms (transform 577ms, setup 0ms, import 1.21s, tests 104ms, environment 1ms)
+
+RESTORED_TEST_EXIT=0
+EXIT_STATUS: 0

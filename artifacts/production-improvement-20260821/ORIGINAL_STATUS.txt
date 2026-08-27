@@ -1,0 +1,14 @@
+ D .next-dev.err.log
+ D .next-dev.out.log
+ D artifacts/codex-next-dev-3001.err.log
+ D artifacts/codex-next-dev-3001.out.log
+ D artifacts/codex-next-start-3002.err.log
+ D artifacts/codex-next-start-3002.out.log
+ D artifacts/codex-next-start-3003.err.log
+ D artifacts/codex-next-start-3003.out.log
+ D artifacts/reapply-dev.err.log
+ D artifacts/reapply-dev.out.log
+ D artifacts/review-server.err.log
+ D artifacts/review-server.out.log
+ D artifacts/ui-redesign-dev.err.log
+ D artifacts/ui-redesign-dev.out.log

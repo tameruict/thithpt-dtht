@@ -116,6 +116,40 @@
   animation: slideDown .3s ease;
 }
 
+.fullscreenPrompt {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: var(--radius-lg);
+  background: rgba(217, 119, 6, .96);
+  color: #FFFFFF;
+  font-size: 14px;
+  font-weight: 800;
+  box-shadow: 0 12px 30px rgba(217, 119, 6, .35);
+}
+
+.fullscreenPrompt button {
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, .6);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, .16);
+  color: #FFFFFF;
+  font: inherit;
+  font-weight: 900;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.fullscreenPrompt button:hover {
+  background: rgba(255, 255, 255, .28);
+}
+
 @keyframes slideDown {
   from { opacity: 0; transform: translate(-50%, -12px); }
   to { opacity: 1; transform: translate(-50%, 0); }

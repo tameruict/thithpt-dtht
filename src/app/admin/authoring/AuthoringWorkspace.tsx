@@ -7,13 +7,18 @@ import {
   BookOpen,
   Check,
   ChevronDown,
+  FileJson,
   FilePlus2,
   ImagePlus,
+  Layers,
+  ListPlus,
   PanelLeftClose,
+  PenLine,
   Plus,
   Send,
   ShieldCheck,
   Sparkles,
+  UploadCloud,
   X,
 } from 'lucide-react';
 import {
@@ -26,14 +31,19 @@ import {
 } from 'react';
 import {
   getQuestionMetadataAtPosition,
+  getQuestionRangeAtPosition,
   parseAuthoringSource,
 } from '@/lib/authoring/parser';
 import { getAuthoringTemplate } from '@/lib/authoring/templates';
 import type {
+  AuthoringDocument,
   AuthoringKnowledgeField,
   AuthoringMode,
+  AuthoringQuestion,
   AuthoringWorkspaceData,
 } from '@/lib/authoring/types';
+import QuestionFormModal from './QuestionFormModal';
+import ImportModal from './ImportModal';
 import QuestionRenderer, {
   MathText,
   type RenderableQuestion,
@@ -43,6 +53,7 @@ import {
   createKnowledgeField,
   publishAuthoringDocument,
   saveAuthoringDocument,
+  uploadAuthoringImage,
 } from './actions';
 import LatexEditor, { type LatexEditorHandle } from './LatexEditor';
 import { HANOI_TZ } from '@/lib/datetime';
@@ -130,7 +141,15 @@ export default function AuthoringWorkspace({ initialData }: Props) {
   const [mobilePane, setMobilePane] = useState<'editor' | 'preview'>('editor');
   const [showCreate, setShowCreate] = useState(initialData.documents.length === 0);
   const [showImage, setShowImage] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [imageError, setImageError] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [formInitial, setFormInitial] = useState<AuthoringQuestion | null>(null);
+  const [formTarget, setFormTarget] = useState<{ start: number; end: number } | null>(
+    null,
+  );
   const [showKnowledgeCreate, setShowKnowledgeCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [cursorPosition, setCursorPosition] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -208,6 +227,38 @@ export default function AuthoringWorkspace({ initialData }: Props) {
     return () => window.clearTimeout(timeout);
   }, [dirty, isSaving, publishedCurrent, revision, selectedDocument, source]);
 
+  const registerCreatedDocument = (
+    document: AuthoringDocument,
+    sourcePaperId: string,
+  ) => {
+    setDocuments((current) => [
+      document,
+      ...current.filter((existing) => existing.id !== document.id),
+    ]);
+    if (
+      document.paperId &&
+      !papers.some((paper) => paper.id === document.paperId)
+    ) {
+      const sourcePaper = papers.find((paper) => paper.id === sourcePaperId);
+      if (sourcePaper) {
+        setPapers((current) => [
+          {
+            ...sourcePaper,
+            id: document.paperId!,
+            label: `${sourcePaper.label} - draft`,
+            status: 'draft',
+            isDefault: false,
+          },
+          ...current,
+        ]);
+      }
+    }
+    setSelectedId(document.id);
+    setSource(document.latexSource);
+    setSavedSource(document.latexSource);
+    setRevision(document.revision);
+  };
+
   const handleCreate = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -227,32 +278,7 @@ export default function AuthoringWorkspace({ initialData }: Props) {
         setFeedback(result.error);
         return;
       }
-      setDocuments((current) => [
-        result.document,
-        ...current.filter((document) => document.id !== result.document.id),
-      ]);
-      if (
-        result.document.paperId &&
-        !papers.some((paper) => paper.id === result.document.paperId)
-      ) {
-        const sourcePaper = papers.find((paper) => paper.id === sourcePaperId);
-        if (sourcePaper) {
-          setPapers((current) => [
-            {
-              ...sourcePaper,
-              id: result.document.paperId!,
-              label: `${sourcePaper.label} - draft`,
-              status: 'draft',
-              isDefault: false,
-            },
-            ...current,
-          ]);
-        }
-      }
-      setSelectedId(result.document.id);
-      setSource(result.document.latexSource);
-      setSavedSource(result.document.latexSource);
-      setRevision(result.document.revision);
+      registerCreatedDocument(result.document, sourcePaperId);
       setShowCreate(false);
       setFeedback('');
     });
@@ -286,6 +312,11 @@ export default function AuthoringWorkspace({ initialData }: Props) {
     });
   };
 
+  const openImageModal = () => {
+    setImageError('');
+    setShowImage(true);
+  };
+
   const handleInsertImage = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -294,6 +325,38 @@ export default function AuthoringWorkspace({ initialData }: Props) {
     if (!url || !alt) return;
     editorRef.current?.insertText(`\\image[alt={${alt}}]{${url}}`);
     setShowImage(false);
+  };
+
+  const handleUploadImage = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const file = formData.get('file');
+    const alt = String(formData.get('alt') || '').trim().replace(/[{}]/g, '');
+
+    if (!(file instanceof File) || file.size === 0) {
+      setImageError('Hãy chọn một tệp ảnh.');
+      return;
+    }
+    if (!alt) {
+      setImageError('Hãy nhập alt text mô tả ảnh.');
+      return;
+    }
+
+    setImageError('');
+    setImageUploading(true);
+    try {
+      const result = await uploadAuthoringImage(formData);
+      if (!result.ok) {
+        setImageError(result.error);
+        return;
+      }
+      editorRef.current?.insertText(
+        `\\image[alt={${result.alt || alt}}]{${result.url}}`,
+      );
+      setShowImage(false);
+    } finally {
+      setImageUploading(false);
+    }
   };
 
   const handleCreateKnowledgeField = (event: FormEvent<HTMLFormElement>) => {
@@ -343,6 +406,51 @@ export default function AuthoringWorkspace({ initialData }: Props) {
     editorRef.current?.insertText(snippet);
   };
 
+  const openCreateForm = () => {
+    setFormInitial(null);
+    setFormTarget(null);
+    setShowForm(true);
+  };
+
+  const openEditForm = () => {
+    const range = getQuestionRangeAtPosition(source, cursorPosition);
+    if (!range) {
+      setFeedback('Đặt con trỏ vào trong câu hỏi cần sửa bằng form.');
+      return;
+    }
+    const single = parseAuthoringSource(
+      source.slice(range.start, range.end),
+      'question',
+    );
+    const question = single.questions[0] ?? null;
+    if (!question) {
+      setFeedback('Không đọc được câu tại con trỏ (cú pháp chưa hợp lệ).');
+      return;
+    }
+    setFormInitial(question);
+    setFormTarget({ start: range.start, end: range.end });
+    setShowForm(true);
+  };
+
+  const handleFormSubmit = (dsl: string) => {
+    if (formTarget) {
+      editorRef.current?.replaceRange(formTarget.start, formTarget.end, dsl);
+    } else {
+      editorRef.current?.insertText(`${dsl}\n\n`);
+    }
+    setShowForm(false);
+    setFeedback('');
+  };
+
+  const handleImportCreated = (
+    document: AuthoringDocument,
+    sourcePaperId: string,
+  ) => {
+    registerCreatedDocument(document, sourcePaperId);
+    setShowImport(false);
+    setFeedback('Đã tạo bản nháp từ JSON. Xem preview bên phải rồi bấm Xuất bản.');
+  };
+
   const selectDocument = (documentId: string) => {
     const nextDocument = documents.find((document) => document.id === documentId);
     if (!nextDocument) return;
@@ -370,6 +478,9 @@ export default function AuthoringWorkspace({ initialData }: Props) {
           </span>
         </div>
         <div className={styles.topActions}>
+          <Link href="/admin/compose" className={styles.ghostButton}>
+            <Layers size={16} /> Dựng đề
+          </Link>
           <Link href="/admin" transitionTypes={['nav-back']} className={styles.ghostButton}>
             <ArrowLeft size={16} /> Admin
           </Link>
@@ -399,6 +510,13 @@ export default function AuthoringWorkspace({ initialData }: Props) {
           onClick={() => setShowCreate(true)}
         >
           <FilePlus2 size={17} /> Bản nháp mới
+        </button>
+        <button
+          type="button"
+          className={styles.importDocument}
+          onClick={() => setShowImport(true)}
+        >
+          <FileJson size={16} /> Nạp đề (JSON)
         </button>
         <div className={styles.railLabel}>Tài liệu gần đây</div>
         <div className={styles.documentList}>
@@ -439,8 +557,23 @@ export default function AuthoringWorkspace({ initialData }: Props) {
             </div>
             <button
               type="button"
+              className={styles.formButton}
               disabled={publishedCurrent}
-              onClick={() => setShowImage(true)}
+              onClick={openCreateForm}
+            >
+              <ListPlus size={16} /> Thêm câu (form)
+            </button>
+            <button
+              type="button"
+              disabled={publishedCurrent}
+              onClick={openEditForm}
+            >
+              <PenLine size={16} /> Sửa câu (form)
+            </button>
+            <button
+              type="button"
+              disabled={publishedCurrent}
+              onClick={openImageModal}
             >
               <ImagePlus size={16} /> Chèn ảnh R2
             </button>
@@ -710,42 +843,98 @@ Nội dung lựa chọn
         </div>
       ) : null}
 
+      {showForm ? (
+        <QuestionFormModal
+          initial={formInitial}
+          knowledgeFields={subjectKnowledgeFields}
+          onClose={() => setShowForm(false)}
+          onSubmit={handleFormSubmit}
+        />
+      ) : null}
+
+      {showImport ? (
+        <ImportModal
+          subjects={initialData.subjects}
+          papers={papers}
+          onClose={() => setShowImport(false)}
+          onCreated={handleImportCreated}
+        />
+      ) : null}
+
       {showImage ? (
         <div className={styles.modalBackdrop}>
-          <form className={styles.modal} onSubmit={handleInsertImage}>
+          <div className={styles.modal}>
             <div className={styles.modalHeader}>
               <div>
                 <span>Cloudflare R2</span>
-                <h2>Chèn ảnh từ registry</h2>
+                <h2>Chèn ảnh vào câu hỏi</h2>
               </div>
               <button type="button" onClick={() => setShowImage(false)}>
                 <X size={18} />
               </button>
             </div>
-            <label>
-              Public URL
-              <input
-                name="url"
-                type="url"
-                required
-                placeholder="https://cdn.example.com/path/image.webp"
-              />
-            </label>
-            <label>
-              Alt text
-              <input
-                name="alt"
-                required
-                placeholder="Mô tả nội dung ảnh cho người dùng trình đọc màn hình"
-              />
-            </label>
-            <p className={styles.modalHint}>
-              URL phải khớp chính xác một bản ghi trong r2_assets. Signed URL và HTTP sẽ bị từ chối khi xuất bản.
-            </p>
-            <button className={styles.primaryModalButton}>
-              <ImagePlus size={16} /> Chèn tại con trỏ
-            </button>
-          </form>
+
+            {imageError ? (
+              <p className={styles.modalError}>
+                <AlertCircle size={15} /> {imageError}
+              </p>
+            ) : null}
+
+            <form onSubmit={handleUploadImage}>
+              <label>
+                Tải tệp ảnh lên (PNG, JPG, WEBP, AVIF · ≤ 10 MB)
+                <input
+                  name="file"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/avif"
+                  required
+                />
+              </label>
+              <label>
+                Alt text
+                <input
+                  name="alt"
+                  required
+                  placeholder="Mô tả nội dung ảnh cho trình đọc màn hình"
+                />
+              </label>
+              <button
+                className={styles.primaryModalButton}
+                disabled={imageUploading}
+              >
+                <UploadCloud size={16} />
+                {imageUploading ? 'Đang tải lên...' : 'Tải lên & chèn'}
+              </button>
+            </form>
+
+            <div className={styles.modalDivider}>hoặc dán URL đã có trong registry</div>
+
+            <form onSubmit={handleInsertImage}>
+              <label>
+                Public URL
+                <input
+                  name="url"
+                  type="url"
+                  required
+                  placeholder="https://cdn.example.com/path/image.webp"
+                />
+              </label>
+              <label>
+                Alt text
+                <input
+                  name="alt"
+                  required
+                  placeholder="Mô tả nội dung ảnh cho trình đọc màn hình"
+                />
+              </label>
+              <p className={styles.modalHint}>
+                URL phải khớp chính xác một bản ghi trong r2_assets. Signed URL và HTTP sẽ bị từ chối khi xuất bản.
+              </p>
+              <button className={styles.primaryModalButton}>
+                <ImagePlus size={16} /> Chèn tại con trỏ
+              </button>
+            </form>
+          </div>
         </div>
       ) : null}
 

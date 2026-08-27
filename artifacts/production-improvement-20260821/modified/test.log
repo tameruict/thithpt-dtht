@@ -1,0 +1,16 @@
+COMMAND: npm test
+INPUT: cwd=E:\Web-thi-thpt
+
+> web-thi-thpt-next@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.8 E:/Web-thi-thpt
+
+
+ Test Files  7 passed (7)
+      Tests  36 passed (36)
+   Start at  07:23:09
+   Duration  969ms (transform 545ms, setup 0ms, import 1.65s, tests 154ms, environment 1ms)
+
+EXIT_STATUS: 0

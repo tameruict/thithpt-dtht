@@ -1,4 +1,5 @@
-import type { SupabaseClient, User } from '@supabase/supabase-js';
+import type { User } from '@supabase/supabase-js';
+import type { AppSupabaseClient, Database } from './database';
 
 export type CandidateProfile = {
   code: string;
@@ -57,7 +58,7 @@ function resolveProfileInput(input: string | StudentProfileInput): StudentProfil
 }
 
 export async function loadCandidateProfile(
-  supabase: SupabaseClient,
+  supabase: AppSupabaseClient,
   user: User,
 ): Promise<CandidateProfile> {
   const [profileResult, studentResult] = await Promise.all([
@@ -104,7 +105,7 @@ export async function loadCandidateProfile(
 }
 
 export async function ensureStudentProfile(
-  supabase: SupabaseClient,
+  supabase: AppSupabaseClient,
   user: User,
   profileInput: string | StudentProfileInput,
 ) {
@@ -143,7 +144,7 @@ export async function ensureStudentProfile(
     throw updateError;
   }
 
-  const studentPayload: Record<string, unknown> = {
+  const studentPayload: Database['public']['Tables']['students']['Insert'] = {
     id: user.id,
     full_name: fullName,
   };
@@ -182,7 +183,7 @@ export async function ensureStudentProfile(
 }
 
 export async function saveCandidateProfile(
-  supabase: SupabaseClient,
+  supabase: AppSupabaseClient,
   user: User,
   profile: StudentProfileInput,
 ) {

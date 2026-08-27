@@ -1,0 +1,37 @@
+[
+  {
+    "version": "v2",
+    "baseUrl": "https://thueapibank.vn/",
+    "endpoint": "/historyapimbv2/{API_KEY}",
+    "method": "GET",
+    "accountScoped": true,
+    "auth": {
+      "location": "path",
+      "name": "{API_KEY}",
+      "prefix": ""
+    },
+    "pagination": {
+      "requestCursorName": null,
+      "responseCursorPath": null
+    },
+    "response": {
+      "itemsPath": "transactions",
+      "statusPath": "status",
+      "successValues": ["success"]
+    },
+    "fields": {
+      "providerEventId": "transactionID",
+      "transactionAt": "transactionDate",
+      "direction": "type",
+      "amount": "amount",
+      "content": "description",
+      "accountNumber": null,
+      "bankCode": null,
+      "providerReference": null
+    },
+    "directionValues": {
+      "in": ["IN"],
+      "out": ["OUT"]
+    }
+  }
+]

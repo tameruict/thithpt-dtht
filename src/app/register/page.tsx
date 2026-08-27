@@ -9,6 +9,13 @@ import { createClient } from '@/lib/supabase/client';
 import { hasSupabaseEnv } from '@/lib/supabase/env';
 import { ensureStudentProfile, loadCandidateProfile } from '@/lib/supabase/user-profile';
 import { translateAuthError } from '@/lib/supabase/auth-errors';
+import {
+  getPasswordPolicyError,
+  MIN_PASSWORD_LENGTH,
+} from '@/lib/supabase/password-policy';
+import CaptchaChallenge, {
+  turnstileSiteKey,
+} from '@/components/auth/CaptchaChallenge';
 import { useExamStore } from '@/store/useExamStore';
 
 export default function RegisterPage() {
@@ -18,6 +25,7 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const login = useExamStore((state) => state.login);
@@ -45,20 +53,26 @@ export default function RegisterPage() {
       return;
     }
 
-    if (password.length < 6) {
-      setError('Mật khẩu phải có ít nhất 6 ký tự.');
+    const passwordError = getPasswordPolicyError(password);
+    if (passwordError) {
+      setError(passwordError);
       return;
     }
 
     setLoading(true);
 
     try {
+      if (turnstileSiteKey && !captchaToken) {
+        setError('Vui lòng hoàn tất xác minh chống bot.');
+        return;
+      }
       const supabase = createClient();
       const { data, error: authError } = await supabase.auth.signUp({
         email: trimmedEmail,
         password,
         options: {
           data: { full_name: trimmedName },
+          captchaToken: captchaToken ?? undefined,
           emailRedirectTo: `${window.location.origin}/auth/confirm`,
         },
       });
@@ -122,10 +136,11 @@ export default function RegisterPage() {
 
         <form onSubmit={handleRegister}>
           <div className={styles.formGroup}>
-            <label className={styles.label}>Họ và tên <span className={styles.required}>*</span></label>
+            <label className={styles.label} htmlFor="register-name">Họ và tên <span className={styles.required}>*</span></label>
             <div className={styles.inputWrapper}>
               <User className={styles.inputIcon} />
               <input
+                id="register-name"
                 type="text"
                 required
                 className={styles.input}
@@ -138,10 +153,11 @@ export default function RegisterPage() {
           </div>
 
           <div className={styles.formGroup}>
-            <label className={styles.label}>Email <span className={styles.required}>*</span></label>
+            <label className={styles.label} htmlFor="register-email">Email <span className={styles.required}>*</span></label>
             <div className={styles.inputWrapper}>
               <Mail className={styles.inputIcon} />
               <input
+                id="register-email"
                 type="email"
                 required
                 className={styles.input}
@@ -154,12 +170,14 @@ export default function RegisterPage() {
           </div>
 
           <div className={styles.formGroup}>
-            <label className={styles.label}>Mật khẩu <span className={styles.required}>*</span></label>
+            <label className={styles.label} htmlFor="register-password">Mật khẩu <span className={styles.required}>*</span></label>
             <div className={styles.inputWrapper}>
               <Lock className={styles.inputIcon} />
               <input
+                id="register-password"
                 type={showPassword ? 'text' : 'password'}
                 required
+                minLength={MIN_PASSWORD_LENGTH}
                 className={styles.input}
                 placeholder="Tạo mật khẩu"
                 autoComplete="new-password"
@@ -177,7 +195,8 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          {error && <p className={styles.errorText}>{error}</p>}
+          <CaptchaChallenge onToken={setCaptchaToken} />
+          {error && <p className={styles.errorText} role="alert" aria-live="assertive">{error}</p>}
           {message && <p className={`${styles.errorText} ${styles.successText}`}>{message}</p>}
 
           <button type="submit" className={styles.submitBtn} disabled={loading}>

@@ -1,0 +1,19 @@
+COMMAND: k6 run load/k6-exam-session.js
+INPUT: 500 per-VU accessToken/sessionId/sessionQuestionId records from C:\Users\giaos\AppData\Local\Temp\web-thi-thpt-audit-500.json
+SCENARIOS: 500 autosave VUs for 2m; 500 submit VUs at 2m
+TOTAL_REQUESTS: 6500
+CHECKS: 6500/6500 passed
+HTTP_FAILURE_RATE: 0.00%
+AUTOSAVE_P95: 2.60s (threshold <800ms FAILED)
+SUBMIT_P95: 2.36s (threshold <2s FAILED)
+AUTOSAVE_P90: 487.13ms
+SUBMIT_P90: 2.32s
+MAX_LATENCY: 4.42s
+K6_EXIT: 99 (thresholds crossed)
+
+POST-LOAD CLEANUP:
+sessions=0, keys=0, users=0 for run-id audit-20260825-500
+cleanup command exit=0
+
+POST-LOAD DATABASE:
+14 pre-existing submitted sessions, 0 null scores, 0 overdue sessions; no long-running query; index/table hit rate 1.00; cron jobs succeeded.

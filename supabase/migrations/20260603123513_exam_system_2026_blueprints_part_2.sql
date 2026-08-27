@@ -311,3 +311,4 @@ for each row execute function private.touch_updated_at();
 create trigger exam_room_questions_validate_blueprint
 before insert or update on public.exam_room_questions
 for each row execute function private.ensure_exam_room_question_matches_blueprint();
+;

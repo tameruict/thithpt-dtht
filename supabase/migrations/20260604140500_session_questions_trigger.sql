@@ -45,9 +45,7 @@ begin
   return new;
 end;
 $$;
-
 revoke all on function public.trg_populate_session_questions() from public, anon;
-
 drop trigger if exists trg_exam_sessions_populate_questions on public.exam_sessions;
 create trigger trg_exam_sessions_populate_questions
   after insert on public.exam_sessions

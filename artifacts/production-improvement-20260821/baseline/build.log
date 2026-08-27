@@ -1,0 +1,46 @@
+COMMAND: npm.cmd run build
+INPUT: cwd=E:\Web-thi-thpt
+
+> web-thi-thpt-next@0.1.0 build
+> next build
+
+▲ Next.js 16.2.7 (Turbopack)
+- Environments: .env.local
+- Experiments (use with caution):
+  ✓ viewTransition
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 12.1s
+  Running TypeScript ...
+  Finished TypeScript in 9.6s ...
+  Collecting page data using 7 workers ...
+  Generating static pages using 7 workers (0/13) ...
+  Generating static pages using 7 workers (3/13) 
+  Generating static pages using 7 workers (6/13) 
+  Generating static pages using 7 workers (9/13) 
+✓ Generating static pages using 7 workers (13/13) in 445ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ○ /admin
+├ ƒ /admin/authoring
+├ ƒ /admin/compose
+├ ƒ /auth/confirm
+├ ○ /exam
+├ ○ /profile
+├ ○ /register
+├ ○ /reset-password
+├ ○ /result
+├ ○ /room-key
+├ ○ /subjects
+└ ƒ /subjects/[subjectCode]
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
+EXIT_STATUS: 0

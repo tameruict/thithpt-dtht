@@ -1,11 +1,9 @@
-'use client';
-
 import { Be_Vietnam_Pro, JetBrains_Mono } from 'next/font/google';
+import type { Metadata } from 'next';
+import { connection } from 'next/server';
 import './globals.css';
 import 'katex/dist/katex.min.css';
-import { useExamStore } from '@/store/useExamStore';
-import { useSyncExternalStore, ViewTransition } from 'react';
-import ToastProvider from '@/components/ui/Toast';
+import AppProviders from '@/components/providers/AppProviders';
 
 const beVietnam = Be_Vietnam_Pro({
   subsets: ['latin', 'vietnamese'],
@@ -20,52 +18,33 @@ const jetBrainsMono = JetBrains_Mono({
   variable: '--font-mono',
 });
 
-export default function RootLayout({
+export const metadata: Metadata = {
+  title: {
+    default: 'Thi Tốt Nghiệp THPT Quốc Gia',
+    template: '%s | Thi THPT',
+  },
+  description: 'Nền tảng thi và tự luyện tốt nghiệp THPT.',
+};
+
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const theme = useExamStore((state) => state.theme);
-  const zoom = useExamStore((state) => state.zoom);
-  const mounted = useSyncExternalStore(
-    () => () => undefined,
-    () => true,
-    () => false,
-  );
+  // A per-request CSP nonce requires dynamic rendering so Next can attach the
+  // nonce to every framework script emitted for this response.
+  await connection();
 
   return (
     <html
       lang="vi"
-      data-theme={mounted ? theme : 'light'}
+      data-theme="light"
       data-scroll-behavior="smooth"
       suppressHydrationWarning
     >
-      <head>
-        <title>Thi Tốt Nghiệp THPT Quốc Gia</title>
-      </head>
-      <body
-        className={`${beVietnam.variable} ${jetBrainsMono.variable}`}
-        style={{ '--answer-font': `${Math.round(17 * (mounted ? zoom : 100) / 100)}px` } as React.CSSProperties}
-      >
+      <body className={`${beVietnam.variable} ${jetBrainsMono.variable}`}>
         <a className="skip-link" href="#app">Bỏ qua đến nội dung chính</a>
-        <main id="app">
-          <ViewTransition
-            enter={{
-              default: 'route-enter',
-              'nav-forward': 'route-forward-enter',
-              'nav-back': 'route-back-enter',
-            }}
-            exit={{
-              default: 'route-exit',
-              'nav-forward': 'route-forward-exit',
-              'nav-back': 'route-back-exit',
-            }}
-            default="route-update"
-          >
-            {children}
-          </ViewTransition>
-        </main>
-        <ToastProvider />
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );

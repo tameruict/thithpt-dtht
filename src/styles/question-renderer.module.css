@@ -13,25 +13,73 @@
   font-size: 0.82rem;
 }
 
-.inlineMath {
-  display: inline;
+.mathContent {
+  display: contents;
 }
 
-.displayMath {
-  display: block;
+.mathParagraph {
+  white-space: pre-wrap;
+}
+
+.mathContent :global(.katex) {
+  max-width: 100%;
+  font-size: 1.04em;
+}
+
+.mathContent :global(.katex-display) {
   max-width: 100%;
   margin: 14px 0;
   overflow-x: auto;
+  overflow-y: hidden;
+  text-align: center;
+}
+
+.mathContent table {
+  display: table;
+  width: max-content;
+  max-width: 100%;
+  margin: 14px auto;
+  border-collapse: collapse;
+  overflow-x: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.mathContent th,
+.mathContent td {
+  min-width: 3rem;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  text-align: center;
+  vertical-align: middle;
+}
+
+.mathContent th {
+  background: var(--surface-soft);
+  font-weight: 700;
+}
+
+.invalidMath {
+  text-decoration: underline wavy color-mix(in srgb, var(--danger, #b42318) 70%, transparent);
+  text-underline-offset: 4px;
+}
+
+.mathError {
+  display: block;
+  margin-top: 6px;
+  color: var(--danger, #b42318);
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .questionImage {
   display: block;
   width: auto;
+  height: auto;
   max-width: min(100%, 760px);
   max-height: 520px;
   margin: 16px auto;
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: 0;
   object-fit: contain;
   background: var(--surface-elevated);
 }
@@ -89,8 +137,15 @@
 }
 
 .correctOption {
-  border-color: #78a98d;
-  background: #f3fbf6;
+  border-color: color-mix(in srgb, var(--success) 64%, var(--border));
+  color: var(--text);
+  background: color-mix(in srgb, var(--success) 12%, var(--surface-elevated));
+}
+
+[data-theme="dark"] .correctOption {
+  border-color: color-mix(in srgb, var(--success) 72%, var(--border));
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--success) 18%, var(--surface-elevated));
 }
 
 .trueFalseList {
@@ -111,7 +166,7 @@
 }
 
 .trueFalseItem em {
-  color: #2f7950;
+  color: color-mix(in srgb, var(--success) 78%, var(--text));
   font-style: normal;
   font-weight: 700;
 }
@@ -139,6 +194,76 @@
   resize: vertical;
 }
 
+.shortAnswerBlock {
+  display: grid;
+  width: fit-content;
+  gap: 9px;
+  margin-top: 20px;
+}
+
+.shortAnswerGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 3.25rem);
+  width: fit-content;
+}
+
+.shortAnswerCell {
+  position: relative;
+  z-index: 0;
+  width: 3.25rem;
+  height: 3.75rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--text, #30262c);
+  background: var(--surface-elevated);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 1.65rem;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  caret-color: var(--primary);
+  font-variant-numeric: tabular-nums;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.shortAnswerCell:first-child {
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+
+.shortAnswerCell:last-child {
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.shortAnswerCell + .shortAnswerCell {
+  margin-left: -1px;
+}
+
+.shortAnswerCell:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+}
+
+.shortAnswerCell:focus {
+  z-index: 1;
+  border-color: var(--primary);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+
+.shortAnswerCell:disabled {
+  color: var(--muted);
+  background: var(--surface-soft);
+  cursor: default;
+  opacity: 1;
+}
+
+.shortAnswerHint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
 @media (max-width: 680px) {
   .trueFalseItem {
     grid-template-columns: 1fr;
@@ -163,5 +288,15 @@
     min-height: 40px;
     border-radius: var(--radius-md);
     background: var(--surface-soft);
+  }
+
+  .shortAnswerGrid {
+    grid-template-columns: repeat(4, 3rem);
+  }
+
+  .shortAnswerCell {
+    width: 3rem;
+    height: 3.5rem;
+    font-size: 1.5rem;
   }
 }

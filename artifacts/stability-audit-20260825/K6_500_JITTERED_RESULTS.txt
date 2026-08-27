@@ -1,0 +1,16 @@
+COMMAND: k6 run load/k6-exam-session.js
+INPUT: 500 per-VU records from audit-20260825-500c
+SCENARIOS: 500 autosave VUs for 2m and 500 submit VUs; deterministic 0-10s phase jitter for both operations
+TOTAL_REQUESTS: 6406
+CHECKS: 6406/6406 passed
+HTTP_FAILURE_RATE: 0.00%
+AUTOSAVE_P95: 361.30ms (threshold <800ms PASSED)
+SUBMIT_P95: 212.91ms (threshold <2s PASSED)
+AUTOSAVE_P90: 265.62ms
+SUBMIT_P90: 187.63ms
+MAX_LATENCY: 4.17s
+K6_EXIT: 0
+
+POST-LOAD CLEANUP:
+sessions=0, keys=0, users=0 for run-id audit-20260825-500c
+cleanup command exit=0

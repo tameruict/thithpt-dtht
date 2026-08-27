@@ -8,7 +8,6 @@ import { CheckCircle, Flag, Maximize, Moon, Sun, AlertTriangle, X, Eye } from 'l
 import { createClient } from '@/lib/supabase/client';
 import {
   fetchExamSessionData,
-  getCurrentStudentId,
   getSupabaseErrorMessage,
   saveSessionAnswers,
   type ExamSessionData,
@@ -16,9 +15,10 @@ import {
   type SessionAnswerInput,
 } from '@/lib/supabase/exam-data';
 import QuestionRenderer, {
+  serializeShortAnswerForScoring,
   type RenderableQuestion,
 } from '@/components/question/QuestionRenderer';
-import { useExamStore } from '@/store/useExamStore';
+import { useExamStore, type CandidateInfo } from '@/store/useExamStore';
 import styles from '@/styles/exam.module.css';
 
 type TrueFalseDraft = Record<string, 'true' | 'false'>;
@@ -61,6 +61,8 @@ function toRenderableQuestion(question: ExamSessionQuestion): RenderableQuestion
     content: question.content,
     imageUrl: question.imageUrl,
     imageAltText: question.imageAltText,
+    imageWidth: question.imageWidth,
+    imageHeight: question.imageHeight,
     maxPoints: question.maxPoints,
     options: question.options.map((option) => ({
       id: option.id,
@@ -68,6 +70,8 @@ function toRenderableQuestion(question: ExamSessionQuestion): RenderableQuestion
       content: option.content,
       imageUrl: option.imageUrl,
       imageAltText: option.imageAltText,
+      imageWidth: option.imageWidth,
+      imageHeight: option.imageHeight,
     })),
     trueFalseItems: question.trueFalseItems.map((item) => ({
       id: item.id,
@@ -77,7 +81,13 @@ function toRenderableQuestion(question: ExamSessionQuestion): RenderableQuestion
   };
 }
 
-export default function ExamPage() {
+export default function ExamPage({
+  sessionId,
+  candidate,
+}: {
+  sessionId?: string;
+  candidate?: CandidateInfo;
+}) {
   const router = useRouter();
   const {
     hasHydrated,
@@ -89,13 +99,16 @@ export default function ExamPage() {
     setCurrentQuestion,
     marked,
     toggleMark,
-    candidateInfo,
-    roomKey,
-    currentSessionId,
+    candidateInfo: storedCandidateInfo,
+    roomKey: storedRoomKey,
+    currentSessionId: storedSessionId,
     examDraft,
     setDraft,
     clearDraft,
   } = useExamStore();
+  const currentSessionId = sessionId ?? storedSessionId;
+  const candidateInfo = candidate ?? storedCandidateInfo;
+  const roomKey = storedRoomKey ?? (sessionId ? 'SESSION' : null);
 
   // Tạo client 1 lần và tái sử dụng trong mọi handlers
   const supabase = useMemo(() => createClient(), []);
@@ -114,14 +127,75 @@ export default function ExamPage() {
   const [showReviewPanel, setShowReviewPanel] = useState(false);
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
   const [showTabWarning, setShowTabWarning] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(
+    () => typeof document !== 'undefined' && Boolean(document.fullscreenElement),
+  );
+  const [tabLockState, setTabLockState] = useState<'checking' | 'primary' | 'blocked'>(
+    'checking',
+  );
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSubmittedRef = useRef(false);
 
-  // Buffer ghi đáp án (tiết kiệm DB): gom thay đổi rồi flush gộp, không ghi mỗi thao tác.
-  const studentIdRef = useRef<string | null>(null);
+  // Buffer ghi đáp án: gom và khử trùng theo câu hỏi trước khi flush.
   const dirtyRef = useRef<Map<string, SessionAnswerInput>>(new Map());
-  const flushingRef = useRef(false);
+  const flushPromiseRef = useRef<Promise<boolean> | null>(null);
+
+  useEffect(() => {
+    if (!currentSessionId) return;
+
+    const lockKey = `exam-session-lock:${currentSessionId}`;
+    const tabId = crypto.randomUUID();
+    const leaseMs = 15_000;
+
+    const readLock = () => {
+      try {
+        return JSON.parse(localStorage.getItem(lockKey) ?? 'null') as {
+          tabId?: string;
+          expiresAt?: number;
+        } | null;
+      } catch {
+        return null;
+      }
+    };
+
+    const acquireOrRefresh = () => {
+      const now = Date.now();
+      const current = readLock();
+      if (
+        !current?.tabId ||
+        current.tabId === tabId ||
+        Number(current.expiresAt ?? 0) <= now
+      ) {
+        localStorage.setItem(
+          lockKey,
+          JSON.stringify({ tabId, expiresAt: now + leaseMs }),
+        );
+        setTabLockState(readLock()?.tabId === tabId ? 'primary' : 'blocked');
+      } else {
+        setTabLockState('blocked');
+      }
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === lockKey) acquireOrRefresh();
+    };
+    const release = () => {
+      if (readLock()?.tabId === tabId) localStorage.removeItem(lockKey);
+    };
+
+    acquireOrRefresh();
+    const interval = window.setInterval(acquireOrRefresh, 5_000);
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('pagehide', release);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('pagehide', release);
+      release();
+    };
+  }, [currentSessionId]);
 
   useEffect(() => {
     if (!hasHydrated) return;
@@ -141,13 +215,6 @@ export default function ExamPage() {
 
     let isMounted = true;
 
-    // Lấy student id 1 lần để flush không phải gọi getUser mỗi lần.
-    getCurrentStudentId(supabase)
-      .then((id) => {
-        if (isMounted) studentIdRef.current = id;
-      })
-      .catch(() => undefined);
-
     fetchExamSessionData(supabase, currentSessionId)
       .then((data) => {
         if (!isMounted) return;
@@ -159,7 +226,7 @@ export default function ExamPage() {
 
         // Phiên đã kết thúc hoặc đã hết giờ -> không cho làm bài, sang trang kết quả.
         if (data.session.status !== 'in_progress' || Date.now() >= deadlineMs) {
-          router.replace('/result');
+          router.replace(`/result/${currentSessionId}`);
           return;
         }
 
@@ -308,36 +375,46 @@ export default function ExamPage() {
   }, []);
 
   // Flush buffer đáp án lên DB theo lô (gom + dedup theo câu hỏi).
-  const flush = useCallback(async () => {
-    if (flushingRef.current || dirtyRef.current.size === 0) return;
+  const flush = useCallback(async (): Promise<boolean> => {
+    if (flushPromiseRef.current) return flushPromiseRef.current;
+    if (dirtyRef.current.size === 0) return true;
+    if (!currentSessionId) return false;
 
-    const pending = dirtyRef.current;
-    dirtyRef.current = new Map();
-    flushingRef.current = true;
-    showSaveIndicator('saving');
+    const run = (async () => {
+      while (dirtyRef.current.size > 0) {
+        const pending = dirtyRef.current;
+        dirtyRef.current = new Map();
+        showSaveIndicator('saving');
 
-    try {
-      if (!studentIdRef.current) {
-        studentIdRef.current = await getCurrentStudentId(supabase);
+        try {
+          await saveSessionAnswers(
+            supabase,
+            currentSessionId,
+            Array.from(pending.values()),
+          );
+          setSaveError('');
+          showSaveIndicator('saved');
+        } catch (error) {
+          // Trả mục lỗi vào buffer nhưng không đè thay đổi mới hơn của cùng câu.
+          pending.forEach((value, key) => {
+            if (!dirtyRef.current.has(key)) dirtyRef.current.set(key, value);
+          });
+          setSaveError(getSupabaseErrorMessage(error, 'Không thể lưu đáp án.'));
+          showSaveIndicator('error');
+          return false;
+        }
       }
-      await saveSessionAnswers(
-        supabase,
-        studentIdRef.current,
-        Array.from(pending.values()),
-      );
-      setSaveError('');
-      showSaveIndicator('saved');
-    } catch (error) {
-      // Đưa lại các mục lỗi vào buffer để thử lại, không đè lên sửa đổi mới hơn.
-      pending.forEach((value, key) => {
-        if (!dirtyRef.current.has(key)) dirtyRef.current.set(key, value);
-      });
-      setSaveError(getSupabaseErrorMessage(error, 'Không thể lưu đáp án.'));
-      showSaveIndicator('error');
+
+      return true;
+    })();
+
+    flushPromiseRef.current = run;
+    try {
+      return await run;
     } finally {
-      flushingRef.current = false;
+      if (flushPromiseRef.current === run) flushPromiseRef.current = null;
     }
-  }, [supabase, showSaveIndicator]);
+  }, [currentSessionId, supabase, showSaveIndicator]);
 
   const scheduleFlush = useCallback(() => {
     if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
@@ -375,6 +452,16 @@ export default function ExamPage() {
       window.removeEventListener('pagehide', handleHide);
     };
   }, [flush]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (dirtyRef.current.size === 0) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
 
   // Lưu bản nháp cục bộ (debounce) để resume nhanh khi reload.
   useEffect(() => {
@@ -427,23 +514,29 @@ export default function ExamPage() {
     }
 
     // Đẩy nốt đáp án trong buffer trước khi nộp.
-    await flush();
+    const answersSaved = await flush();
+    if (!answersSaved) {
+      setShowReviewPanel(true);
+      return;
+    }
 
     if (currentSessionId) {
-      try {
-        await supabase.rpc('submit_exam_session', {
-          p_session_id: currentSessionId,
-        });
-      } catch {
-        // Không block UX nếu RPC thất bại (network issue, v.v.)
+      const { error } = await supabase.rpc('submit_exam_session', {
+        p_session_id: currentSessionId,
+      });
+      if (error) {
+        setSaveError(getSupabaseErrorMessage(error, 'Không thể nộp bài.'));
+        showSaveIndicator('error');
+        setShowReviewPanel(true);
+        return;
       }
     }
 
     // Không lưu tiến trình sau khi kết thúc: xóa bản nháp; GIỮ currentSessionId
     // để trang /result tải được kết quả + đáp án.
     clearDraft();
-    router.push('/result');
-  }, [clearDraft, currentSessionId, flush, router, supabase]);
+    router.push(`/result/${currentSessionId}`);
+  }, [clearDraft, currentSessionId, flush, router, showSaveIndicator, supabase]);
 
   const handleConfirmSubmit = useCallback(async () => {
     setShowReviewPanel(false);
@@ -463,19 +556,47 @@ export default function ExamPage() {
     return () => window.clearTimeout(timeout);
   }, [examData, handleSubmit, isLoading, timeLeft]);
 
-  // Anti-cheat: detect tab switching
+  const recordViolation = useCallback(
+    (type: string) => {
+      setTabSwitchCount((count) => count + 1);
+      setShowTabWarning(true);
+      window.setTimeout(() => setShowTabWarning(false), 4000);
+      if (currentSessionId) {
+        // Ghi log phía server (chỉ tính khi phiên đang thi); bỏ qua lỗi mạng.
+        void supabase.rpc('record_session_event', {
+          p_session_id: currentSessionId,
+          p_type: type,
+        });
+      }
+    },
+    [currentSessionId, supabase],
+  );
+
+  // Chống gian lận: ghi log khi rời tab (không cưỡng chế).
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden && examData && !isLoading) {
-        setTabSwitchCount((c) => c + 1);
-        setShowTabWarning(true);
-        setTimeout(() => setShowTabWarning(false), 4000);
+        recordViolation('tab_switch');
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [examData, isLoading]);
+  }, [examData, isLoading, recordViolation]);
+
+  // Bắt buộc toàn màn hình: theo dõi trạng thái + ghi log khi thoát giữa giờ.
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const active = Boolean(document.fullscreenElement);
+      setIsFullscreen(active);
+      if (!active && examData && !isLoading) {
+        recordViolation('fullscreen_exit');
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, [examData, isLoading, recordViolation]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -570,29 +691,55 @@ export default function ExamPage() {
     });
   };
 
-  const persistTextAnswer = (question: ExamSessionQuestion) => {
-    const value = textAnswers[question.id]?.trim() ?? '';
-    if (!value) return;
-
+  const persistTextAnswer = (question: ExamSessionQuestion, value: string) => {
+    setTextAnswers((current) => ({ ...current, [question.id]: value }));
+    const trimmedValue = value.trim();
     queueAnswer({
       sessionQuestionId: question.id,
-      shortAnswerText: value,
+      shortAnswerText: trimmedValue || null,
       answerJson: {
         type: question.type,
-        value,
+        value:
+          question.type === 'short_answer'
+            ? serializeShortAnswerForScoring(trimmedValue)
+            : trimmedValue,
       },
     });
-    void flush();
   };
 
 
 
-  if (!hasHydrated || !roomKey || !candidateInfo || !currentSessionId) {
+  if (
+    !hasHydrated ||
+    !roomKey ||
+    !candidateInfo ||
+    !currentSessionId ||
+    tabLockState === 'checking'
+  ) {
     return null;
   }
 
+  if (tabLockState === 'blocked') {
+    return (
+      <div className={styles.screen}>
+        <div className={styles.fullscreenPrompt} role="alert">
+          <p>Phiên thi đang mở ở một tab khác. Hãy đóng tab kia rồi tải lại trang này.</p>
+          <button type="button" onClick={() => window.location.reload()}>
+            Thử lại
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={styles.screen}>
+    <div
+      className={styles.screen}
+      onCopy={(event) => event.preventDefault()}
+      onCut={(event) => event.preventDefault()}
+      onPaste={(event) => event.preventDefault()}
+      onContextMenu={(event) => event.preventDefault()}
+    >
       <header className={styles.header}>
         <div>
           <div className={styles.candidateLine}>{candidateInfo.name}</div>
@@ -695,11 +842,24 @@ export default function ExamPage() {
         </div>
       </div>
 
-      {/* Tab switch warning */}
+      {/* Cảnh báo rời khu vực thi (rời tab / thoát toàn màn hình) */}
       {showTabWarning && (
         <div className={styles.tabWarning}>
           <AlertTriangle size={16} />
-          <span>Bạn đã rời khỏi tab thi! ({tabSwitchCount} lần)</span>
+          <span>Bạn đã rời khỏi khu vực thi! ({tabSwitchCount} lần)</span>
+        </div>
+      )}
+
+      {!isFullscreen && examData && !isLoading && (
+        <div className={styles.fullscreenPrompt}>
+          <AlertTriangle size={16} />
+          <span>Bài thi yêu cầu chế độ toàn màn hình.</span>
+          <button
+            type="button"
+            onClick={() => void document.documentElement.requestFullscreen?.()}
+          >
+            Vào toàn màn hình
+          </button>
         </div>
       )}
 
@@ -783,13 +943,8 @@ export default function ExamPage() {
                 onTrueFalseChange={(itemId, value) =>
                   persistTrueFalse(activeQuestion, itemId, value)
                 }
-                onTextChange={(value) =>
-                  setTextAnswers((current) => ({
-                    ...current,
-                    [activeQuestion.id]: value,
-                  }))
-                }
-                onTextBlur={() => persistTextAnswer(activeQuestion)}
+                onTextChange={(value) => persistTextAnswer(activeQuestion, value)}
+                onTextBlur={() => void flush()}
               />
             </article>
           ) : null}

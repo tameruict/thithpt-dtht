@@ -24,6 +24,7 @@ function keyErrorMessage(hint: string | undefined, fallback?: string) {
     case 'KEY_EXPIRED':
       return 'Mã phòng thi đã hết hạn.';
     case 'KEY_ALREADY_ASSIGNED':
+    case 'KEY_ASSIGNED_TO_OTHER':
       return 'Mã phòng thi này đã được gán cho học sinh khác.';
     case 'KEY_EXHAUSTED':
     case 'KEY_NO_ATTEMPTS_LEFT':
@@ -32,6 +33,21 @@ function keyErrorMessage(hint: string | undefined, fallback?: string) {
       return 'Mã phòng thi không dùng cho môn đã chọn.';
     case 'ROOM_NOT_AVAILABLE':
       return 'Môn thi này chưa có phòng thi đang mở.';
+    case 'SUBJECT_REQUIRED':
+      return 'Vui lòng chọn môn thi trước khi nhập key.';
+    case 'PAPER_NOT_AVAILABLE':
+      return 'Phòng thi chưa có đề thi đã xuất bản.';
+    case 'PAPER_HAS_NO_QUESTIONS':
+      return 'Đề thi chưa có câu hỏi để bắt đầu.';
+    case 'QUESTION_CONTENT_NEEDS_REVIEW':
+    case 'EXAM_ROOM_QUESTION_CONTENT_NEEDS_REVIEW':
+      return 'Phòng thi đang được rà soát nội dung. Vui lòng chọn phòng khác hoặc thử lại sau.';
+    case 'ROOM_NOT_READY':
+      return 'Phòng thi chưa sẵn sàng. Quản trị viên cần kiểm tra đề và lịch mở phòng.';
+    case 'PRACTICE_REQUIRES_PRACTICE_RPC':
+      return 'Phòng tự luyện cần được mở từ mục Tự luyện.';
+    case 'NOT_AUTHENTICATED':
+      return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
     case 'NOT_STUDENT':
       return 'Tài khoản hiện tại chưa có hồ sơ học sinh trong cơ sở dữ liệu.';
     case 'SESSION_ALREADY_EXISTS':
@@ -44,19 +60,20 @@ function keyErrorMessage(hint: string | undefined, fallback?: string) {
   }
 }
 
-export default function RoomKeyPage() {
+export default function RoomKeyPage({ roomId }: { roomId?: string }) {
   const hasConfiguredSupabase = hasSupabaseEnv();
   const [key, setKey] = useState('');
   const [error, setError] = useState('');
   const [selectedRoom, setSelectedRoom] = useState<ExamRoomSummary | null>(null);
   const [isLoadingRoom, setIsLoadingRoom] = useState(hasConfiguredSupabase);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const selectedSubjectCode = useExamStore((state) => state.selectedSubjectCode);
   const selectedExamSetId = useExamStore((state) => state.selectedExamSetId);
+  const selectExamSet = useExamStore((state) => state.selectExamSet);
   const router = useRouter();
+  const effectiveRoomId = roomId ?? selectedExamSetId;
 
   useEffect(() => {
-    if (!selectedSubjectCode || !selectedExamSetId) {
+    if (!effectiveRoomId) {
       router.push('/subjects');
       return;
     }
@@ -66,7 +83,7 @@ export default function RoomKeyPage() {
     let isMounted = true;
     const supabase = createClient();
 
-    fetchExamRoomById(supabase, selectedExamSetId)
+    fetchExamRoomById(supabase, effectiveRoomId)
       .then((room) => {
         if (!isMounted) return;
         if (!room) {
@@ -74,6 +91,7 @@ export default function RoomKeyPage() {
           return;
         }
         setSelectedRoom(room);
+        if (roomId) selectExamSet(room.subjectCode, room.id);
       })
       .catch((loadError: unknown) => {
         if (!isMounted) return;
@@ -90,7 +108,7 @@ export default function RoomKeyPage() {
     return () => {
       isMounted = false;
     };
-  }, [hasConfiguredSupabase, router, selectedExamSetId, selectedSubjectCode]);
+  }, [effectiveRoomId, hasConfiguredSupabase, roomId, router, selectExamSet]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,7 +119,7 @@ export default function RoomKeyPage() {
       return;
     }
 
-    if (!selectedSubjectCode || !selectedExamSetId || !selectedRoom) {
+    if (!effectiveRoomId || !selectedRoom) {
       setError('Vui lòng chọn môn và phòng thi trước khi nhập key.');
       return;
     }
@@ -115,8 +133,8 @@ export default function RoomKeyPage() {
       // Keys are global; the selected room determines the concrete exam session.
       const { data: sessionId, error: rpcError } = await supabase.rpc('join_exam', {
         p_code: trimmedKey,
-        p_subject_code: selectedSubjectCode ?? null,
-        p_exam_room_id: selectedExamSetId,
+        p_subject_code: selectedRoom.subjectCode,
+        p_exam_room_id: effectiveRoomId,
       });
 
       if (rpcError) {
@@ -133,7 +151,7 @@ export default function RoomKeyPage() {
       }
 
       useExamStore.getState().setSession(sessionId as string, trimmedKey);
-      router.push('/exam');
+      router.push(`/exam/${sessionId}`);
     } catch (submitError) {
       const message =
         submitError instanceof Error
@@ -216,6 +234,9 @@ export default function RoomKeyPage() {
         </form>
 
         <div className={`${styles.footerLinks} ${styles.centered}`}>
+          <Link href="/purchase" className={styles.forgotLink}>
+            Mua key tự động
+          </Link>
           <Link href="/subjects" transitionTypes={['nav-back']} className={styles.forgotLink}>
             &larr; Quay lại chọn môn và phòng thi
           </Link>

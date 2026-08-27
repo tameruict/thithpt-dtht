@@ -250,3 +250,4 @@ set
   source_ref = excluded.source_ref,
   status = excluded.status,
   locked = excluded.locked;
+;

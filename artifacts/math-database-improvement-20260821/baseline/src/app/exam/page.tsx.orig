@@ -1,0 +1,1081 @@
+﻿'use client';
+
+export const dynamic = 'force-dynamic';
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { CheckCircle, Flag, Maximize, Moon, Sun, AlertTriangle, X, Eye } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+import {
+  fetchExamSessionData,
+  getSupabaseErrorMessage,
+  saveSessionAnswers,
+  type ExamSessionData,
+  type ExamSessionQuestion,
+  type SessionAnswerInput,
+} from '@/lib/supabase/exam-data';
+import QuestionRenderer, {
+  serializeShortAnswerForScoring,
+  type RenderableQuestion,
+} from '@/components/question/QuestionRenderer';
+import { useExamStore, type CandidateInfo } from '@/store/useExamStore';
+import styles from '@/styles/exam.module.css';
+
+type TrueFalseDraft = Record<string, 'true' | 'false'>;
+
+function readTrueFalseAnswer(value: unknown): TrueFalseDraft {
+  if (!value || typeof value !== 'object' || !('items' in value)) {
+    return {};
+  }
+
+  const items = (value as { items?: unknown }).items;
+  if (!items || typeof items !== 'object') {
+    return {};
+  }
+
+  return Object.entries(items as Record<string, unknown>).reduce<TrueFalseDraft>(
+    (draft, [itemId, itemValue]) => {
+      if (itemValue === 'true' || itemValue === true) {
+        draft[itemId] = 'true';
+      }
+      if (itemValue === 'false' || itemValue === false) {
+        draft[itemId] = 'false';
+      }
+      return draft;
+    },
+    {},
+  );
+}
+
+function formatTime(seconds: number) {
+  const minutes = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const remainingSeconds = (seconds % 60).toString().padStart(2, '0');
+  return `${minutes}:${remainingSeconds}`;
+}
+
+function toRenderableQuestion(question: ExamSessionQuestion): RenderableQuestion {
+  return {
+    id: question.id,
+    displayNo: question.displayNo,
+    type: question.type,
+    content: question.content,
+     imageUrl: question.imageUrl,
+    imageAltText: question.imageAltText,
+    imageWidth: question.imageWidth,
+    imageHeight: question.imageHeight,
+    maxPoints: question.maxPoints,
+    options: question.options.map((option) => ({
+      id: option.id,
+      label: option.label,
+      content: option.content,
+      imageUrl: option.imageUrl,
+      imageAltText: option.imageAltText,
+      imageWidth: option.imageWidth,
+      imageHeight: option.imageHeight,
+    })),
+    trueFalseItems: question.trueFalseItems.map((item) => ({
+      id: item.id,
+      label: item.label,
+      content: item.content,
+    })),
+  };
+}
+
+export default function ExamPage({
+  sessionId,
+  candidate,
+}: {
+  sessionId?: string;
+  candidate?: CandidateInfo;
+}) {
+  const router = useRouter();
+  const {
+    hasHydrated,
+    theme,
+    setTheme,
+    zoom,
+    setZoom,
+    currentQuestion,
+    setCurrentQuestion,
+    marked,
+    toggleMark,
+    candidateInfo: storedCandidateInfo,
+    roomKey: storedRoomKey,
+    currentSessionId: storedSessionId,
+    examDraft,
+    setDraft,
+    clearDraft,
+  } = useExamStore();
+  const currentSessionId = sessionId ?? storedSessionId;
+  const candidateInfo = candidate ?? storedCandidateInfo;
+  const roomKey = storedRoomKey ?? (sessionId ? 'SESSION' : null);
+
+  // Táº¡o client 1 láº§n vÃ  tÃ¡i sá»­ dá»¥ng trong má»i handlers
+  const supabase = useMemo(() => createClient(), []);
+
+  const [examData, setExamData] = useState<ExamSessionData | null>(null);
+  const [choiceAnswers, setChoiceAnswers] = useState<Record<string, string>>({});
+  const [textAnswers, setTextAnswers] = useState<Record<string, string>>({});
+  const [trueFalseAnswers, setTrueFalseAnswers] = useState<
+    Record<string, TrueFalseDraft>
+  >({});
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [showReviewPanel, setShowReviewPanel] = useState(false);
+  const [tabSwitchCount, setTabSwitchCount] = useState(0);
+  const [showTabWarning, setShowTabWarning] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(
+    () => typeof document !== 'undefined' && Boolean(document.fullscreenElement),
+  );
+  const [tabLockState, setTabLockState] = useState<'checking' | 'primary' | 'blocked'>(
+    'checking',
+  );
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSubmittedRef = useRef(false);
+
+  // Buffer ghi Ä‘Ã¡p Ã¡n: gom vÃ  khá»­ trÃ¹ng theo cÃ¢u há»i trÆ°á»›c khi flush.
+  const dirtyRef = useRef<Map<string, SessionAnswerInput>>(new Map());
+  const flushPromiseRef = useRef<Promise<boolean> | null>(null);
+
+  useEffect(() => {
+    if (!currentSessionId) return;
+
+    const lockKey = `exam-session-lock:${currentSessionId}`;
+    const tabId = crypto.randomUUID();
+    const leaseMs = 15_000;
+
+    const readLock = () => {
+      try {
+        return JSON.parse(localStorage.getItem(lockKey) ?? 'null') as {
+          tabId?: string;
+          expiresAt?: number;
+        } | null;
+      } catch {
+        return null;
+      }
+    };
+
+    const acquireOrRefresh = () => {
+      const now = Date.now();
+      const current = readLock();
+      if (
+        !current?.tabId ||
+        current.tabId === tabId ||
+        Number(current.expiresAt ?? 0) <= now
+      ) {
+        localStorage.setItem(
+          lockKey,
+          JSON.stringify({ tabId, expiresAt: now + leaseMs }),
+        );
+        setTabLockState(readLock()?.tabId === tabId ? 'primary' : 'blocked');
+      } else {
+        setTabLockState('blocked');
+      }
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === lockKey) acquireOrRefresh();
+    };
+    const release = () => {
+      if (readLock()?.tabId === tabId) localStorage.removeItem(lockKey);
+    };
+
+    acquireOrRefresh();
+    const interval = window.setInterval(acquireOrRefresh, 5_000);
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('pagehide', release);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('pagehide', release);
+      release();
+    };
+  }, [currentSessionId]);
+
+  useEffect(() => {
+    if (!hasHydrated) return;
+
+    if (!candidateInfo) {
+      router.push('/');
+      return;
+    }
+
+    if (!roomKey || !currentSessionId) {
+      router.push('/subjects');
+    }
+  }, [candidateInfo, currentSessionId, hasHydrated, roomKey, router]);
+
+  useEffect(() => {
+    if (!hasHydrated || !currentSessionId) return;
+
+    let isMounted = true;
+
+    fetchExamSessionData(supabase, currentSessionId)
+      .then((data) => {
+        if (!isMounted) return;
+
+        const durationSec = (data.room?.durationMinutes ?? 50) * 60;
+        const deadlineMs = data.session.dueAt
+          ? new Date(data.session.dueAt).getTime()
+          : new Date(data.session.startedAt).getTime() + durationSec * 1000;
+
+        // PhiÃªn Ä‘Ã£ káº¿t thÃºc hoáº·c Ä‘Ã£ háº¿t giá» -> khÃ´ng cho lÃ m bÃ i, sang trang káº¿t quáº£.
+        if (data.session.status !== 'in_progress' || Date.now() >= deadlineMs) {
+          router.replace(`/result/${currentSessionId}`);
+          return;
+        }
+
+        const nextChoices: Record<string, string> = {};
+        const nextTexts: Record<string, string> = {};
+        const nextTrueFalse: Record<string, TrueFalseDraft> = {};
+
+        data.answers.forEach((answer) => {
+          const question = data.questions.find(
+            (item) => item.id === answer.sessionQuestionId,
+          );
+          if (!question) return;
+
+          if (question.type === 'multiple_choice' && answer.selectedOptionId) {
+            nextChoices[question.id] = answer.selectedOptionId;
+          }
+
+          if (
+            question.type === 'short_answer' ||
+            question.type === 'essay'
+          ) {
+            nextTexts[question.id] = answer.shortAnswerText ?? '';
+          }
+
+          if (question.type === 'true_false') {
+            nextTrueFalse[question.id] = readTrueFalseAnswer(answer.answerJson);
+          }
+        });
+
+        // Resume: phá»§ báº£n nhÃ¡p cá»¥c bá»™ (cÃ¡c sá»­a Ä‘á»•i gáº§n nháº¥t chÆ°a ká»‹p flush) lÃªn trÃªn DB.
+        if (examDraft && examDraft.sessionId === currentSessionId) {
+          Object.assign(nextChoices, examDraft.choiceAnswers);
+          Object.assign(nextTexts, examDraft.textAnswers);
+          Object.assign(nextTrueFalse, examDraft.trueFalseAnswers);
+        }
+
+        setExamData(data);
+        setChoiceAnswers(nextChoices);
+        setTextAnswers(nextTexts);
+        setTrueFalseAnswers(nextTrueFalse);
+        setNowMs(Date.now());
+        setLoadError('');
+      })
+      .catch((error: unknown) => {
+        if (!isMounted) return;
+        console.error('[exam] fetchExamSessionData failed', error);
+        setLoadError(
+          getSupabaseErrorMessage(error, 'KhÃ´ng thá»ƒ táº£i phiÃªn thi tá»« Supabase.'),
+        );
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+    // examDraft cá»‘ tÃ¬nh khÃ´ng náº±m trong deps: chá»‰ overlay 1 láº§n lÃºc load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSessionId, hasHydrated, supabase, router]);
+
+  const questions = useMemo(() => examData?.questions ?? [], [examData]);
+  const totalQuestions = questions.length;
+  const activeQuestion = useMemo(
+    () =>
+      questions.find((question) => question.number === currentQuestion) ??
+      questions[0],
+    [currentQuestion, questions],
+  );
+  const renderableQuestion = useMemo(
+    () => (activeQuestion ? toRenderableQuestion(activeQuestion) : null),
+    [activeQuestion],
+  );
+  const durationSeconds = (examData?.room?.durationMinutes ?? 50) * 60;
+
+  const deadlineMs = useMemo(() => {
+    if (!examData) return null;
+    if (examData.session.dueAt) {
+      return new Date(examData.session.dueAt).getTime();
+    }
+    return (
+      new Date(examData.session.startedAt).getTime() + durationSeconds * 1000
+    );
+  }, [examData, durationSeconds]);
+
+  useEffect(() => {
+    if (currentQuestion > Math.max(totalQuestions, 1)) {
+      setCurrentQuestion(1);
+    }
+  }, [currentQuestion, setCurrentQuestion, totalQuestions]);
+
+  // Äá»“ng há»“: chá»‰ cáº§n nhá»‹p giÃ¢y Ä‘á»ƒ tÃ­nh timeLeft tá»« háº¡n chÃ³t tuyá»‡t Ä‘á»‘i (due_at).
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const answeredCount = useMemo(
+    () =>
+      questions.filter((question) => {
+        if (question.type === 'multiple_choice') {
+          return Boolean(choiceAnswers[question.id]);
+        }
+        if (question.type === 'true_false') {
+          return Object.keys(trueFalseAnswers[question.id] ?? {}).length > 0;
+        }
+        return Boolean(textAnswers[question.id]?.trim());
+      }).length,
+    [choiceAnswers, questions, textAnswers, trueFalseAnswers],
+  );
+
+  const timeLeft =
+    deadlineMs !== null
+      ? Math.max(Math.floor((deadlineMs - nowMs) / 1000), 0)
+      : durationSeconds;
+  const room = examData?.room;
+  const timerWarning = timeLeft <= 60 ? 'critical' : timeLeft <= 300 ? 'warning' : 'normal';
+
+  const unansweredQuestions = useMemo(
+    () =>
+      questions.filter((question) => {
+        if (question.type === 'multiple_choice') return !choiceAnswers[question.id];
+        if (question.type === 'true_false')
+          return Object.keys(trueFalseAnswers[question.id] ?? {}).length === 0;
+        return !textAnswers[question.id]?.trim();
+      }),
+    [choiceAnswers, questions, textAnswers, trueFalseAnswers],
+  );
+
+  const markedQuestions = useMemo(
+    () => questions.filter((q) => marked.includes(q.number)),
+    [questions, marked],
+  );
+
+  const resetPanelScroll = useCallback(() => {
+    document.getElementById('exam-question-prompt')?.scrollTo({ top: 0, behavior: 'smooth' });
+    document.getElementById('exam-answer-panel')?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const showSaveIndicator = useCallback((status: 'saving' | 'saved' | 'error') => {
+    setSaveStatus(status);
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    if (status === 'saved') {
+      saveTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
+    }
+  }, []);
+
+  // Flush buffer Ä‘Ã¡p Ã¡n lÃªn DB theo lÃ´ (gom + dedup theo cÃ¢u há»i).
+  const flush = useCallback(async (): Promise<boolean> => {
+    if (flushPromiseRef.current) return flushPromiseRef.current;
+    if (dirtyRef.current.size === 0) return true;
+    if (!currentSessionId) return false;
+
+    const run = (async () => {
+      while (dirtyRef.current.size > 0) {
+        const pending = dirtyRef.current;
+        dirtyRef.current = new Map();
+        showSaveIndicator('saving');
+
+        try {
+          await saveSessionAnswers(
+            supabase,
+            currentSessionId,
+            Array.from(pending.values()),
+          );
+          setSaveError('');
+          showSaveIndicator('saved');
+        } catch (error) {
+          // Tráº£ má»¥c lá»—i vÃ o buffer nhÆ°ng khÃ´ng Ä‘Ã¨ thay Ä‘á»•i má»›i hÆ¡n cá»§a cÃ¹ng cÃ¢u.
+          pending.forEach((value, key) => {
+            if (!dirtyRef.current.has(key)) dirtyRef.current.set(key, value);
+          });
+          setSaveError(getSupabaseErrorMessage(error, 'KhÃ´ng thá»ƒ lÆ°u Ä‘Ã¡p Ã¡n.'));
+          showSaveIndicator('error');
+          return false;
+        }
+      }
+
+      return true;
+    })();
+
+    flushPromiseRef.current = run;
+    try {
+      return await run;
+    } finally {
+      if (flushPromiseRef.current === run) flushPromiseRef.current = null;
+    }
+  }, [currentSessionId, supabase, showSaveIndicator]);
+
+  const scheduleFlush = useCallback(() => {
+    if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = setTimeout(() => {
+      void flush();
+    }, 1500);
+  }, [flush]);
+
+  const queueAnswer = useCallback(
+    (input: SessionAnswerInput) => {
+      dirtyRef.current.set(input.sessionQuestionId, input);
+      scheduleFlush();
+    },
+    [scheduleFlush],
+  );
+
+  // Flush Ä‘á»‹nh ká»³ 10s (an toÃ n) khi Ä‘ang lÃ m bÃ i.
+  useEffect(() => {
+    if (isLoading || !examData) return;
+    const interval = setInterval(() => {
+      void flush();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [flush, isLoading, examData]);
+
+  // Flush khi rá»i tab / Ä‘Ã³ng trang Ä‘á»ƒ khÃ´ng máº¥t Ä‘Ã¡p Ã¡n.
+  useEffect(() => {
+    const handleHide = () => {
+      if (document.visibilityState === 'hidden') void flush();
+    };
+    document.addEventListener('visibilitychange', handleHide);
+    window.addEventListener('pagehide', handleHide);
+    return () => {
+      document.removeEventListener('visibilitychange', handleHide);
+      window.removeEventListener('pagehide', handleHide);
+    };
+  }, [flush]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (dirtyRef.current.size === 0) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  // LÆ°u báº£n nhÃ¡p cá»¥c bá»™ (debounce) Ä‘á»ƒ resume nhanh khi reload.
+  useEffect(() => {
+    if (isLoading || !examData || !currentSessionId) return;
+    const timeout = setTimeout(() => {
+      setDraft({
+        sessionId: currentSessionId,
+        choiceAnswers,
+        textAnswers,
+        trueFalseAnswers,
+        marked,
+        currentQuestion,
+        updatedAt: Date.now(),
+      });
+    }, 800);
+    return () => clearTimeout(timeout);
+  }, [
+    choiceAnswers,
+    textAnswers,
+    trueFalseAnswers,
+    marked,
+    currentQuestion,
+    currentSessionId,
+    examData,
+    isLoading,
+    setDraft,
+  ]);
+
+  const persistChoice = useCallback(
+    (question: ExamSessionQuestion, optionId: string, label: string) => {
+      setChoiceAnswers((current) => ({ ...current, [question.id]: optionId }));
+      setCurrentQuestion(question.number);
+      queueAnswer({
+        sessionQuestionId: question.id,
+        selectedOptionId: optionId,
+        answerJson: {
+          type: 'multiple_choice',
+          option_id: optionId,
+          label,
+        },
+      });
+    },
+    [queueAnswer, setCurrentQuestion],
+  );
+
+  const handleSubmit = useCallback(async (force = false) => {
+    if (!force) {
+      setShowReviewPanel(true);
+      return;
+    }
+
+    // Äáº©y ná»‘t Ä‘Ã¡p Ã¡n trong buffer trÆ°á»›c khi ná»™p.
+    const answersSaved = await flush();
+    if (!answersSaved) {
+      setShowReviewPanel(true);
+      return;
+    }
+
+    if (currentSessionId) {
+      const { error } = await supabase.rpc('submit_exam_session', {
+        p_session_id: currentSessionId,
+      });
+      if (error) {
+        setSaveError(getSupabaseErrorMessage(error, 'KhÃ´ng thá»ƒ ná»™p bÃ i.'));
+        showSaveIndicator('error');
+        setShowReviewPanel(true);
+        return;
+      }
+    }
+
+    // KhÃ´ng lÆ°u tiáº¿n trÃ¬nh sau khi káº¿t thÃºc: xÃ³a báº£n nhÃ¡p; GIá»® currentSessionId
+    // Ä‘á»ƒ trang /result táº£i Ä‘Æ°á»£c káº¿t quáº£ + Ä‘Ã¡p Ã¡n.
+    clearDraft();
+    router.push(`/result/${currentSessionId}`);
+  }, [clearDraft, currentSessionId, flush, router, showSaveIndicator, supabase]);
+
+  const handleConfirmSubmit = useCallback(async () => {
+    setShowReviewPanel(false);
+    await handleSubmit(true);
+  }, [handleSubmit]);
+
+  useEffect(() => {
+    if (timeLeft !== 0 || isLoading || !examData || autoSubmittedRef.current) {
+      return;
+    }
+
+    autoSubmittedRef.current = true;
+    const timeout = window.setTimeout(() => {
+      void handleSubmit(true);
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, [examData, handleSubmit, isLoading, timeLeft]);
+
+  const recordViolation = useCallback(
+    (type: string) => {
+      setTabSwitchCount((count) => count + 1);
+      setShowTabWarning(true);
+      window.setTimeout(() => setShowTabWarning(false), 4000);
+      if (currentSessionId) {
+        // Ghi log phÃ­a server (chá»‰ tÃ­nh khi phiÃªn Ä‘ang thi); bá» qua lá»—i máº¡ng.
+        void supabase.rpc('record_session_event', {
+          p_session_id: currentSessionId,
+          p_type: type,
+        });
+      }
+    },
+    [currentSessionId, supabase],
+  );
+
+  // Chá»‘ng gian láº­n: ghi log khi rá»i tab (khÃ´ng cÆ°á»¡ng cháº¿).
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden && examData && !isLoading) {
+        recordViolation('tab_switch');
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [examData, isLoading, recordViolation]);
+
+  // Báº¯t buá»™c toÃ n mÃ n hÃ¬nh: theo dÃµi tráº¡ng thÃ¡i + ghi log khi thoÃ¡t giá»¯a giá».
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const active = Boolean(document.fullscreenElement);
+      setIsFullscreen(active);
+      if (!active && examData && !isLoading) {
+        recordViolation('fullscreen_exit');
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, [examData, isLoading, recordViolation]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (showReviewPanel) return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') return;
+
+      const q = questions[currentQuestion - 1];
+      switch (e.key.toLowerCase()) {
+        case 'n':
+        case 'arrowright':
+          e.preventDefault();
+          if (currentQuestion < totalQuestions) {
+            setCurrentQuestion(currentQuestion + 1);
+            resetPanelScroll();
+          }
+          break;
+        case 'p':
+        case 'arrowleft':
+          e.preventDefault();
+          if (currentQuestion > 1) {
+            setCurrentQuestion(currentQuestion - 1);
+            resetPanelScroll();
+          }
+          break;
+        case 'm':
+          e.preventDefault();
+          toggleMark(currentQuestion);
+          break;
+        case '1': case '2': case '3': case '4':
+          if (q?.type === 'multiple_choice') {
+            const optIndex = parseInt(e.key) - 1;
+            const opt = q.options[optIndex];
+            if (opt) {
+              e.preventDefault();
+              persistChoice(q, opt.id, opt.label);
+            }
+          }
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    currentQuestion,
+    persistChoice,
+    questions,
+    resetPanelScroll,
+    setCurrentQuestion,
+    showReviewPanel,
+    toggleMark,
+    totalQuestions,
+  ]);
+
+  const handleNext = () => {
+    if (currentQuestion < totalQuestions) {
+      setCurrentQuestion(currentQuestion + 1);
+      resetPanelScroll();
+    }
+  };
+
+  const handlePrev = () => {
+    if (currentQuestion > 1) {
+      setCurrentQuestion(currentQuestion - 1);
+      resetPanelScroll();
+    }
+  };
+
+  const persistTrueFalse = (
+    question: ExamSessionQuestion,
+    itemId: string,
+    value: 'true' | 'false',
+  ) => {
+    const nextDraft = {
+      ...(trueFalseAnswers[question.id] ?? {}),
+      [itemId]: value,
+    };
+
+    setTrueFalseAnswers((current) => ({
+      ...current,
+      [question.id]: nextDraft,
+    }));
+    setCurrentQuestion(question.number);
+    queueAnswer({
+      sessionQuestionId: question.id,
+      answerJson: {
+        type: 'true_false',
+        items: nextDraft,
+      },
+    });
+  };
+
+  const persistTextAnswer = (question: ExamSessionQuestion, value: string) => {
+    setTextAnswers((current) => ({ ...current, [question.id]: value }));
+    const trimmedValue = value.trim();
+    queueAnswer({
+      sessionQuestionId: question.id,
+      shortAnswerText: trimmedValue || null,
+      answerJson: {
+        type: question.type,
+        value:
+          question.type === 'short_answer'
+            ? serializeShortAnswerForScoring(trimmedValue)
+            : trimmedValue,
+      },
+    });
+  };
+
+
+
+  if (
+    !hasHydrated ||
+    !roomKey ||
+    !candidateInfo ||
+    !currentSessionId ||
+    tabLockState === 'checking'
+  ) {
+    return null;
+  }
+
+  if (tabLockState === 'blocked') {
+    return (
+      <div className={styles.screen}>
+        <div className={styles.fullscreenPrompt} role="alert">
+          <p>PhiÃªn thi Ä‘ang má»Ÿ á»Ÿ má»™t tab khÃ¡c. HÃ£y Ä‘Ã³ng tab kia rá»“i táº£i láº¡i trang nÃ y.</p>
+          <button type="button" onClick={() => window.location.reload()}>
+            Thá»­ láº¡i
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={styles.screen}
+      onCopy={(event) => event.preventDefault()}
+      onCut={(event) => event.preventDefault()}
+      onPaste={(event) => event.preventDefault()}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      <header className={styles.header}>
+        <div>
+          <div className={styles.candidateLine}>{candidateInfo.name}</div>
+          <div className={styles.candidateSub}>
+            SBD: {candidateInfo.code} &nbsp;&nbsp; MÃ´n thi:{' '}
+            {(room?.subjectName ?? 'Äang táº£i').toLocaleUpperCase('vi-VN')}
+            &nbsp;&nbsp; {room?.name ?? 'PhiÃªn thi'} &nbsp;&nbsp; Ca thi:{' '}
+            {candidateInfo.session}
+          </div>
+        </div>
+        <div className={styles.headerRight}>
+          <div className={`${styles.timer} ${timerWarning === 'critical' ? styles.timerCritical : timerWarning === 'warning' ? styles.timerWarning : ''}`}>
+            <span>â±</span> <span>{formatTime(timeLeft)}</span>
+          </div>
+          <div className={styles.connection}>
+            <span className={`${styles.connectionDot} ${saveStatus === 'error' ? styles.connectionError : ''}`}></span>
+            <span>{
+              saveStatus === 'saving' ? 'Äang lÆ°u...' :
+              saveStatus === 'saved' ? 'âœ“ ÄÃ£ lÆ°u' :
+              saveStatus === 'error' ? 'Lá»—i lÆ°u' :
+              'Äang káº¿t ná»‘i'
+            }</span>
+          </div>
+          <button
+            className={styles.submitBtn}
+            onClick={() => void handleSubmit(false)}
+            disabled={isLoading}
+          >
+            Ná»˜P BÃ€I
+          </button>
+          <button
+            className={styles.headerIconBtn}
+            aria-label="Báº­t hoáº·c táº¯t toÃ n mÃ n hÃ¬nh"
+            onClick={() => {
+              if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen?.();
+              } else {
+                document.exitFullscreen?.();
+              }
+            }}
+          >
+            <Maximize size={16} />
+          </button>
+          <button
+            className="theme-toggle"
+            aria-label={theme === 'dark' ? 'Chuyá»ƒn sang giao diá»‡n sÃ¡ng' : 'Chuyá»ƒn sang giao diá»‡n tá»‘i'}
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          >
+            <span className="icon">
+              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+            </span>
+          </button>
+        </div>
+      </header>
+
+      <div className={styles.toolbar}>
+        <div className={styles.toolbarGroup}>
+          <button className="btn secondary small" onClick={handlePrev}>
+            Quay láº¡i
+          </button>
+          <button className="btn small" onClick={handleNext}>
+            Tiáº¿p theo
+          </button>
+          <button
+            className="btn secondary small"
+            onClick={() => setZoom(Math.max(100, zoom - 25))}
+          >
+            A-
+          </button>
+          <button
+            className="btn secondary small"
+            onClick={() => setZoom(Math.min(150, zoom + 25))}
+          >
+            A+
+          </button>
+          <select
+            className={styles.zoomSelect}
+            value={zoom}
+            onChange={(e) => setZoom(Number(e.target.value))}
+          >
+            <option value={100}>100%</option>
+            <option value={125}>125%</option>
+            <option value={150}>150%</option>
+          </select>
+          <button className="btn secondary small" onClick={() => setZoom(100)}>
+            Äáº·t láº¡i
+          </button>
+        </div>
+        <div className={styles.toolbarGroup}>
+          <span className={styles.answeredCount}>
+            ÄÃ£ tráº£ lá»i: {answeredCount} / {totalQuestions}
+            {markedQuestions.length > 0 && ` Â· ${markedQuestions.length} Ä‘Ã¡nh dáº¥u`}
+          </span>
+          <button
+            className="btn outline small"
+            onClick={() => setShowReviewPanel(true)}
+          >
+            <Eye size={14} /> Xem láº¡i
+          </button>
+        </div>
+      </div>
+
+      {/* Cáº£nh bÃ¡o rá»i khu vá»±c thi (rá»i tab / thoÃ¡t toÃ n mÃ n hÃ¬nh) */}
+      {showTabWarning && (
+        <div className={styles.tabWarning}>
+          <AlertTriangle size={16} />
+          <span>Báº¡n Ä‘Ã£ rá»i khá»i khu vá»±c thi! ({tabSwitchCount} láº§n)</span>
+        </div>
+      )}
+
+      {!isFullscreen && examData && !isLoading && (
+        <div className={styles.fullscreenPrompt}>
+          <AlertTriangle size={16} />
+          <span>BÃ i thi yÃªu cáº§u cháº¿ Ä‘á»™ toÃ n mÃ n hÃ¬nh.</span>
+          <button
+            type="button"
+            onClick={() => void document.documentElement.requestFullscreen?.()}
+          >
+            VÃ o toÃ n mÃ n hÃ¬nh
+          </button>
+        </div>
+      )}
+
+      <div className={styles.content}>
+        <section
+          id="exam-question-prompt"
+          className={styles.passagePanel}
+          aria-label="Ná»™i dung cÃ¢u há»i"
+        >
+          {isLoading ? (
+            <div className={styles.emptyState}>Äang táº£i cÃ¢u há»i tá»« Supabase...</div>
+          ) : null}
+          {!isLoading && questions.length === 0 && !loadError ? (
+            <div className={styles.emptyState}>
+              CÆ¡ sá»Ÿ dá»¯ liá»‡u chÆ°a cÃ³ cÃ¢u há»i cho phiÃªn thi nÃ y.
+            </div>
+          ) : null}
+          {loadError ? <p className={styles.errorText}>{loadError}</p> : null}
+          {saveError ? <p className={styles.errorText}>{saveError}</p> : null}
+
+          {activeQuestion && renderableQuestion ? (
+            <article className={styles.promptCard}>
+              <div className={styles.panelLabel}>Ná»˜I DUNG CÃ‚U Há»ŽI</div>
+              <QuestionRenderer
+                key={activeQuestion.id}
+                question={renderableQuestion}
+                section="prompt"
+              />
+              <div className={styles.questionContext}>
+                <span>{room?.name ?? 'PhiÃªn thi'}</span>
+                <span>{room?.blueprintName ?? room?.subjectName ?? 'Äá» thi'}</span>
+              </div>
+            </article>
+          ) : null}
+        </section>
+
+        <section
+          id="exam-answer-panel"
+          className={styles.questionPanel}
+          aria-label="Pháº§n tráº£ lá»i"
+        >
+          {activeQuestion && renderableQuestion ? (
+            <article className={styles.answerCard}>
+              <div className={styles.answerHeader}>
+                <div>
+                  <div className={styles.panelLabel}>PHáº¦N TRáº¢ Lá»œI</div>
+                  <h2>CÃ¢u {activeQuestion.displayNo}</h2>
+                </div>
+                <button
+                  className={`${styles.flagBtn} ${
+                    marked.includes(activeQuestion.number) ? styles.marked : ''
+                  }`}
+                  aria-label={
+                    marked.includes(activeQuestion.number)
+                      ? 'Bá» Ä‘Ã¡nh dáº¥u cÃ¢u há»i'
+                      : 'ÄÃ¡nh dáº¥u cÃ¢u há»i'
+                  }
+                  onClick={() => toggleMark(activeQuestion.number)}
+                >
+                  <Flag
+                    size={16}
+                    fill={
+                      marked.includes(activeQuestion.number)
+                        ? 'currentColor'
+                        : 'none'
+                    }
+                  />
+                </button>
+              </div>
+
+              <QuestionRenderer
+                key={activeQuestion.id}
+                question={renderableQuestion}
+                section="answer"
+                selectedOptionId={choiceAnswers[activeQuestion.id]}
+                trueFalseAnswers={trueFalseAnswers[activeQuestion.id] ?? {}}
+                textValue={textAnswers[activeQuestion.id] ?? ''}
+                onSelectOption={(optionId, label) =>
+                  persistChoice(activeQuestion, optionId, label)
+                }
+                onTrueFalseChange={(itemId, value) =>
+                  persistTrueFalse(activeQuestion, itemId, value)
+                }
+                onTextChange={(value) => persistTextAnswer(activeQuestion, value)}
+                onTextBlur={() => void flush()}
+              />
+            </article>
+          ) : null}
+        </section>
+      </div>
+
+      <nav className={styles.questionNav}>
+        <div className={styles.questionButtons}>
+          {questions.map((question) => {
+            const answered =
+              Boolean(choiceAnswers[question.id]) ||
+              Boolean(textAnswers[question.id]?.trim()) ||
+              Object.keys(trueFalseAnswers[question.id] ?? {}).length > 0;
+            const isMarked = marked.includes(question.number);
+            return (
+              <button
+                key={question.id}
+                className={`${styles.qNumber} ${
+                  answered ? styles.answered : ''
+                } ${isMarked ? styles.marked : ''} ${
+                  question.number === currentQuestion ? styles.current : ''
+                }`}
+                onClick={() => {
+                  setCurrentQuestion(question.number);
+                  resetPanelScroll();
+                }}
+              >
+                {question.displayNo}
+              </button>
+            );
+          })}
+        </div>
+        <div className={styles.legend}>
+          <span className={styles.legendItem}>
+            <span className={styles.legendDot}></span>ChÆ°a lÃ m
+          </span>
+          <span className={styles.legendItem}>
+            <span className={`${styles.legendDot} ${styles.done}`}></span>ÄÃ£ lÃ m
+          </span>
+          <span className={styles.legendItem}>
+            <span className={`${styles.legendDot} ${styles.now}`}></span>Äang xem
+          </span>
+          <span className={styles.legendItem}>
+            <span className={`${styles.legendDot} ${styles.mark}`}></span>ÄÃ¡nh dáº¥u
+          </span>
+        </div>
+      </nav>
+
+      {/* Answer Review Panel */}
+      {showReviewPanel && (
+        <div className={styles.reviewOverlay} onClick={() => setShowReviewPanel(false)}>
+          <div className={styles.reviewPanel} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.reviewHeader}>
+              <h2>Xem láº¡i bÃ i lÃ m</h2>
+              <button className={styles.reviewClose} onClick={() => setShowReviewPanel(false)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className={styles.reviewStats}>
+              <div className={styles.reviewStat}>
+                <span className={styles.reviewStatNumber}>{answeredCount}</span>
+                <span className={styles.reviewStatLabel}>ÄÃ£ tráº£ lá»i</span>
+              </div>
+              <div className={styles.reviewStat}>
+                <span className={`${styles.reviewStatNumber} ${styles.statEmpty}`}>{unansweredQuestions.length}</span>
+                <span className={styles.reviewStatLabel}>ChÆ°a tráº£ lá»i</span>
+              </div>
+              <div className={styles.reviewStat}>
+                <span className={`${styles.reviewStatNumber} ${styles.statMarked}`}>{markedQuestions.length}</span>
+                <span className={styles.reviewStatLabel}>ÄÃ¡nh dáº¥u</span>
+              </div>
+            </div>
+
+            {unansweredQuestions.length > 0 && (
+              <div className={styles.reviewSection}>
+                <h3>CÃ¢u chÆ°a tráº£ lá»i</h3>
+                <div className={styles.reviewQuestionList}>
+                  {unansweredQuestions.map((q) => (
+                    <button
+                      key={q.id}
+                      className={styles.reviewQuestionBtn}
+                      onClick={() => {
+                        setShowReviewPanel(false);
+                        setCurrentQuestion(q.number);
+                        resetPanelScroll();
+                      }}
+                    >
+                      CÃ¢u {q.displayNo}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {markedQuestions.length > 0 && (
+              <div className={styles.reviewSection}>
+                <h3>CÃ¢u Ä‘Ã¡nh dáº¥u xem láº¡i</h3>
+                <div className={styles.reviewQuestionList}>
+                  {markedQuestions.map((q) => (
+                    <button
+                      key={q.id}
+                      className={`${styles.reviewQuestionBtn} ${styles.reviewMarked}`}
+                      onClick={() => {
+                        setShowReviewPanel(false);
+                        setCurrentQuestion(q.number);
+                        resetPanelScroll();
+                      }}
+                    >
+                      CÃ¢u {q.displayNo}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className={styles.reviewFooter}>
+              <p>Thá»i gian cÃ²n láº¡i: <strong>{formatTime(timeLeft)}</strong></p>
+              <div className={styles.reviewActions}>
+                <button className="btn secondary" onClick={() => setShowReviewPanel(false)}>
+                  Quay láº¡i lÃ m bÃ i
+                </button>
+                <button className="btn" onClick={() => void handleConfirmSubmit()}>
+                  <CheckCircle size={16} /> XÃ¡c nháº­n ná»™p bÃ i
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+

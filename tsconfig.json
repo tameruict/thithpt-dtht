@@ -30,5 +30,10 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "test-exam-rooms.ts"]
+  "exclude": [
+    "node_modules",
+    "test-exam-rooms.ts",
+    "artifacts",
+    "supabase/functions/*/index.ts"
+  ]
 }

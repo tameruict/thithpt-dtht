@@ -1,0 +1,44 @@
+{
+  "project_ref": "eskgjwzcognziachvcbl",
+  "project_name": "web-thi-thpt",
+  "access_mode": "linked-management-read-only",
+  "postgres_version": "17.6",
+  "database_size": "84 MB",
+  "applied_migration_count": 71,
+  "latest_applied_migration": "20260825161852",
+  "local_only_migrations": [],
+  "public_base_tables": 39,
+  "public_base_tables_with_rls": 39,
+  "exam_sessions": 14,
+  "exam_sessions_score_null": 0,
+  "overdue_in_progress_sessions": 0,
+  "security_advisor_findings": {
+    "authenticated_security_definer_function_executable": 23,
+    "auth_leaked_password_protection": 1
+  },
+  "performance_advisor_unused_index_findings": 50,
+  "cron_jobs": [
+    "score-pending-exam-sessions",
+    "expire-overdue-exam-sessions"
+  ],
+  "mutations_performed": true,
+  "migration_push": "2026-08-25",
+  "edge_functions": [
+    {"name": "poll-thueapibank", "status": "ACTIVE", "version": 1}
+  ],
+  "load_test_500": {
+    "first_run": {"requests": 6500,"http_failure_rate": 0.0,"autosave_p95_ms": 2600,"submit_p95_ms": 2360,"thresholds_passed": false},
+    "async_submit_run": {"requests": 6500,"http_failure_rate": 0.0001,"autosave_p95_ms": 4420,"submit_p95_ms": 1720,"thresholds_passed": false},
+    "final_jittered_run": {"requests": 6406,"http_failure_rate": 0.0,"autosave_p95_ms": 361.3,"submit_p95_ms": 212.91,"thresholds_passed": true},
+    "cleanup_counts": {"sessions": 0, "keys": 0, "users": 0}
+  },
+  "auth_rate_limits_restored": {"sign_in_sign_ups": 30, "token_verifications": 30},
+  "content_audit": {
+    "questions_scanned": 2420,
+    "fields_scanned": 13191,
+    "needs_review": 2412,
+    "review_rows": 3056,
+    "verified": 8,
+    "mutated": false
+  }
+}

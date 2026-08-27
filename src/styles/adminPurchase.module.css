@@ -1,0 +1,266 @@
+.page {
+  min-height: 100vh;
+  padding: 42px clamp(18px, 5vw, 80px);
+  background: var(--background, #f5f7fb);
+}
+
+.topbar, .sectionHeader {
+  max-width: 1200px;
+  margin: 0 auto 24px;
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.topbar h1 {
+  margin: 4px 0 8px;
+}
+
+.topbar p {
+  margin: 0;
+  color: #667085;
+}
+
+.eyebrow {
+  color: #2563eb !important;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+.links, .toolbar, .actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.links a {
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.syncButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 9px;
+  padding: 9px 12px;
+  background: #2563eb;
+  color: white;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.syncButton:disabled {
+  cursor: wait;
+  opacity: .65;
+}
+
+.providerStatus {
+  max-width: 1200px;
+  margin: 0 auto 20px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.providerStatus > div {
+  display: grid;
+  gap: 5px;
+  padding: 14px 16px;
+  border: 1px solid #dbe4f0;
+  border-radius: 12px;
+  background: white;
+}
+
+.providerStatus span {
+  color: #667085;
+  font-size: 12px;
+}
+
+.providerStatus strong {
+  overflow-wrap: anywhere;
+  color: #101828;
+}
+
+.adminGrid {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(260px, .7fr) minmax(0, 1.3fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.adminGrid + .card, .page > .card {
+  max-width: 1200px;
+  margin: 20px auto 0;
+}
+
+.card {
+  background: var(--card, #fff);
+  border: 1px solid rgba(15, 23, 42, .1);
+  border-radius: 18px;
+  padding: 22px;
+  box-shadow: 0 12px 36px rgba(15, 23, 42, .06);
+}
+
+.card h2 {
+  margin: 0;
+}
+
+.sectionHeader {
+  margin-bottom: 18px;
+  align-items: center;
+}
+
+.form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.form label {
+  display: grid;
+  gap: 6px;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.form input, .form select, .toolbar select {
+  min-height: 40px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: white;
+  color: #101828;
+}
+
+.actions {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+}
+
+.error {
+  color: #b42318;
+  margin: 14px 0 0;
+}
+
+.iconButton, .rowActions button {
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: white;
+  color: #344054;
+  padding: 8px;
+  cursor: pointer;
+}
+
+.productList, .eventList {
+  display: grid;
+  gap: 10px;
+}
+
+.productRow, .eventRow {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 13px;
+  border: 1px solid #eaecf0;
+  border-radius: 10px;
+}
+
+.productRow > div:first-child, .eventRow {
+  display: grid;
+  gap: 4px;
+}
+
+.productRow span, .eventRow span, .eventRow small, .productRow small {
+  color: #667085;
+  font-size: 12px;
+}
+
+.rowActions {
+  display: flex;
+  gap: 6px;
+}
+
+.active {
+  color: #067647 !important;
+  font-weight: 800;
+}
+
+.inactive {
+  color: #b42318 !important;
+  font-weight: 800;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 800px;
+}
+
+.table th, .table td {
+  border-bottom: 1px solid #eaecf0;
+  padding: 12px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.table th {
+  color: #667085;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.table td small {
+  display: block;
+  color: #667085;
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.status {
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.eventRow {
+  grid-template-columns: auto 1fr 1fr auto;
+}
+
+@media (max-width: 840px) {
+  .adminGrid {
+    display: block;
+  }
+
+  .adminGrid > * + * {
+    margin-top: 20px;
+  }
+
+  .form {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar {
+    display: block;
+  }
+
+  .links {
+    margin-top: 18px;
+    flex-wrap: wrap;
+  }
+
+  .providerStatus {
+    grid-template-columns: 1fr;
+  }
+}

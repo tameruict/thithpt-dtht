@@ -1,0 +1,3 @@
+COMMAND: npx.cmd tsc --noEmit
+INPUT: cwd=E:\Web-thi-thpt
+EXIT_STATUS: 0

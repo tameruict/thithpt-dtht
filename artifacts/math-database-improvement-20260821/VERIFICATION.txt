@@ -1,0 +1,87 @@
+IMPLEMENTATION: math-database-improvement-20260821
+BRANCH: fix/exam-session-scoring-lifecycle
+CHANGED_FIELD: public.questions.content_format_version=2; public.questions.content_quality_status=legacy|needs_review|verified
+ORIGINAL_HEAD: 45830e06c7b89e56d6054f8de3b9ecb60fce502c
+ORIGINAL_RENDERER_SHA256: 98F29AB872319E003FFD6B9EC3D9F506C773A4A7A7F16D8C0266FAF10CDD082E
+MODIFIED_RENDERER_SHA256: B613A10FB72149E2DD535280F521D9B5324CEBFF45E8B94E7E0177057E166571
+MIGRATION_SHA256: A3A54F8BF5FAD0FE4517C100B7FE36A8DE82CFD95306F1C43C127AC90AFA12FD
+MODIFIED_FILE_SHA256: A3A54F8BF5FAD0FE4517C100B7FE36A8DE82CFD95306F1C43C127AC90AFA12FD
+DIFF_FILE_SHA256: E388F5E65A196E4704FD8315BFC4E959BD55471A0610AFA3451CA46C4B3F4E6B
+ROLLBACK_SH_SHA256: 40B66820E311E9F1E7935CA6E8CDB1533F765EBB5AE78556241BC8B50955F3C1
+
+ARTIFACTS
+MODIFIED_FILE=E:\Web-thi-thpt\artifacts\math-database-improvement-20260821\MODIFIED_FILE
+DIFF_FILE=E:\Web-thi-thpt\artifacts\math-database-improvement-20260821\DIFF_FILE.patch
+VERIFICATION=E:\Web-thi-thpt\artifacts\math-database-improvement-20260821\VERIFICATION.txt
+ROLLBACK=E:\Web-thi-thpt\artifacts\math-database-improvement-20260821\ROLLBACK.sh
+
+BASELINE
+COMMAND: npm test
+INPUT: cwd=E:\Web-thi-thpt; working tree before Markdown+KaTeX/database-v2 implementation
+LITERAL_OUTPUT: Test Files 7 passed (7) | Tests 36 passed (36)
+EXIT_STATUS: 0
+
+MODIFIED
+COMMAND: npx tsc --noEmit
+INPUT: cwd=E:\Web-thi-thpt
+LITERAL_OUTPUT: (empty)
+EXIT_STATUS: 0
+
+COMMAND: npm run lint -- --max-warnings=0
+INPUT: cwd=E:\Web-thi-thpt
+LITERAL_OUTPUT: > web-thi-thpt-next@0.1.0 lint | > eslint --max-warnings=0
+EXIT_STATUS: 0
+
+COMMAND: npm test
+INPUT: cwd=E:\Web-thi-thpt
+LITERAL_OUTPUT: Test Files 8 passed (8) | Tests 46 passed (46)
+EXIT_STATUS: 0
+
+COMMAND: npm run build
+INPUT: cwd=E:\Web-thi-thpt; Next.js 16.3.1
+LITERAL_OUTPUT: Compiled successfully | Generating static pages (11/11) | route /admin/content-quality present
+EXIT_STATUS: 0
+
+COMMAND: npm audit --omit=dev
+INPUT: cwd=E:\Web-thi-thpt
+LITERAL_OUTPUT: found 0 vulnerabilities
+EXIT_STATUS: 0
+
+COMMAND: npm run content:audit -- --help
+INPUT: cwd=E:\Web-thi-thpt
+LITERAL_OUTPUT: Usage: npm run content:audit -- [--apply] [--limit=N] | Default mode is read-only. --apply writes review rows and quality metadata only.
+EXIT_STATUS: 0
+
+COMMAND: npx supabase db push --linked --dry-run
+INPUT: linked production history=63 migrations
+LITERAL_OUTPUT: Would push these migrations: 20260820234029_production_foundation_v1.sql | 20260821022816_math_content_database_v2.sql | Finished supabase db push.
+EXIT_STATUS: 0
+
+COMMAND: MCP execute_sql(<production_foundation_v1> + <math_content_database_v2> + <24 pgTAP assertions ending ROLLBACK>)
+INPUT: linked live schema; both forward migrations executed inside one rolled-back validation transaction
+LITERAL_OUTPUT: ok 24 - anonymous callers cannot apply reviews
+EXIT_STATUS: 0
+RESTORED_RESULT: remote_migration_count=63; content_format_column=false; review_table=null; usage_ledger=null; physics_active=true; expired_usable_keys=4; published_rooms_empty=2
+
+COMMAND: [scriptblock]::Create(Get-Content scripts/bootstrap-staging.ps1 -Raw); bash -n ROLLBACK.sh
+INPUT: staging bootstrap and rollback scripts
+LITERAL_OUTPUT: BOOTSTRAP_SCRIPT_PARSE=pass | ROLLBACK syntax exit=0
+EXIT_STATUS: 0
+
+ROLLBACK
+COMMAND: TARGET_ROOT=/mnt/e/Web-thi-thpt/.codex-tmp/math-db-rollback-test-20260821-0946 artifacts/math-database-improvement-20260821/ROLLBACK.sh
+INPUT: isolated copy containing the modified owned paths
+LITERAL_OUTPUT: ROLLBACK_RESULT=math_database_improvement_restored
+EXIT_STATUS: 0
+
+COMMAND: compare SHA256 of 12 restored files; verify 10 new files absent; npx vitest run --root <rollback-copy>
+INPUT: restored rollback copy
+LITERAL_OUTPUT: RESTORED_HASH_MISMATCHES=0 | NEW_FILES_REMAINING=0 | Test Files 7 passed (7) | Tests 36 passed (36)
+EXIT_STATUS: 0
+RESTORED_BEHAVIOR_STATUS: exact pre-task owned files restored; Markdown+KaTeX/database-v2 files removed; baseline 36/36 tests passed
+
+DEPLOYMENT_STATE
+REPOSITORY_IMPLEMENTATION=changed and verified
+LINKED_LIVE_DATABASE=unchanged after rolled-back SQL validation
+STAGING_PROJECT=not provisioned in this session; bootstrap script implemented and syntax-verified
+PRODUCTION_MIGRATIONS=pending; dry-run lists exactly two forward migrations

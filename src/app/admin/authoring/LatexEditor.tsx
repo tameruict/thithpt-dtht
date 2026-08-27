@@ -28,6 +28,7 @@ import { updateQuestionMetadataAtPosition } from '@/lib/authoring/parser';
 
 export type LatexEditorHandle = {
   insertText: (text: string) => void;
+  replaceRange: (from: number, to: number, text: string) => void;
   focus: () => void;
   goTo: (line: number, column: number) => void;
   updateQuestionMetadata: (updates: {
@@ -173,6 +174,19 @@ const LatexEditor = forwardRef<LatexEditorHandle, LatexEditorProps>(
         view.dispatch({
           changes: { from: range.from, to: range.to, insert: text },
           selection: { anchor: range.from + text.length },
+          scrollIntoView: true,
+        });
+        view.focus();
+      },
+      replaceRange(from: number, to: number, text: string) {
+        const view = viewRef.current;
+        if (!view) return;
+        const docLength = view.state.doc.length;
+        const safeFrom = Math.min(Math.max(from, 0), docLength);
+        const safeTo = Math.min(Math.max(to, safeFrom), docLength);
+        view.dispatch({
+          changes: { from: safeFrom, to: safeTo, insert: text },
+          selection: { anchor: safeFrom + text.length },
           scrollIntoView: true,
         });
         view.focus();

@@ -1,0 +1,239 @@
+.page {
+  min-height: 100vh;
+  padding: 48px clamp(18px, 5vw, 80px);
+  background: var(--background, #f5f7fb);
+}
+
+.header {
+  max-width: 1180px;
+  margin: 0 auto 28px;
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.header h1 {
+  margin: 4px 0 8px;
+  font-size: clamp(28px, 4vw, 44px);
+}
+
+.header p {
+  margin: 0;
+  color: var(--muted-foreground, #667085);
+}
+
+.eyebrow {
+  color: #2563eb !important;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+.links {
+  display: flex;
+  gap: 14px;
+  white-space: nowrap;
+}
+
+.links a {
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.grid {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.card, .notice {
+  background: var(--card, #fff);
+  border: 1px solid rgba(15, 23, 42, .09);
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 14px 40px rgba(15, 23, 42, .06);
+}
+
+.card h2, .notice h2 {
+  margin: 0 0 18px;
+}
+
+.notice {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.products {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.product {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  text-align: left;
+  padding: 16px;
+  border: 1px solid #d8dee9;
+  border-radius: 14px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.product span {
+  display: grid;
+  gap: 5px;
+}
+
+.product small, .muted, .orderHeader small {
+  color: #667085;
+}
+
+.product b {
+  color: #2563eb;
+  white-space: nowrap;
+}
+
+.selected {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, .14);
+}
+
+.error {
+  color: #b42318;
+  margin: 14px 0 0;
+}
+
+.orderHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.orderHeader h2 {
+  text-transform: capitalize;
+  margin-bottom: 4px;
+}
+
+.refresh {
+  border: 0;
+  background: transparent;
+  color: #2563eb;
+  cursor: pointer;
+}
+
+.transfer {
+  display: grid;
+  grid-template-columns: minmax(170px, 220px) 1fr;
+  gap: 24px;
+  align-items: center;
+}
+
+.transfer img {
+  width: 100%;
+  max-width: 220px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+}
+
+.transferDetails {
+  display: grid;
+  gap: 10px;
+}
+
+.infoRow {
+  display: grid;
+  grid-template-columns: 100px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.infoRow span {
+  color: #667085;
+}
+
+.infoRow strong, .infoRow code {
+  overflow-wrap: anywhere;
+}
+
+.infoRow button, .success button {
+  border: 0;
+  background: transparent;
+  color: #2563eb;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.pending {
+  color: #667085;
+  font-size: 14px;
+  margin: 20px 0 0;
+}
+
+.success {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  color: #067647;
+  background: #ecfdf3;
+  border: 1px solid #abefc6;
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.success div {
+  display: grid;
+  gap: 8px;
+}
+
+.success code {
+  color: #101828;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: .06em;
+}
+
+.success a {
+  grid-column: 2;
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.instructions {
+  min-height: 200px;
+  color: #667085;
+}
+
+.instructions h2 {
+  color: inherit;
+  margin-top: 16px;
+}
+
+@media (max-width: 800px) {
+  .header, .grid {
+    display: block;
+  }
+
+  .links {
+    margin-top: 18px;
+  }
+
+  .grid > * + * {
+    margin-top: 18px;
+  }
+
+  .transfer {
+    grid-template-columns: 1fr;
+  }
+
+  .transfer img {
+    margin: 0 auto;
+  }
+}

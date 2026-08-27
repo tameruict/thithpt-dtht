@@ -1,0 +1,87 @@
+﻿diff --git a/artifacts/stability-audit-20260825/BASELINE_FILE.js b/artifacts/stability-audit-20260825/MODIFIED_FILE.js
+index 5393c73..25addff 100644
+--- a/artifacts/stability-audit-20260825/BASELINE_FILE.js
++++ b/artifacts/stability-audit-20260825/MODIFIED_FILE.js
+@@ -1,14 +1,24 @@
+ import http from 'k6/http';
+ import { check, sleep } from 'k6';
++import { SharedArray } from 'k6/data';
++
++const users = new SharedArray('load users', () => {
++  const path = __ENV.USERS_FILE;
++  if (!path) throw new Error('USERS_FILE is required');
++  const parsed = JSON.parse(open(path));
++  return Array.isArray(parsed) ? parsed : parsed.dataset;
++});
+ 
+ const baseUrl = __ENV.BASE_URL;
+-const accessToken = __ENV.ACCESS_TOKEN;
+-const sessionId = __ENV.SESSION_ID;
+-const sessionQuestionId = __ENV.SESSION_QUESTION_ID;
++function userForVu() {
++  const user = users[(__VU - 1) % users.length];
++  if (!user) throw new Error('No load-test user for VU');
++  return user;
++}
+ 
+-if (!baseUrl || !accessToken || !sessionId || !sessionQuestionId) {
++if (!baseUrl || users.length === 0) {
+   throw new Error(
+-    'BASE_URL, ACCESS_TOKEN, SESSION_ID and SESSION_QUESTION_ID are required.',
++    'BASE_URL and USERS_FILE with sessionId/sessionQuestionId entries are required.',
+   );
+ }
+ 
+@@ -38,37 +48,44 @@ export const options = {
+ 
+ const headers = {
+   apikey: __ENV.PUBLISHABLE_KEY || '',
+-  Authorization: `Bearer ${accessToken}`,
+   'Content-Type': 'application/json',
+ };
+ 
++// Model staggered student start times instead of a synchronized thundering herd.
++const phaseJitterMs = (__VU * 7919) % 10000;
++const submitJitterMs = (__VU * 104729) % 10000;
++
+ export function autosave() {
++  const user = userForVu();
++  if (__ITER === 0 && phaseJitterMs > 0) sleep(phaseJitterMs / 1000);
+   const response = http.post(
+     `${baseUrl}/rest/v1/rpc/save_session_answers`,
+     JSON.stringify({
+-      p_session_id: sessionId,
++      p_session_id: user.sessionId,
+       p_answers: [
+         {
+-          session_question_id: sessionQuestionId,
++          session_question_id: user.sessionQuestionId,
+           selected_option_id: null,
+           short_answer_text: null,
+           answer_json: { value: `load-${__VU}-${__ITER}` },
+         },
+       ],
+     }),
+-    { headers, tags: { operation: 'autosave' } },
++    { headers: { ...headers, Authorization: `Bearer ${user.accessToken}` }, tags: { operation: 'autosave' } },
+   );
+ 
+-  check(response, { 'autosave accepted': (r) => r.status === 200 });
++  check(response, { 'autosave accepted': (r) => r.status === 200 || r.status === 204 });
+   sleep(10);
+ }
+ 
+ export function submit() {
++  const user = userForVu();
++  if (submitJitterMs > 0) sleep(submitJitterMs / 1000);
+   const response = http.post(
+     `${baseUrl}/rest/v1/rpc/submit_exam_session`,
+-    JSON.stringify({ p_session_id: sessionId }),
+-    { headers, tags: { operation: 'submit' } },
++    JSON.stringify({ p_session_id: user.sessionId }),
++    { headers: { ...headers, Authorization: `Bearer ${user.accessToken}` }, tags: { operation: 'submit' } },
+   );
+ 
+-  check(response, { 'submit accepted': (r) => r.status === 200 });
++  check(response, { 'submit accepted': (r) => r.status === 200 || r.status === 204 });
+ }

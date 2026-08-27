@@ -1,0 +1,116 @@
+SEPAY CHECKOUT VERIFICATION
+===========================
+BRANCH: fix/exam-session-scoring-lifecycle
+CHANGED_FIELD: purchase_orders.status/payment_code -> fulfilled and exam_keys.source_order_id
+
+FOUR ARTIFACTS
+--------------
+MODIFIED_FILE: E:\Web-thi-thpt\artifacts\sepay-checkout-20260821\MODIFIED_FILE
+DIFF_FILE: E:\Web-thi-thpt\artifacts\sepay-checkout-20260821\DIFF_FILE
+VERIFICATION.txt: E:\Web-thi-thpt\artifacts\sepay-checkout-20260821\VERIFICATION.txt
+ROLLBACK.sh: E:\Web-thi-thpt\artifacts\sepay-checkout-20260821\ROLLBACK.sh
+
+BASELINE
+--------
+COMMAND: npx tsc --noEmit
+INPUT: repository before SePay checkout changes
+LITERAL_OUTPUT: [empty]
+RESULT: PASS
+EXIT_STATUS: 0
+
+COMMAND: npm run lint -- --max-warnings=0
+INPUT: repository before SePay checkout changes
+LITERAL_OUTPUT: [npm script header only; no diagnostics]
+RESULT: PASS
+EXIT_STATUS: 0
+
+COMMAND: npm test
+INPUT: repository before SePay checkout changes
+LITERAL_OUTPUT: Test Files 8 passed (8); Tests 46 passed (46)
+RESULT: PASS
+EXIT_STATUS: 0
+
+COMMAND: npm run build
+INPUT: repository before SePay checkout changes
+LITERAL_OUTPUT: Compiled successfully; Finished TypeScript; Generating static pages 11/11; exit route set had no purchase or webhook routes
+RESULT: PASS
+EXIT_STATUS: 0
+
+COMMAND: npm run release:check
+INPUT: repository before SePay checkout changes
+LITERAL_OUTPUT: RELEASE_CHECK_MODE=report; MISSING_PREVIEW_ENV=NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,NEXT_PUBLIC_TURNSTILE_SITE_KEY; FORBIDDEN_PUBLIC_SECRET=none; KEY_PURCHASE_ENABLED=unset; RELEASE_CHECK_RESULT=pass
+RESULT: PASS
+EXIT_STATUS: 0
+
+MODIFIED
+--------
+COMMAND: npx tsc --noEmit
+INPUT: SePay migration, RPC contract, webhook, purchase/profile/admin UI and config changes
+LITERAL_OUTPUT: [empty]
+RESULT: PASS
+EXIT_STATUS: 0
+
+COMMAND: npm run lint -- --max-warnings=0
+INPUT: SePay checkout files and repository
+LITERAL_OUTPUT: [npm script header only; no diagnostics]
+RESULT: PASS
+EXIT_STATUS: 0
+
+COMMAND: npm test
+INPUT: SePay checkout parser tests plus existing suite
+LITERAL_OUTPUT: Test Files 9 passed (9); Tests 50 passed (50)
+RESULT: PASS
+EXIT_STATUS: 0
+
+COMMAND: npm run build
+INPUT: SePay checkout files and repository
+LITERAL_OUTPUT: Compiled successfully; Finished TypeScript; route list included /admin/key-products, /admin/purchases, /api/payments/sepay/webhook, /purchase; Generating static pages 11/11
+RESULT: PASS
+EXIT_STATUS: 0
+
+COMMAND: npm run release:check
+INPUT: checkout disabled/default environment
+LITERAL_OUTPUT: RELEASE_CHECK_MODE=report; FORBIDDEN_PUBLIC_SECRET=none; KEY_PURCHASE_ENABLED=unset; MISSING_CHECKOUT_ENV=none; RELEASE_CHECK_RESULT=pass
+RESULT: PASS
+EXIT_STATUS: 0
+
+COMMAND: node -e "process.env.KEY_PURCHASE_ENABLED='true'; import('./scripts/release-check.mjs')"
+INPUT: checkout enabled with no server-only payment secrets
+LITERAL_OUTPUT: KEY_PURCHASE_ENABLED=true; MISSING_CHECKOUT_ENV=SUPABASE_SECRET_KEY,SEPAY_WEBHOOK_API_KEY,SEPAY_BANK_CODE,SEPAY_BANK_ACCOUNT,SEPAY_ACCOUNT_NAME; Checkout is enabled but server-only payment configuration is incomplete.
+RESULT: EXPECTED_FAIL_GUARD
+EXIT_STATUS: 1
+
+SUPABASE LIVE BASELINE QUERY
+----------------------------
+COMMAND: mcp__supabase__execute_sql(read-only)
+INPUT: schema existence and nullability query for key_products, purchase_orders, payment_events, exam_keys.source_order_id, exam_keys.exam_room_id, private.is_admin, private.touch_updated_at
+LITERAL_OUTPUT: key_products=false; purchase_orders=false; payment_events=false; exam_keys_source_order_id=false; exam_room_id_nullable=true; is_admin_function=true; touch_updated_at_function=true
+RESULT: LIVE_SCHEMA_BASELINE_CONFIRMED; live DB unchanged
+
+SQL LOCAL CHECK
+---------------
+COMMAND: supabase db lint --local --fail-on error
+INPUT: local Supabase database
+LITERAL_OUTPUT: failed to connect to postgres at 127.0.0.1:54322; target machine actively refused connection
+RESULT: NOT_RUN_LOCAL_DB
+EXIT_STATUS: 1
+
+ROLLBACK
+--------
+COMMAND: bash -lc "/mnt/e/Web-thi-thpt/artifacts/sepay-checkout-20260821/ROLLBACK.sh /mnt/e/Web-thi-thpt/artifacts/sepay-checkout-20260821/ROLLBACK_TEST_COPY"
+INPUT: changed ROLLBACK_TEST_COPY plus BASELINE_MODIFIED_FILE
+LITERAL_OUTPUT: ROLLBACK_RESULT=restored; TARGET=/mnt/e/Web-thi-thpt/artifacts/sepay-checkout-20260821/ROLLBACK_TEST_COPY
+RESULT: PASS
+EXIT_STATUS: 0
+
+COMMAND: PowerShell hash comparison after rollback test
+INPUT: ROLLBACK_TEST_COPY vs BASELINE_MODIFIED_FILE
+LITERAL_OUTPUT: ROLLBACK_HASH=A90BA57FFC74DDF8467F475738463B28EE477844AAE6323EF84FB1DEABFCF7A8; BASELINE_HASH=A90BA57FFC74DDF8467F475738463B28EE477844AAE6323EF84FB1DEABFCF7A8; ROLLBACK_MATCH=True
+RESULT: restored behavior/status confirmed; MODIFIED_FILE left changed
+EXIT_STATUS: 0
+
+HASHES
+------
+BASELINE_MODIFIED_FILE_SHA256: A90BA57FFC74DDF8467F475738463B28EE477844AAE6323EF84FB1DEABFCF7A8
+MODIFIED_FILE_SHA256: 6484D8C6BA6972625AFB0408F329F088B42B81A8A6941C620B4C45EA63866BCB
+ROLLBACK.sh: UTF-8 no BOM, LF-only, shebang present

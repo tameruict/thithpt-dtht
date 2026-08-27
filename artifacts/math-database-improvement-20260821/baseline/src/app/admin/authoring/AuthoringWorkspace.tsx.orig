@@ -1,0 +1,999 @@
+﻿'use client';
+
+import Link from 'next/link';
+import {
+  AlertCircle,
+  ArrowLeft,
+  BookOpen,
+  Check,
+  ChevronDown,
+  FileJson,
+  FilePlus2,
+  ImagePlus,
+  Layers,
+  ListPlus,
+  PanelLeftClose,
+  PenLine,
+  Plus,
+  Send,
+  ShieldCheck,
+  Sparkles,
+  UploadCloud,
+  X,
+} from 'lucide-react';
+import {
+  FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from 'react';
+import {
+  getQuestionMetadataAtPosition,
+  getQuestionRangeAtPosition,
+  parseAuthoringSource,
+} from '@/lib/authoring/parser';
+import { getAuthoringTemplate } from '@/lib/authoring/templates';
+import type {
+  AuthoringDocument,
+  AuthoringKnowledgeField,
+  AuthoringMode,
+  AuthoringQuestion,
+  AuthoringWorkspaceData,
+} from '@/lib/authoring/types';
+import QuestionFormModal from './QuestionFormModal';
+import ImportModal from './ImportModal';
+import QuestionRenderer, {
+  MathText,
+  type RenderableQuestion,
+} from '@/components/question/QuestionRenderer';
+import {
+  createAuthoringDocument,
+  createKnowledgeField,
+  publishAuthoringDocument,
+  saveAuthoringDocument,
+  uploadAuthoringImage,
+} from './actions';
+import LatexEditor, { type LatexEditorHandle } from './LatexEditor';
+import { HANOI_TZ } from '@/lib/datetime';
+import styles from '@/styles/authoring.module.css';
+
+type Props = {
+  initialData: AuthoringWorkspaceData;
+};
+
+const difficultyOptions = [
+  { value: 1, label: 'Nháº­n biáº¿t' },
+  { value: 2, label: 'ThÃ´ng hiá»ƒu' },
+  { value: 3, label: 'Váº­n dá»¥ng' },
+  { value: 4, label: 'Váº­n dá»¥ng cao' },
+];
+
+function formatTime(value: string) {
+  return new Intl.DateTimeFormat('vi-VN', {
+    timeZone: HANOI_TZ,
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+  }).format(new Date(value));
+}
+
+function knowledgeFieldLabel(
+  field: AuthoringKnowledgeField,
+  fields: AuthoringKnowledgeField[],
+) {
+  const names = [field.name];
+  let parentId = field.parentId;
+  const visited = new Set<number>([field.id]);
+
+  while (parentId !== null && !visited.has(parentId)) {
+    const parent = fields.find((candidate) => candidate.id === parentId);
+    if (!parent) break;
+    visited.add(parent.id);
+    names.unshift(parent.name);
+    parentId = parent.parentId;
+  }
+
+  return `${field.grade ? `Lá»›p ${field.grade} Â· ` : ''}${names.join(' / ')}`;
+}
+
+function toRenderableQuestion(
+  question: ReturnType<typeof parseAuthoringSource>['questions'][number],
+  index: number,
+): RenderableQuestion {
+  return {
+    id: `preview-${index}`,
+    displayNo: String(index + 1),
+    type: question.type,
+    content: question.content,
+     imageUrl: question.image?.url ?? null,
+    imageAltText: question.image?.alt ?? null,
+    options: question.options.map((option, optionIndex) => ({
+      id: `preview-${index}-option-${optionIndex}`,
+      label: option.label,
+      content: option.content,
+      imageUrl: option.image?.url ?? null,
+      imageAltText: option.image?.alt ?? null,
+      correct: option.correct,
+    })),
+    trueFalseItems: question.trueFalseItems.map((item, itemIndex) => ({
+      id: `preview-${index}-tf-${itemIndex}`,
+      label: item.label,
+      content: item.content,
+      correct: item.correct,
+    })),
+  };
+}
+
+export default function AuthoringWorkspace({ initialData }: Props) {
+  const [documents, setDocuments] = useState(initialData.documents);
+  const [knowledgeFields, setKnowledgeFields] = useState(
+    initialData.knowledgeFields,
+  );
+  const [papers, setPapers] = useState(initialData.papers);
+  const [selectedId, setSelectedId] = useState(initialData.documents[0]?.id ?? '');
+  const [source, setSource] = useState(initialData.documents[0]?.latexSource ?? '');
+  const [savedSource, setSavedSource] = useState(source);
+  const [revision, setRevision] = useState(initialData.documents[0]?.revision ?? 1);
+  const [feedback, setFeedback] = useState('');
+  const [mobilePane, setMobilePane] = useState<'editor' | 'preview'>('editor');
+  const [showCreate, setShowCreate] = useState(initialData.documents.length === 0);
+  const [showImage, setShowImage] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [imageError, setImageError] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [formInitial, setFormInitial] = useState<AuthoringQuestion | null>(null);
+  const [formTarget, setFormTarget] = useState<{ start: number; end: number } | null>(
+    null,
+  );
+  const [showKnowledgeCreate, setShowKnowledgeCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [cursorPosition, setCursorPosition] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const editorRef = useRef<LatexEditorHandle>(null);
+
+  const selectedDocument = useMemo(
+    () => documents.find((document) => document.id === selectedId) ?? null,
+    [documents, selectedId],
+  );
+  const mode = selectedDocument?.mode ?? 'question';
+  const parsed = useMemo(
+    () => parseAuthoringSource(source, mode),
+    [mode, source],
+  );
+  const activeQuestionMetadata = useMemo(
+    () => getQuestionMetadataAtPosition(source, cursorPosition),
+    [cursorPosition, source],
+  );
+  const activeQuestion =
+    activeQuestionMetadata === null
+      ? null
+      : parsed.questions[activeQuestionMetadata.index] ?? null;
+  const subjectKnowledgeFields = useMemo(
+    () =>
+      knowledgeFields
+        .filter(
+          (field) => field.subjectCode === selectedDocument?.subjectCode,
+        )
+        .sort((left, right) =>
+          knowledgeFieldLabel(left, knowledgeFields).localeCompare(
+            knowledgeFieldLabel(right, knowledgeFields),
+            'vi',
+          ),
+        ),
+    [knowledgeFields, selectedDocument?.subjectCode],
+  );
+  const dirty = Boolean(selectedDocument && source !== savedSource);
+  const publishedCurrent =
+    selectedDocument?.publishedRevision === revision && !dirty;
+
+  useEffect(() => {
+    if (!selectedDocument || !dirty || isSaving || publishedCurrent) return;
+
+    const timeout = window.setTimeout(async () => {
+      setIsSaving(true);
+      const sourceToSave = source;
+      const result = await saveAuthoringDocument({
+        documentId: selectedDocument.id,
+        expectedRevision: revision,
+        latexSource: sourceToSave,
+      });
+
+      if (result.ok) {
+        setRevision(result.revision);
+        setSavedSource(sourceToSave);
+        setDocuments((current) =>
+          current.map((document) =>
+            document.id === selectedDocument.id
+              ? {
+                  ...document,
+                  latexSource: sourceToSave,
+                  revision: result.revision,
+                  updatedAt: result.updatedAt,
+                }
+              : document,
+          ),
+        );
+        setFeedback('');
+      } else {
+        setFeedback(result.error);
+      }
+      setIsSaving(false);
+    }, 900);
+
+    return () => window.clearTimeout(timeout);
+  }, [dirty, isSaving, publishedCurrent, revision, selectedDocument, source]);
+
+  const registerCreatedDocument = (
+    document: AuthoringDocument,
+    sourcePaperId: string,
+  ) => {
+    setDocuments((current) => [
+      document,
+      ...current.filter((existing) => existing.id !== document.id),
+    ]);
+    if (
+      document.paperId &&
+      !papers.some((paper) => paper.id === document.paperId)
+    ) {
+      const sourcePaper = papers.find((paper) => paper.id === sourcePaperId);
+      if (sourcePaper) {
+        setPapers((current) => [
+          {
+            ...sourcePaper,
+            id: document.paperId!,
+            label: `${sourcePaper.label} - draft`,
+            status: 'draft',
+            isDefault: false,
+          },
+          ...current,
+        ]);
+      }
+    }
+    setSelectedId(document.id);
+    setSource(document.latexSource);
+    setSavedSource(document.latexSource);
+    setRevision(document.revision);
+  };
+
+  const handleCreate = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const nextMode = String(form.get('mode')) as AuthoringMode;
+    const subjectCode = String(form.get('subjectCode'));
+    const sourcePaperId = String(form.get('sourcePaperId') || '');
+    const title = String(form.get('title') || '');
+
+    startTransition(async () => {
+      const result = await createAuthoringDocument({
+        mode: nextMode,
+        title,
+        subjectCode,
+        sourcePaperId: nextMode === 'paper' ? sourcePaperId : null,
+      });
+      if (!result.ok) {
+        setFeedback(result.error);
+        return;
+      }
+      registerCreatedDocument(result.document, sourcePaperId);
+      setShowCreate(false);
+      setFeedback('');
+    });
+  };
+
+  const handlePublish = () => {
+    if (!selectedDocument || dirty || isSaving || parsed.errors.length > 0) return;
+
+    startTransition(async () => {
+      const result = await publishAuthoringDocument({
+        documentId: selectedDocument.id,
+        expectedRevision: revision,
+        latexSource: source,
+      });
+      if (!result.ok) {
+        setFeedback(result.error);
+        return;
+      }
+      setFeedback('Xuáº¥t báº£n thÃ nh cÃ´ng. Dá»¯ liá»‡u cÃ¢u há»i Ä‘Ã£ Ä‘Æ°á»£c ghi atomically.');
+      setDocuments((current) =>
+        current.map((document) =>
+          document.id === selectedDocument.id
+            ? {
+                ...document,
+                publishedRevision: revision,
+                publishedAt: new Date().toISOString(),
+              }
+            : document,
+        ),
+      );
+    });
+  };
+
+  const openImageModal = () => {
+    setImageError('');
+    setShowImage(true);
+  };
+
+  const handleInsertImage = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const url = String(form.get('url') || '').trim();
+    const alt = String(form.get('alt') || '').trim().replace(/[{}]/g, '');
+    if (!url || !alt) return;
+    editorRef.current?.insertText(`\\image[alt={${alt}}]{${url}}`);
+    setShowImage(false);
+  };
+
+  const handleUploadImage = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const file = formData.get('file');
+    const alt = String(formData.get('alt') || '').trim().replace(/[{}]/g, '');
+
+    if (!(file instanceof File) || file.size === 0) {
+      setImageError('HÃ£y chá»n má»™t tá»‡p áº£nh.');
+      return;
+    }
+    if (!alt) {
+      setImageError('HÃ£y nháº­p alt text mÃ´ táº£ áº£nh.');
+      return;
+    }
+
+    setImageError('');
+    setImageUploading(true);
+    try {
+      const result = await uploadAuthoringImage(formData);
+      if (!result.ok) {
+        setImageError(result.error);
+        return;
+      }
+      editorRef.current?.insertText(
+        `\\image[alt={${result.alt || alt}}]{${result.url}}`,
+      );
+      setShowImage(false);
+    } finally {
+      setImageUploading(false);
+    }
+  };
+
+  const handleCreateKnowledgeField = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedDocument) return;
+    const form = new FormData(event.currentTarget);
+    const gradeValue = String(form.get('grade') || '');
+    const parentValue = String(form.get('parentId') || '');
+
+    startTransition(async () => {
+      const result = await createKnowledgeField({
+        subjectCode: selectedDocument.subjectCode,
+        name: String(form.get('name') || ''),
+        grade: gradeValue ? Number(gradeValue) : null,
+        parentId: parentValue ? Number(parentValue) : null,
+      });
+      if (!result.ok) {
+        setFeedback(result.error);
+        return;
+      }
+
+      setKnowledgeFields((current) => [
+        ...current,
+        result.knowledgeField,
+      ]);
+      editorRef.current?.updateQuestionMetadata({
+        knowledgeFieldSlug: result.knowledgeField.slug,
+      });
+      setShowKnowledgeCreate(false);
+      setFeedback('');
+    });
+  };
+
+  const updateActiveQuestionMetadata = (updates: {
+    difficulty?: number;
+    knowledgeFieldSlug?: string | null;
+  }) => {
+    if (publishedCurrent) return;
+    if (!editorRef.current?.updateQuestionMetadata(updates)) {
+      setFeedback('Äáº·t con trá» bÃªn trong cÃ¢u há»i cáº§n phÃ¢n loáº¡i.');
+      return;
+    }
+    setFeedback('');
+  };
+
+  const insertSnippet = (snippet: string) => {
+    editorRef.current?.insertText(snippet);
+  };
+
+  const openCreateForm = () => {
+    setFormInitial(null);
+    setFormTarget(null);
+    setShowForm(true);
+  };
+
+  const openEditForm = () => {
+    const range = getQuestionRangeAtPosition(source, cursorPosition);
+    if (!range) {
+      setFeedback('Äáº·t con trá» vÃ o trong cÃ¢u há»i cáº§n sá»­a báº±ng form.');
+      return;
+    }
+    const single = parseAuthoringSource(
+      source.slice(range.start, range.end),
+      'question',
+    );
+    const question = single.questions[0] ?? null;
+    if (!question) {
+      setFeedback('KhÃ´ng Ä‘á»c Ä‘Æ°á»£c cÃ¢u táº¡i con trá» (cÃº phÃ¡p chÆ°a há»£p lá»‡).');
+      return;
+    }
+    setFormInitial(question);
+    setFormTarget({ start: range.start, end: range.end });
+    setShowForm(true);
+  };
+
+  const handleFormSubmit = (dsl: string) => {
+    if (formTarget) {
+      editorRef.current?.replaceRange(formTarget.start, formTarget.end, dsl);
+    } else {
+      editorRef.current?.insertText(`${dsl}\n\n`);
+    }
+    setShowForm(false);
+    setFeedback('');
+  };
+
+  const handleImportCreated = (
+    document: AuthoringDocument,
+    sourcePaperId: string,
+  ) => {
+    registerCreatedDocument(document, sourcePaperId);
+    setShowImport(false);
+    setFeedback('ÄÃ£ táº¡o báº£n nhÃ¡p tá»« JSON. Xem preview bÃªn pháº£i rá»“i báº¥m Xuáº¥t báº£n.');
+  };
+
+  const selectDocument = (documentId: string) => {
+    const nextDocument = documents.find((document) => document.id === documentId);
+    if (!nextDocument) return;
+    setSelectedId(nextDocument.id);
+    setSource(nextDocument.latexSource);
+    setSavedSource(nextDocument.latexSource);
+    setRevision(nextDocument.revision);
+    setFeedback('');
+  };
+
+  return (
+    <div className={styles.shell}>
+      <header className={styles.topbar}>
+        <div className={styles.brand}>
+          <span><ShieldCheck size={18} /></span>
+          <div>
+            <strong>THPT Authoring</strong>
+            <small>LaTeX workspace</small>
+          </div>
+        </div>
+        <div className={styles.documentTitle}>
+          <strong>{selectedDocument?.title ?? 'ChÆ°a cÃ³ báº£n nhÃ¡p'}</strong>
+          <span>
+            {isSaving ? 'Äang lÆ°u...' : dirty ? 'Chá» autosave' : 'ÄÃ£ lÆ°u'}
+          </span>
+        </div>
+        <div className={styles.topActions}>
+          <Link href="/admin/compose" className={styles.ghostButton}>
+            <Layers size={16} /> Dá»±ng Ä‘á»
+          </Link>
+          <Link href="/admin" transitionTypes={['nav-back']} className={styles.ghostButton}>
+            <ArrowLeft size={16} /> Admin
+          </Link>
+          <button
+            type="button"
+            className={styles.publishButton}
+            disabled={
+              !selectedDocument ||
+              dirty ||
+              isSaving ||
+              isPending ||
+              publishedCurrent ||
+              parsed.errors.length > 0
+            }
+            onClick={handlePublish}
+          >
+            <Send size={16} />
+            Xuáº¥t báº£n
+          </button>
+        </div>
+      </header>
+
+      <aside className={styles.documentRail}>
+        <button
+          type="button"
+          className={styles.newDocument}
+          onClick={() => setShowCreate(true)}
+        >
+          <FilePlus2 size={17} /> Báº£n nhÃ¡p má»›i
+        </button>
+        <button
+          type="button"
+          className={styles.importDocument}
+          onClick={() => setShowImport(true)}
+        >
+          <FileJson size={16} /> Náº¡p Ä‘á» (JSON)
+        </button>
+        <div className={styles.railLabel}>TÃ i liá»‡u gáº§n Ä‘Ã¢y</div>
+        <div className={styles.documentList}>
+          {documents.map((document) => (
+            <button
+              type="button"
+              key={document.id}
+              className={`${styles.documentItem} ${
+                document.id === selectedId ? styles.activeDocument : ''
+              }`}
+              onClick={() => selectDocument(document.id)}
+            >
+              <span className={styles.documentIcon}>
+                {document.mode === 'paper' ? 'Ä' : 'C'}
+              </span>
+              <span>
+                <strong>{document.title}</strong>
+                <small>
+                  {document.subjectCode} Â· {formatTime(document.updatedAt)}
+                </small>
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className={styles.syntaxHelp}>
+          <Sparkles size={16} />
+          <strong>CÃº phÃ¡p áº£nh R2</strong>
+          <code>{'\\image[alt={MÃ´ táº£}]{https://...}'}</code>
+        </div>
+      </aside>
+
+      <main className={styles.workspace}>
+        <div className={styles.workspaceToolbar}>
+          <div className={styles.toolbarActions}>
+            <div className={styles.modeBadge}>
+              {mode === 'paper' ? 'Cáº£ Ä‘á»' : 'Tá»«ng cÃ¢u'}
+              <ChevronDown size={14} />
+            </div>
+            <button
+              type="button"
+              className={styles.formButton}
+              disabled={publishedCurrent}
+              onClick={openCreateForm}
+            >
+              <ListPlus size={16} /> ThÃªm cÃ¢u (form)
+            </button>
+            <button
+              type="button"
+              disabled={publishedCurrent}
+              onClick={openEditForm}
+            >
+              <PenLine size={16} /> Sá»­a cÃ¢u (form)
+            </button>
+            <button
+              type="button"
+              disabled={publishedCurrent}
+              onClick={openImageModal}
+            >
+              <ImagePlus size={16} /> ChÃ¨n áº£nh R2
+            </button>
+            <button
+              type="button"
+              disabled={publishedCurrent}
+              onClick={() =>
+                insertSnippet(
+                  String.raw`\begin{choice}[label=A]
+Ná»™i dung lá»±a chá»n
+\end{choice}`,
+                )
+              }
+            >
+              <Plus size={15} /> Choice
+            </button>
+            {publishedCurrent ? (
+              <button type="button" onClick={() => setShowCreate(true)}>
+                <FilePlus2 size={15} /> Draft káº¿ nhiá»‡m
+              </button>
+            ) : null}
+            <button
+              type="button"
+              disabled={publishedCurrent}
+              onClick={() => insertSnippet(String.raw`$x^2 + y^2$`)}
+            >
+              CÃ´ng thá»©c
+            </button>
+            <button
+              type="button"
+              className={styles.resetButton}
+              disabled={publishedCurrent}
+              onClick={() => setSource(getAuthoringTemplate(mode))}
+            >
+              Máº«u máº·c Ä‘á»‹nh
+            </button>
+          </div>
+
+          <div className={styles.metadataBar}>
+            <div className={styles.activeQuestionLabel}>
+              <BookOpen size={15} />
+              {activeQuestionMetadata
+                ? `CÃ¢u ${activeQuestionMetadata.index + 1} Ä‘ang soáº¡n`
+                : 'Äáº·t con trá» trong má»™t cÃ¢u há»i'}
+            </div>
+            <label className={styles.metadataField}>
+              <span>MÃ´n há»c</span>
+              <select
+                value={selectedDocument?.subjectCode ?? ''}
+                disabled
+                aria-label="MÃ´n há»c cá»§a tÃ i liá»‡u"
+              >
+                {initialData.subjects.map((subject) => (
+                  <option key={subject.code} value={subject.code}>
+                    {subject.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={styles.metadataField}>
+              <span>Má»©c Ä‘á»™</span>
+              <select
+                value={activeQuestion?.difficulty ?? 2}
+                disabled={!activeQuestion || publishedCurrent}
+                onChange={(event) =>
+                  updateActiveQuestionMetadata({
+                    difficulty: Number(event.target.value),
+                  })
+                }
+              >
+                {difficultyOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={`${styles.metadataField} ${styles.knowledgeField}`}>
+              <span>Pháº¡m vi kiáº¿n thá»©c</span>
+              <select
+                value={activeQuestion?.knowledgeFieldSlug ?? ''}
+                disabled={!activeQuestion || publishedCurrent}
+                onChange={(event) =>
+                  updateActiveQuestionMetadata({
+                    knowledgeFieldSlug: event.target.value || null,
+                  })
+                }
+              >
+                <option value="">ChÆ°a phÃ¢n loáº¡i</option>
+                {subjectKnowledgeFields.map((field) => (
+                  <option key={field.id} value={field.slug}>
+                    {knowledgeFieldLabel(field, knowledgeFields)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className={styles.addKnowledgeButton}
+              disabled={!activeQuestion || publishedCurrent}
+              onClick={() => setShowKnowledgeCreate(true)}
+            >
+              <Plus size={15} /> ThÃªm kiáº¿n thá»©c
+            </button>
+          </div>
+        </div>
+
+        <div className={styles.mobileTabs}>
+          <button
+            type="button"
+            className={mobilePane === 'editor' ? styles.activeMobileTab : ''}
+            onClick={() => setMobilePane('editor')}
+          >
+            Soáº¡n tháº£o
+          </button>
+          <button
+            type="button"
+            className={mobilePane === 'preview' ? styles.activeMobileTab : ''}
+            onClick={() => setMobilePane('preview')}
+          >
+            Xem trÆ°á»›c
+          </button>
+        </div>
+
+        <div className={styles.splitPane}>
+          <section
+            className={`${styles.editorPane} ${
+              mobilePane !== 'editor' ? styles.mobileHidden : ''
+            }`}
+          >
+            {selectedDocument ? (
+              <LatexEditor
+                ref={editorRef}
+                value={source}
+                onChange={setSource}
+                onCursorChange={setCursorPosition}
+                readOnly={publishedCurrent}
+              />
+            ) : (
+              <div className={styles.emptyWorkspace}>
+                <PanelLeftClose size={28} />
+                <p>Táº¡o báº£n nhÃ¡p Ä‘á»ƒ báº¯t Ä‘áº§u soáº¡n Ä‘á».</p>
+              </div>
+            )}
+          </section>
+
+          <section
+            className={`${styles.previewPane} ${
+              mobilePane !== 'preview' ? styles.mobileHidden : ''
+            }`}
+          >
+            <div className={styles.previewHeader}>
+              <div>
+                <span>Xem trÆ°á»›c trá»±c tiáº¿p</span>
+                <strong>
+                  {parsed.questions.length} cÃ¢u Â· {parsed.errors.length} lá»—i
+                </strong>
+              </div>
+              {parsed.errors.length === 0 ? (
+                <span className={styles.validState}><Check size={14} /> Há»£p lá»‡</span>
+              ) : (
+                <span className={styles.errorState}>
+                  <AlertCircle size={14} /> Cáº§n sá»­a
+                </span>
+              )}
+            </div>
+
+            {parsed.errors.length > 0 ? (
+              <div className={styles.errorList}>
+                {parsed.errors.slice(0, 8).map((error, index) => (
+                  <button
+                    type="button"
+                    key={`${error.line}-${error.column}-${index}`}
+                    onClick={() => {
+                      setMobilePane('editor');
+                      editorRef.current?.goTo(error.line, error.column);
+                    }}
+                  >
+                    <strong>DÃ²ng {error.line}:{error.column}</strong>
+                    <span>{error.message}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            <div className={styles.paper}>
+              {parsed.questions.length === 0 ? (
+                <div className={styles.previewEmpty}>
+                  Preview sáº½ xuáº¥t hiá»‡n khi nguá»“n cÃ³ mÃ´i trÆ°á»ng question.
+                </div>
+              ) : null}
+              {parsed.questions.map((question, index) => (
+                <article key={index} className={styles.previewQuestion}>
+                  <QuestionRenderer
+                    question={toRenderableQuestion(question, index)}
+                    showSolutions
+                  />
+                  {question.explanation ? (
+                    <div className={styles.explanation}>
+                      <strong>Lá»i giáº£i:</strong>{' '}
+                      <MathText value={question.explanation} />
+                    </div>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </section>
+        </div>
+
+        {feedback ? <div className={styles.feedback}>{feedback}</div> : null}
+      </main>
+
+      {showCreate ? (
+        <div className={styles.modalBackdrop}>
+          <form className={styles.modal} onSubmit={handleCreate}>
+            <div className={styles.modalHeader}>
+              <div>
+                <span>Báº£n nhÃ¡p má»›i</span>
+                <h2>Chá»n pháº¡m vi soáº¡n Ä‘á»</h2>
+              </div>
+              {documents.length > 0 ? (
+                <button type="button" onClick={() => setShowCreate(false)}>
+                  <X size={18} />
+                </button>
+              ) : null}
+            </div>
+            <label>
+              TÃªn tÃ i liá»‡u
+              <input name="title" placeholder="VÃ­ dá»¥: Äá» luyá»‡n táº­p ToÃ¡n sá»‘ 01" required />
+            </label>
+            <div className={styles.modeChoices}>
+              <label>
+                <input type="radio" name="mode" value="question" defaultChecked />
+                <span><strong>Tá»«ng cÃ¢u</strong><small>Soáº¡n vÃ  xuáº¥t báº£n má»™t cÃ¢u vÃ o ngÃ¢n hÃ ng.</small></span>
+              </label>
+              <label>
+                <input type="radio" name="mode" value="paper" />
+                <span><strong>Cáº£ Ä‘á»</strong><small>Táº¡o draft káº¿ nhiá»‡m cho má»™t paper hiá»‡n cÃ³.</small></span>
+              </label>
+            </div>
+            <label>
+              MÃ´n há»c
+              <select name="subjectCode" required>
+                {initialData.subjects.map((subject) => (
+                  <option key={subject.code} value={subject.code}>
+                    {subject.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Paper Ä‘Ã­ch (chá»‰ dÃ¹ng khi chá»n Cáº£ Ä‘á»)
+              <select name="sourcePaperId">
+                <option value="">Chá»n paper...</option>
+                {papers.map((paper) => (
+                  <option key={paper.id} value={paper.id}>
+                    {paper.roomName} Â· {paper.label} Â· {paper.subjectCode}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button className={styles.primaryModalButton} disabled={isPending}>
+              <FilePlus2 size={16} />
+              {isPending ? 'Äang táº¡o...' : 'Táº¡o workspace'}
+            </button>
+          </form>
+        </div>
+      ) : null}
+
+      {showForm ? (
+        <QuestionFormModal
+          initial={formInitial}
+          knowledgeFields={subjectKnowledgeFields}
+          onClose={() => setShowForm(false)}
+          onSubmit={handleFormSubmit}
+        />
+      ) : null}
+
+      {showImport ? (
+        <ImportModal
+          subjects={initialData.subjects}
+          papers={papers}
+          onClose={() => setShowImport(false)}
+          onCreated={handleImportCreated}
+        />
+      ) : null}
+
+      {showImage ? (
+        <div className={styles.modalBackdrop}>
+          <div className={styles.modal}>
+            <div className={styles.modalHeader}>
+              <div>
+                <span>Cloudflare R2</span>
+                <h2>ChÃ¨n áº£nh vÃ o cÃ¢u há»i</h2>
+              </div>
+              <button type="button" onClick={() => setShowImage(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {imageError ? (
+              <p className={styles.modalError}>
+                <AlertCircle size={15} /> {imageError}
+              </p>
+            ) : null}
+
+            <form onSubmit={handleUploadImage}>
+              <label>
+                Táº£i tá»‡p áº£nh lÃªn (PNG, JPG, WEBP, AVIF Â· â‰¤ 10 MB)
+                <input
+                  name="file"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/avif"
+                  required
+                />
+              </label>
+              <label>
+                Alt text
+                <input
+                  name="alt"
+                  required
+                  placeholder="MÃ´ táº£ ná»™i dung áº£nh cho trÃ¬nh Ä‘á»c mÃ n hÃ¬nh"
+                />
+              </label>
+              <button
+                className={styles.primaryModalButton}
+                disabled={imageUploading}
+              >
+                <UploadCloud size={16} />
+                {imageUploading ? 'Äang táº£i lÃªn...' : 'Táº£i lÃªn & chÃ¨n'}
+              </button>
+            </form>
+
+            <div className={styles.modalDivider}>hoáº·c dÃ¡n URL Ä‘Ã£ cÃ³ trong registry</div>
+
+            <form onSubmit={handleInsertImage}>
+              <label>
+                Public URL
+                <input
+                  name="url"
+                  type="url"
+                  required
+                  placeholder="https://cdn.example.com/path/image.webp"
+                />
+              </label>
+              <label>
+                Alt text
+                <input
+                  name="alt"
+                  required
+                  placeholder="MÃ´ táº£ ná»™i dung áº£nh cho trÃ¬nh Ä‘á»c mÃ n hÃ¬nh"
+                />
+              </label>
+              <p className={styles.modalHint}>
+                URL pháº£i khá»›p chÃ­nh xÃ¡c má»™t báº£n ghi trong r2_assets. Signed URL vÃ  HTTP sáº½ bá»‹ tá»« chá»‘i khi xuáº¥t báº£n.
+              </p>
+              <button className={styles.primaryModalButton}>
+                <ImagePlus size={16} /> ChÃ¨n táº¡i con trá»
+              </button>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {showKnowledgeCreate && selectedDocument ? (
+        <div className={styles.modalBackdrop}>
+          <form className={styles.modal} onSubmit={handleCreateKnowledgeField}>
+            <div className={styles.modalHeader}>
+              <div>
+                <span>{selectedDocument.subjectCode}</span>
+                <h2>ThÃªm pháº¡m vi kiáº¿n thá»©c</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowKnowledgeCreate(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <label>
+              TÃªn kiáº¿n thá»©c
+              <input
+                name="name"
+                required
+                autoFocus
+                placeholder="VÃ­ dá»¥: Äáº¡o hÃ m vÃ  á»©ng dá»¥ng"
+              />
+            </label>
+            <label>
+              Khá»‘i lá»›p
+              <select name="grade" defaultValue="">
+                <option value="">DÃ¹ng chung nhiá»u khá»‘i</option>
+                <option value="10">Lá»›p 10</option>
+                <option value="11">Lá»›p 11</option>
+                <option value="12">Lá»›p 12</option>
+              </select>
+            </label>
+            <label>
+              Pháº¡m vi cha
+              <select name="parentId" defaultValue="">
+                <option value="">KhÃ´ng cÃ³</option>
+                {subjectKnowledgeFields.map((field) => (
+                  <option key={field.id} value={field.id}>
+                    {knowledgeFieldLabel(field, knowledgeFields)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className={styles.modalHint}>
+              Pháº¡m vi má»›i Ä‘Æ°á»£c lÆ°u trá»±c tiáº¿p vÃ o cÆ¡ sá»Ÿ dá»¯ liá»‡u vÃ  tá»± Ä‘á»™ng gÃ¡n
+              cho cÃ¢u Ä‘ang Ä‘áº·t con trá».
+            </p>
+            <button className={styles.primaryModalButton} disabled={isPending}>
+              <Plus size={16} />
+              {isPending ? 'Äang thÃªm...' : 'ThÃªm vÃ  chá»n'}
+            </button>
+          </form>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
