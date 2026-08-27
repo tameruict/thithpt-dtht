@@ -32,6 +32,46 @@ const rawContract = {
   directionValues: { in: ['credit'], out: ['debit'] },
 };
 
+const mbbContract = {
+  version: 'v2',
+  baseUrl: 'https://thueapibank.vn/',
+  endpoint: '/historyapimbv2/{API_KEY}',
+  method: 'GET',
+  accountScoped: true,
+  auth: { location: 'path', name: '{API_KEY}', prefix: '' },
+  pagination: {
+    requestCursorName: null,
+    responseCursorPath: null,
+  },
+  response: {
+    itemsPath: 'transactions',
+    statusPath: 'status',
+    successValues: ['success'],
+  },
+  fields: {
+    providerEventId: 'transactionID',
+    transactionAt: 'transactionDate',
+    direction: 'type',
+    amount: 'amount',
+    content: 'description',
+    accountNumber: null,
+    bankCode: null,
+    providerReference: null,
+  },
+  directionValues: { in: ['IN'], out: ['OUT'] },
+};
+
+function mbbTransaction(overrides: Record<string, unknown> = {}) {
+  return {
+    type: 'IN',
+    transactionID: '1768-example',
+    amount: '50000',
+    description: 'THPTABC123456789',
+    transactionDate: '14/01/2026',
+    ...overrides,
+  };
+}
+
 function transaction(overrides: Record<string, unknown> = {}) {
   return {
     transaction: {
@@ -109,6 +149,103 @@ describe('ThueAPIBank contract adapter', () => {
     const queryRequest = buildProviderRequest(queryContract, 'secret', null);
     expect(queryRequest.url).toContain('api_key=secret');
     expect(queryRequest.init.headers.has('api_key')).toBe(false);
+  });
+
+  it('URL-encodes path authentication in the declared placeholder only', () => {
+    const contract = parseThueApiBankContract(mbbContract);
+    const request = buildProviderRequest(contract, 'secret/with ?#', null);
+
+    expect(request.url).toBe(
+      'https://thueapibank.vn/historyapimbv2/secret%2Fwith%20%3F%23',
+    );
+    expect(new URL(request.url).search).toBe('');
+    expect(Array.from(request.init.headers.keys())).toEqual(['accept']);
+  });
+
+  it('normalizes the MBB GET fixture without treating merchant as an account', () => {
+    const contract = parseThueApiBankContract(mbbContract);
+    const raw = mbbTransaction();
+
+    expect(
+      parseProviderPage(
+        {
+          status: 'success',
+          msg: 'Success',
+          merchant: 'MERCHANT_CODE',
+          transactions: [raw],
+        },
+        contract,
+      ),
+    ).toEqual({
+      nextCursor: null,
+      events: [
+        {
+          provider: 'thueapibank',
+          providerEventId: '1768-example',
+          transactionAt: '2026-01-14T16:59:59.999Z',
+          direction: 'in',
+          amount: 50000,
+          content: 'THPTABC123456789',
+          accountNumber: null,
+          bankCode: null,
+          providerReference: null,
+          raw,
+        },
+      ],
+    });
+  });
+
+  it('validates MBB top-level status before reading transactions', () => {
+    const contract = parseThueApiBankContract(mbbContract);
+    expect(() =>
+      parseProviderPage({ status: 'error', transactions: [] }, contract),
+    ).toThrowError(expect.objectContaining({ code: 'PROVIDER_STATUS_NOT_SUCCESS' }));
+    expect(() => parseProviderPage({ transactions: [] }, contract)).toThrowError(
+      expect.objectContaining({ code: 'PROVIDER_STATUS_NOT_SUCCESS' }),
+    );
+  });
+
+  it('strictly validates MBB DD/MM/YYYY transaction dates', () => {
+    const contract = parseThueApiBankContract(mbbContract);
+    for (const transactionDate of ['31/02/2026', '14-01-2026']) {
+      expect(() =>
+        parseProviderPage(
+          {
+            status: 'success',
+            transactions: [mbbTransaction({ transactionDate })],
+          },
+          contract,
+        ),
+      ).toThrowError(expect.objectContaining({ code: 'TRANSACTION_TIME_INVALID' }));
+    }
+  });
+
+  it('allows optional account fields only for account-scoped contracts', () => {
+    expect(parseThueApiBankContract(mbbContract).accountScoped).toBe(true);
+    expect(() =>
+      parseThueApiBankContract({ ...mbbContract, accountScoped: false }),
+    ).toThrowError(expect.objectContaining({ code: 'CONTRACT_ACCOUNT_FIELD_REQUIRED' }));
+  });
+
+  it('requires a path-auth placeholder and preserves MBB event dedupe', () => {
+    expect(() =>
+      parseThueApiBankContract({ ...mbbContract, endpoint: '/historyapimbv2' }),
+    ).toThrowError(
+      expect.objectContaining({ code: 'CONTRACT_AUTH_PATH_PLACEHOLDER_REQUIRED' }),
+    );
+
+    const contract = parseThueApiBankContract(mbbContract);
+    expect(() =>
+      parseProviderPage(
+        {
+          status: 'success',
+          transactions: [mbbTransaction(), mbbTransaction()],
+        },
+        contract,
+      ),
+    ).toThrowError(
+      expect.objectContaining({ code: 'PROVIDER_EVENT_ID_DUPLICATED_IN_PAGE' }),
+    );
   });
 
   it('rejects malformed pages, unstable IDs, invalid directions, and duplicate IDs', () => {

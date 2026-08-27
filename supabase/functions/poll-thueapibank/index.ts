@@ -150,6 +150,7 @@ async function fetchPage(
 async function processEvent(
   client: ServiceClient,
   event: NormalizedPaymentEvent,
+  accountScoped: boolean,
   expectedBankCode: string,
   expectedAccountNumber: string,
 ) {
@@ -161,9 +162,10 @@ async function processEvent(
     p_amount: event.amount,
     p_content: event.content,
     p_payment_code: extractPaymentCode(event.content),
-    p_account_number: event.accountNumber,
+    p_account_number:
+      event.accountNumber ?? (accountScoped ? expectedAccountNumber : ''),
     p_expected_account_number: expectedAccountNumber,
-    p_bank_code: event.bankCode,
+    p_bank_code: event.bankCode ?? (accountScoped ? expectedBankCode : ''),
     p_expected_bank_code: expectedBankCode,
     p_provider_reference: event.providerReference,
     p_payload: event.raw,
@@ -230,7 +232,13 @@ Deno.serve(async (request) => {
     const cursor = typeof lease.cursor === 'string' ? lease.cursor : null;
     const page = await fetchPage(contract, apiKey, cursor);
     for (const event of page.events) {
-      await processEvent(client, event, expectedBankCode, expectedAccountNumber);
+      await processEvent(
+        client,
+        event,
+        contract.accountScoped,
+        expectedBankCode,
+        expectedAccountNumber,
+      );
     }
 
     const completion = await client.rpc('complete_payment_provider_poll', {

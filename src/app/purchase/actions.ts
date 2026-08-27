@@ -1,7 +1,11 @@
 'use server';
 
 import { randomUUID } from 'node:crypto';
-import { isKeyPurchaseEnabled } from '@/lib/payments/config';
+import {
+  getPaymentConfig,
+  getPaymentPollFunctionConfig,
+  isKeyPurchaseEnabled,
+} from '@/lib/payments/config';
 import { createClient } from '@/lib/supabase/server';
 
 export type CreatePurchaseOrderResult =
@@ -50,6 +54,31 @@ export async function createPurchaseOrder(
     return { ok: false, error: 'NOT_AUTHENTICATED' };
   }
 
+  try {
+    getPaymentConfig();
+    getPaymentPollFunctionConfig();
+  } catch {
+    return { ok: false, error: 'CHECKOUT_CONFIGURATION_INVALID' };
+  }
+
+  const { data: product, error: productError } = await supabase
+    .from('key_products')
+    .select('currency')
+    .eq('id', productId)
+    .eq('is_active', true)
+    .is('archived_at', null)
+    .maybeSingle();
+
+  if (productError) {
+    return { ok: false, error: 'PRODUCT_LOOKUP_FAILED' };
+  }
+  if (!product) {
+    return { ok: false, error: 'PRODUCT_NOT_AVAILABLE' };
+  }
+  if (product.currency !== 'VND') {
+    return { ok: false, error: 'PAYMENT_CURRENCY_UNSUPPORTED' };
+  }
+
   const { data, error } = await supabase.rpc('create_purchase_order', {
     p_product_id: productId,
     p_idempotency_key: idempotencyKey,
@@ -66,7 +95,7 @@ export async function createPurchaseOrder(
     typeof order.order_id !== 'string' ||
     typeof order.payment_code !== 'string' ||
     typeof order.amount !== 'number' ||
-    typeof order.currency !== 'string' ||
+    order.currency !== 'VND' ||
     typeof order.status !== 'string'
   ) {
     return { ok: false, error: 'PURCHASE_ORDER_RESPONSE_INVALID' };

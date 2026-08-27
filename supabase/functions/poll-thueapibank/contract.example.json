@@ -1,34 +1,37 @@
 [
   {
-    "version": "v3",
-    "baseUrl": "https://REDACTED_PROVIDER_HOST/",
-    "endpoint": "/REDACTED_TRANSACTION_HISTORY_PATH",
+    "version": "v2",
+    "baseUrl": "https://thueapibank.vn/",
+    "endpoint": "/historyapimbv2/{API_KEY}",
     "method": "GET",
+    "accountScoped": true,
     "auth": {
-      "location": "header",
-      "name": "REDACTED_API_KEY_HEADER",
+      "location": "path",
+      "name": "{API_KEY}",
       "prefix": ""
     },
     "pagination": {
-      "requestCursorName": "cursor",
-      "responseCursorPath": "data.next_cursor"
+      "requestCursorName": null,
+      "responseCursorPath": null
     },
     "response": {
-      "itemsPath": "data.transactions"
+      "itemsPath": "transactions",
+      "statusPath": "status",
+      "successValues": ["success"]
     },
     "fields": {
-      "providerEventId": "id",
-      "transactionAt": "transaction_at",
-      "direction": "direction",
+      "providerEventId": "transactionID",
+      "transactionAt": "transactionDate",
+      "direction": "type",
       "amount": "amount",
-      "content": "content",
-      "accountNumber": "account_number",
-      "bankCode": "bank_code",
-      "providerReference": "reference"
+      "content": "description",
+      "accountNumber": null,
+      "bankCode": null,
+      "providerReference": null
     },
     "directionValues": {
-      "in": ["in", "credit"],
-      "out": ["out", "debit"]
+      "in": ["IN"],
+      "out": ["OUT"]
     }
   }
 ]

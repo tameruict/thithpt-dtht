@@ -50,4 +50,14 @@ describe('math content v2', () => {
     expect(result.segments).toHaveLength(1);
     expect(result.segments[0].value).toBe('x=5');
   });
+
+  it('accepts the corrected published short-answer stem and explanation', () => {
+    const stem =
+      'Cho hàm số $y=f(x)$ có GTNN trên đoạn [0; $\\frac{1}{2}$] bằng $-\\frac{45}{8}$.';
+    const explanation =
+      'Theo đề bài: $2a = -\\frac{45}{8} \\Rightarrow a = -\\frac{45}{16}$.';
+
+    expect(validateMathContent(stem).valid).toBe(true);
+    expect(validateMathContent(explanation).valid).toBe(true);
+  });
 });

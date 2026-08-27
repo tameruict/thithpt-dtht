@@ -4,7 +4,6 @@ export type PaymentConfig = {
   provider: 'thueapibank';
   bankCode: string;
   bankAccount: string;
-  accountName: string;
 };
 
 export function isKeyPurchaseEnabled() {
@@ -14,9 +13,8 @@ export function isKeyPurchaseEnabled() {
 export function getPaymentConfig(): PaymentConfig {
   const values = {
     provider: process.env.PAYMENT_PROVIDER?.trim().toLowerCase() ?? '',
-    bankCode: process.env.PAYMENT_BANK_CODE?.trim() ?? '',
-    bankAccount: process.env.PAYMENT_BANK_ACCOUNT?.trim() ?? '',
-    accountName: process.env.PAYMENT_ACCOUNT_NAME?.trim() ?? '',
+    bankCode: process.env.PAYMENT_BANK_CODE?.trim().toUpperCase() ?? '',
+    bankAccount: process.env.PAYMENT_BANK_ACCOUNT?.replace(/\s+/g, '') ?? '',
   };
 
   const missing = Object.entries(values)
@@ -39,7 +37,6 @@ export function getCheckoutBankDetails() {
   return {
     bankCode: config.bankCode,
     bankAccount: config.bankAccount,
-    accountName: config.accountName,
   };
 }
 

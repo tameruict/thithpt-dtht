@@ -1,31 +1,42 @@
 # poll-thueapibank
 
-Edge Function nội bộ chủ động đọc lịch sử giao dịch ThueAPIBank, chuẩn hóa dữ
-liệu và gọi RPC `process_bank_payment`. Function dùng lease 20 giây trong
-`payment_provider_state`; cursor chỉ tiến sau khi toàn bộ event đã xử lý xong.
+Edge Function nội bộ chủ động gọi MBB GET history của ThueAPIBank, chuẩn hóa giao dịch
+và gọi RPC `process_bank_payment`. Function giữ lease 20 giây trong
+`payment_provider_state`; cursor chỉ tiến sau khi xử lý xong toàn bộ event. Dedupe vẫn
+dựa trên cặp provider/event ID ở adapter và database.
 
-## 1. Khóa contract sau đăng nhập
+## 1. Contract MBB GET
 
-1. Mở tài liệu V1/V2/V3 trong dashboard ThueAPIBank.
-2. Chỉ giữ các version có đủ: event ID ổn định, thời gian, chiều vào/ra, số
-   tiền, nội dung, ngân hàng và tài khoản.
-3. Sao chép `contract.example.json`, thay các giá trị `REDACTED_*` bằng contract
-   thật nhưng không ghi API key vào JSON.
-4. Có thể đưa nhiều contract vào mảng; poller tự chọn version cao nhất hợp lệ.
-5. Giữ `KEY_PURCHASE_ENABLED=false` nếu không có event ID ổn định hoặc không
-   phân biệt được tiền vào/ra.
+Contract mẫu nằm tại `contract.example.json` và khớp fixture MBB:
+
+- `GET https://thueapibank.vn/historyapimbv2/{API_KEY}`.
+- Auth dùng `location: "path"`; poller chỉ thay đúng placeholder trong `auth.name` và
+  URL-encode toàn bộ credential trước khi tạo URL.
+- Payload chỉ được chấp nhận khi top-level `status=success`.
+- Danh sách nằm ở `transactions`; các trường là `transactionID`, `type`, `amount`,
+  `description`, `transactionDate`.
+- `transactionDate` dùng đúng `DD/MM/YYYY` và được chuẩn hóa thành
+  `23:59:59.999 Asia/Ho_Chi_Minh` để không bị `TRANSACTION_BEFORE_ORDER` trong cùng ngày.
+- Endpoint MBB này là account-scoped nên `accountNumber` và `bankCode` trong payload
+  được để `null`. Poller dùng `PAYMENT_BANK_ACCOUNT`/`PAYMENT_BANK_CODE` server-side
+  khi gọi RPC. Trường top-level `merchant` là mã merchant, không phải số tài khoản và
+  không được map vào `accountNumber`.
+
+API key chỉ nằm trong secret `THUEAPIBANK_API_KEY`. Không log request URL, contract
+JSON, API key hoặc payload chứa credential.
 
 ## 2. Secrets cho staging
+
+Minify `contract.example.json`, sau đó cấu hình server-side secrets:
 
 ```powershell
 supabase secrets set --project-ref <STAGING_REF> `
   KEY_PURCHASE_ENABLED=false `
   THUEAPIBANK_API_KEY=<SECRET> `
   THUEAPIBANK_POLL_SECRET=<RANDOM_SECRET> `
-  THUEAPIBANK_CONTRACT_JSON='<MINIFIED_JSON>' `
-  PAYMENT_BANK_CODE=<BANK_CODE> `
-  PAYMENT_BANK_ACCOUNT=<ACCOUNT_NUMBER> `
-  PAYMENT_ACCOUNT_NAME='<ACCOUNT_NAME>'
+  THUEAPIBANK_CONTRACT_JSON='<MINIFIED_CONTRACT_JSON>' `
+  PAYMENT_BANK_CODE=MB `
+  PAYMENT_BANK_ACCOUNT=<ACCOUNT_NUMBER>
 ```
 
 Deploy function:
@@ -34,13 +45,14 @@ Deploy function:
 supabase functions deploy poll-thueapibank --project-ref <STAGING_REF> --use-api
 ```
 
-`THUEAPIBANK_POLL_SECRET` cũng phải có trong môi trường server-side của Next.js
-để nút **Đồng bộ ThueAPIBank ngay** gọi đúng Edge Function.
+`THUEAPIBANK_POLL_SECRET` cũng phải có trong môi trường server-side của Next.js để
+nút **Đồng bộ ThueAPIBank ngay** gọi đúng Edge Function.
 
-## 3. Lịch poll 5 giây
+## 3. Lịch poll 60 giây
 
-Sau khi deploy function, lưu URL project và poll secret trong Vault rồi tạo job.
-Các placeholder dưới đây được thay trực tiếp trong SQL Editor; không commit giá
+MBB GET không có cursor nên mỗi lần poll đọc lại trang lịch sử. Mặc định chạy 60 giây
+một lần để giảm request lặp. Sau khi deploy function, lưu URL project và poll secret
+trong Vault rồi tạo job. Thay placeholder trực tiếp trong SQL Editor; không commit giá
 trị thật.
 
 ```sql
@@ -57,8 +69,8 @@ select vault.create_secret(
 );
 
 select cron.schedule(
-  'poll-thueapibank-every-5-seconds',
-  '5 seconds',
+  'poll-thueapibank-every-60-seconds',
+  '60 seconds',
   $$
   select net.http_post(
     url := (
@@ -84,19 +96,17 @@ select cron.schedule(
 Tắt job khi rollback vận hành:
 
 ```sql
-update cron.job
-set active = false
-where jobname = 'poll-thueapibank-every-5-seconds';
+select cron.unschedule('poll-thueapibank-every-60-seconds');
 ```
 
 Không xóa `payment_events`, `purchase_orders` hoặc key đã cấp.
 
 ## 4. Smoke test
 
-1. Apply migration trên staging và deploy function khi flag vẫn `false`.
-2. Đặt contract/API key staging, bật flag Edge + Next.
+1. Deploy trên staging khi `KEY_PURCHASE_ENABLED=false`.
+2. Cấu hình contract/API key staging, rồi bật flag Edge + Next.
 3. Tạo đơn, chuyển đúng số tiền và chỉ dùng mã `THPT...` làm nội dung.
-4. Xác nhận `fulfilled` và key xuất hiện trong `/purchase` cùng `/profile` trong
-   tối đa 15 giây.
-5. Lặp cùng event, chạy hai poll đồng thời, thử sai nội dung/số tiền/tài khoản và
-   xác nhận không tạo thêm key.
+4. Xác nhận đơn `fulfilled` và key xuất hiện trong `/purchase` cùng `/profile` trong
+   tối đa 75 giây.
+5. Gửi lại cùng `transactionID`, chạy hai poll đồng thời, thử sai nội dung/số tiền và
+   xác nhận không tạo thêm event/key.

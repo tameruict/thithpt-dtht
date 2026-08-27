@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import {
   getCheckoutBankDetails,
+  getPaymentPollFunctionConfig,
   isKeyPurchaseEnabled,
 } from '@/lib/payments/config';
 import { createClient } from '@/lib/supabase/server';
@@ -19,31 +20,34 @@ export default async function PurchasePage() {
 
   if (!user) redirect('/');
 
-  const enabled = isKeyPurchaseEnabled();
-  const { data } = enabled
-    ? await supabase
-        .from('key_products')
-        .select(
-          'id,code,name,product_kind,attempt_count,price_amount,currency,valid_days',
-        )
-        .eq('is_active', true)
-        .is('archived_at', null)
-        .order('price_amount', { ascending: true })
-    : { data: [] };
-
+  const purchaseEnabled = isKeyPurchaseEnabled();
   let bankDetails: CheckoutBankDetails | null = null;
-  if (enabled) {
+  if (purchaseEnabled) {
     try {
+      getPaymentPollFunctionConfig();
       bankDetails = getCheckoutBankDetails();
     } catch {
       bankDetails = null;
     }
   }
 
+  const checkoutReady = purchaseEnabled && Boolean(bankDetails);
+  const { data } = checkoutReady
+    ? await supabase
+        .from('key_products')
+        .select(
+          'id,code,name,product_kind,attempt_count,price_amount,currency,valid_days',
+        )
+        .eq('is_active', true)
+        .eq('currency', 'VND')
+        .is('archived_at', null)
+        .order('price_amount', { ascending: true })
+    : { data: [] };
+
   return (
     <PurchaseClient
       products={(data ?? []) as PurchaseProduct[]}
-      enabled={enabled && Boolean(bankDetails)}
+      enabled={checkoutReady}
       bankDetails={bankDetails}
     />
   );

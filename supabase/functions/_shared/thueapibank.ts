@@ -5,8 +5,8 @@ export type NormalizedPaymentEvent = {
   direction: 'in' | 'out';
   amount: number;
   content: string;
-  accountNumber: string;
-  bankCode: string;
+  accountNumber: string | null;
+  bankCode: string | null;
   providerReference: string | null;
   raw: unknown;
 };
@@ -16,8 +16,9 @@ export type ThueApiBankContract = {
   baseUrl: string;
   endpoint: string;
   method: 'GET' | 'POST';
+  accountScoped: boolean;
   auth: {
-    location: 'header' | 'query';
+    location: 'header' | 'query' | 'path';
     name: string;
     prefix: string;
   };
@@ -27,6 +28,8 @@ export type ThueApiBankContract = {
   };
   response: {
     itemsPath: string;
+    statusPath: string | null;
+    successValues: string[];
   };
   fields: {
     providerEventId: string;
@@ -34,8 +37,8 @@ export type ThueApiBankContract = {
     direction: string;
     amount: string;
     content: string;
-    accountNumber: string;
-    bankCode: string;
+    accountNumber: string | null;
+    bankCode: string | null;
     providerReference: string | null;
   };
   directionValues: {
@@ -129,9 +132,14 @@ export function parseThueApiBankContract(input: unknown): ThueApiBankContract {
   }
 
   const authLocation = requiredString(auth, 'location', 'CONTRACT_AUTH_LOCATION_REQUIRED');
-  if (authLocation !== 'header' && authLocation !== 'query') {
+  if (!['header', 'query', 'path'].includes(authLocation)) {
     throw new ThueApiBankError('CONTRACT_AUTH_LOCATION_INVALID');
   }
+
+  if (input.accountScoped !== undefined && typeof input.accountScoped !== 'boolean') {
+    throw new ThueApiBankError('CONTRACT_ACCOUNT_SCOPE_INVALID');
+  }
+  const accountScoped = input.accountScoped === true;
 
   const baseUrl = requiredString(input, 'baseUrl', 'CONTRACT_BASE_URL_REQUIRED');
   let parsedBaseUrl: URL;
@@ -144,14 +152,30 @@ export function parseThueApiBankContract(input: unknown): ThueApiBankContract {
     throw new ThueApiBankError('CONTRACT_BASE_URL_HTTPS_REQUIRED');
   }
 
+  const endpoint = requiredString(input, 'endpoint', 'CONTRACT_ENDPOINT_REQUIRED');
+  const authName = requiredString(auth, 'name', 'CONTRACT_AUTH_NAME_REQUIRED');
+  if (authLocation === 'path' && !endpoint.includes(authName)) {
+    throw new ThueApiBankError('CONTRACT_AUTH_PATH_PLACEHOLDER_REQUIRED');
+  }
+
+  const accountNumberField = optionalString(fields, 'accountNumber');
+  const bankCodeField = optionalString(fields, 'bankCode');
+  if (!accountScoped && !accountNumberField) {
+    throw new ThueApiBankError('CONTRACT_ACCOUNT_FIELD_REQUIRED');
+  }
+  if (!accountScoped && !bankCodeField) {
+    throw new ThueApiBankError('CONTRACT_BANK_FIELD_REQUIRED');
+  }
+
   return {
     version: version as ThueApiBankContract['version'],
     baseUrl: parsedBaseUrl.toString(),
-    endpoint: requiredString(input, 'endpoint', 'CONTRACT_ENDPOINT_REQUIRED'),
+    endpoint,
     method,
+    accountScoped,
     auth: {
-      location: authLocation,
-      name: requiredString(auth, 'name', 'CONTRACT_AUTH_NAME_REQUIRED'),
+      location: authLocation as ThueApiBankContract['auth']['location'],
+      name: authName,
       prefix: optionalString(auth, 'prefix') ?? '',
     },
     pagination: {
@@ -160,6 +184,8 @@ export function parseThueApiBankContract(input: unknown): ThueApiBankContract {
     },
     response: {
       itemsPath: requiredString(response, 'itemsPath', 'CONTRACT_ITEMS_PATH_REQUIRED'),
+      statusPath: optionalString(response, 'statusPath'),
+      successValues: parseStringArray(response.successValues, ['success']),
     },
     fields: {
       providerEventId: requiredString(fields, 'providerEventId', 'CONTRACT_EVENT_ID_FIELD_REQUIRED'),
@@ -167,8 +193,8 @@ export function parseThueApiBankContract(input: unknown): ThueApiBankContract {
       direction: requiredString(fields, 'direction', 'CONTRACT_DIRECTION_FIELD_REQUIRED'),
       amount: requiredString(fields, 'amount', 'CONTRACT_AMOUNT_FIELD_REQUIRED'),
       content: requiredString(fields, 'content', 'CONTRACT_CONTENT_FIELD_REQUIRED'),
-      accountNumber: requiredString(fields, 'accountNumber', 'CONTRACT_ACCOUNT_FIELD_REQUIRED'),
-      bankCode: requiredString(fields, 'bankCode', 'CONTRACT_BANK_FIELD_REQUIRED'),
+      accountNumber: accountNumberField,
+      bankCode: bankCodeField,
       providerReference: optionalString(fields, 'providerReference'),
     },
     directionValues: {
@@ -209,15 +235,52 @@ function parseTransactionTime(value: unknown) {
     throw new ThueApiBankError('TRANSACTION_TIME_INVALID');
   }
   const raw = value.trim();
-  let normalized = raw;
-
   const vietnameseDate = raw.match(
     /^(\d{2})\/(\d{2})\/(\d{4})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/,
   );
-  if (vietnameseDate) {
-    const [, day, month, year, hour, minute, second = '00'] = vietnameseDate;
-    normalized = `${year}-${month}-${day}T${hour}:${minute}:${second}+07:00`;
-  } else if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?$/.test(raw)) {
+  const vietnameseDateOnly = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  const vietnameseParts = vietnameseDate
+    ? {
+        day: Number(vietnameseDate[1]),
+        month: Number(vietnameseDate[2]),
+        year: Number(vietnameseDate[3]),
+        hour: Number(vietnameseDate[4]),
+        minute: Number(vietnameseDate[5]),
+        second: Number(vietnameseDate[6] ?? '00'),
+        millisecond: 0,
+      }
+    : vietnameseDateOnly
+      ? {
+          day: Number(vietnameseDateOnly[1]),
+          month: Number(vietnameseDateOnly[2]),
+          year: Number(vietnameseDateOnly[3]),
+          hour: 23,
+          minute: 59,
+          second: 59,
+          millisecond: 999,
+        }
+      : null;
+  if (vietnameseParts) {
+    const { day, month, year, hour, minute, second, millisecond } = vietnameseParts;
+    const calendarDate = new Date(Date.UTC(year, month - 1, day));
+    if (
+      year < 1000 ||
+      calendarDate.getUTCFullYear() !== year ||
+      calendarDate.getUTCMonth() !== month - 1 ||
+      calendarDate.getUTCDate() !== day ||
+      hour > 23 ||
+      minute > 59 ||
+      second > 59
+    ) {
+      throw new ThueApiBankError('TRANSACTION_TIME_INVALID');
+    }
+    return new Date(
+      Date.UTC(year, month - 1, day, hour - 7, minute, second, millisecond),
+    ).toISOString();
+  }
+
+  let normalized = raw;
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?$/.test(raw)) {
     normalized = raw.replace(' ', 'T') + '+07:00';
   }
 
@@ -253,8 +316,12 @@ function normalizeTransaction(
     .toUpperCase();
 
   if (!eventId) throw new ThueApiBankError('STABLE_EVENT_ID_REQUIRED');
-  if (!accountNumber) throw new ThueApiBankError('TRANSACTION_ACCOUNT_REQUIRED');
-  if (!bankCode) throw new ThueApiBankError('TRANSACTION_BANK_REQUIRED');
+  if (!contract.accountScoped && !accountNumber) {
+    throw new ThueApiBankError('TRANSACTION_ACCOUNT_REQUIRED');
+  }
+  if (!contract.accountScoped && !bankCode) {
+    throw new ThueApiBankError('TRANSACTION_BANK_REQUIRED');
+  }
 
   const referenceValue = contract.fields.providerReference
     ? readPath(raw, contract.fields.providerReference)
@@ -267,8 +334,8 @@ function normalizeTransaction(
     direction: normalizeDirection(readPath(raw, contract.fields.direction), contract),
     amount: parseAmount(readPath(raw, contract.fields.amount)),
     content,
-    accountNumber,
-    bankCode,
+    accountNumber: accountNumber || null,
+    bankCode: bankCode || null,
     providerReference:
       referenceValue === null || referenceValue === undefined
         ? null
@@ -281,6 +348,15 @@ export function parseProviderPage(
   payload: unknown,
   contract: ThueApiBankContract,
 ): ProviderPage {
+  if (contract.response.statusPath) {
+    const status = String(readPath(payload, contract.response.statusPath) ?? '')
+      .trim()
+      .toLowerCase();
+    if (!contract.response.successValues.includes(status)) {
+      throw new ThueApiBankError('PROVIDER_STATUS_NOT_SUCCESS');
+    }
+  }
+
   const items = readPath(payload, contract.response.itemsPath);
   if (!Array.isArray(items)) {
     throw new ThueApiBankError('PROVIDER_ITEMS_MALFORMED');
@@ -318,13 +394,16 @@ export function buildProviderRequest(
   cursor: string | null,
 ) {
   if (!apiKey.trim()) throw new ThueApiBankError('API_KEY_REQUIRED');
-  const url = new URL(contract.endpoint, contract.baseUrl);
-  const headers = new Headers({ Accept: 'application/json' });
   const credential = contract.auth.prefix + apiKey.trim();
+  const endpoint = contract.auth.location === 'path'
+    ? contract.endpoint.replaceAll(contract.auth.name, encodeURIComponent(credential))
+    : contract.endpoint;
+  const url = new URL(endpoint, contract.baseUrl);
+  const headers = new Headers({ Accept: 'application/json' });
 
   if (contract.auth.location === 'header') {
     headers.set(contract.auth.name, credential);
-  } else {
+  } else if (contract.auth.location === 'query') {
     url.searchParams.set(contract.auth.name, credential);
   }
 

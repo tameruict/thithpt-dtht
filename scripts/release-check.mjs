@@ -13,8 +13,7 @@ const forbidden = [
   ...Object.keys(process.env).filter(
     (name) =>
       name.startsWith('NEXT_PUBLIC_THUEAPIBANK_') ||
-      name.startsWith('NEXT_PUBLIC_PAYMENT_BANK_') ||
-      name === 'NEXT_PUBLIC_PAYMENT_ACCOUNT_NAME',
+      name.startsWith('NEXT_PUBLIC_PAYMENT_BANK_'),
   ),
 ].filter((name, index, values) => process.env[name]?.trim() && values.indexOf(name) === index);
 const purchaseEnabled = process.env.KEY_PURCHASE_ENABLED?.trim();
@@ -22,7 +21,6 @@ const checkoutEnv = [
   'PAYMENT_PROVIDER',
   'PAYMENT_BANK_CODE',
   'PAYMENT_BANK_ACCOUNT',
-  'PAYMENT_ACCOUNT_NAME',
   'THUEAPIBANK_POLL_SECRET',
 ];
 const missingCheckoutEnv =

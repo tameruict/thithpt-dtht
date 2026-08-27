@@ -22,7 +22,6 @@ export type PurchaseProduct = {
 export type CheckoutBankDetails = {
   bankCode: string;
   bankAccount: string;
-  accountName: string;
 };
 
 type OrderState = {
@@ -40,6 +39,29 @@ export type PurchaseClientProps = {
   enabled: boolean;
   bankDetails: CheckoutBankDetails | null;
 };
+
+export function buildVietQrUrl(
+  bankDetails: CheckoutBankDetails,
+  order: Pick<OrderState, 'amount' | 'currency' | 'paymentCode'>,
+) {
+  if (order.currency !== 'VND') return '';
+
+  const bankCode = bankDetails.bankCode.trim().toUpperCase();
+  const bankAccount = bankDetails.bankAccount.replace(/\s+/g, '');
+  const params = new URLSearchParams({
+    amount: String(order.amount),
+    addInfo: order.paymentCode,
+  });
+
+  return (
+    'https://img.vietqr.io/image/' +
+    encodeURIComponent(bankCode) +
+    '-' +
+    encodeURIComponent(bankAccount) +
+    '-compact2.png?' +
+    params.toString()
+  );
+}
 
 export default function PurchaseClient({
   products,
@@ -127,6 +149,10 @@ export default function PurchaseClient({
         setFeedback(result.error);
         return;
       }
+      if (result.order.currency !== 'VND') {
+        setFeedback('PAYMENT_CURRENCY_UNSUPPORTED');
+        return;
+      }
       setOrder({
         ...result.order,
         keyCode: null,
@@ -138,19 +164,7 @@ export default function PurchaseClient({
     }
   };
 
-  const qrUrl =
-    order && bankDetails
-      ? 'https://img.vietqr.io/image/' +
-        encodeURIComponent(bankDetails.bankCode) +
-        '-' +
-        encodeURIComponent(bankDetails.bankAccount) +
-        '-compact2.png?amount=' +
-        order.amount +
-        '&addInfo=' +
-        encodeURIComponent(order.paymentCode) +
-        '&accountName=' +
-        encodeURIComponent(bankDetails.accountName)
-      : '';
+  const qrUrl = order && bankDetails ? buildVietQrUrl(bankDetails, order) : '';
 
   return (
     <main className={styles.page}>
@@ -269,10 +283,6 @@ export default function PurchaseClient({
                           void copyValue(bankDetails?.bankAccount ?? '', 'account')
                         }
                         copied={copied === 'account'}
-                      />
-                      <InfoRow
-                        label="Chủ tài khoản"
-                        value={bankDetails?.accountName ?? ''}
                       />
                       <InfoRow
                         label="Số tiền"

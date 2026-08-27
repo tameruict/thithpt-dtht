@@ -24,6 +24,7 @@ function keyErrorMessage(hint: string | undefined, fallback?: string) {
     case 'KEY_EXPIRED':
       return 'Mã phòng thi đã hết hạn.';
     case 'KEY_ALREADY_ASSIGNED':
+    case 'KEY_ASSIGNED_TO_OTHER':
       return 'Mã phòng thi này đã được gán cho học sinh khác.';
     case 'KEY_EXHAUSTED':
     case 'KEY_NO_ATTEMPTS_LEFT':
@@ -32,6 +33,21 @@ function keyErrorMessage(hint: string | undefined, fallback?: string) {
       return 'Mã phòng thi không dùng cho môn đã chọn.';
     case 'ROOM_NOT_AVAILABLE':
       return 'Môn thi này chưa có phòng thi đang mở.';
+    case 'SUBJECT_REQUIRED':
+      return 'Vui lòng chọn môn thi trước khi nhập key.';
+    case 'PAPER_NOT_AVAILABLE':
+      return 'Phòng thi chưa có đề thi đã xuất bản.';
+    case 'PAPER_HAS_NO_QUESTIONS':
+      return 'Đề thi chưa có câu hỏi để bắt đầu.';
+    case 'QUESTION_CONTENT_NEEDS_REVIEW':
+    case 'EXAM_ROOM_QUESTION_CONTENT_NEEDS_REVIEW':
+      return 'Phòng thi đang được rà soát nội dung. Vui lòng chọn phòng khác hoặc thử lại sau.';
+    case 'ROOM_NOT_READY':
+      return 'Phòng thi chưa sẵn sàng. Quản trị viên cần kiểm tra đề và lịch mở phòng.';
+    case 'PRACTICE_REQUIRES_PRACTICE_RPC':
+      return 'Phòng tự luyện cần được mở từ mục Tự luyện.';
+    case 'NOT_AUTHENTICATED':
+      return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
     case 'NOT_STUDENT':
       return 'Tài khoản hiện tại chưa có hồ sơ học sinh trong cơ sở dữ liệu.';
     case 'SESSION_ALREADY_EXISTS':

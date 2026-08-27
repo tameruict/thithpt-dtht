@@ -518,29 +518,15 @@ export async function fetchSubjectWithRooms(
   subjectCode: string,
 ) {
   const normalizedCode = subjectCode.toUpperCase();
-  const [subjectResult, rooms] = await Promise.all([
-    supabase
-      .from('subjects')
-      .select(
-        'code,name,default_duration_minutes,is_compulsory,is_active',
-      )
-      .eq('code', normalizedCode)
-      .maybeSingle(),
-    fetchPublishedRooms(supabase, normalizedCode),
-  ]);
-
-  if (subjectResult.error) throw subjectResult.error;
-
-  const subjectRecord = subjectResult.data as unknown as SubjectRecord | null;
+  const dashboard = await fetchSubjectsDashboard(supabase);
+  const rooms = dashboard.rooms.filter(
+    (room) => room.subjectCode === normalizedCode,
+  );
+  const subjectRecord = dashboard.subjects.find(
+    (subject) => subject.code === normalizedCode,
+  );
   const subject = subjectRecord
-    ? {
-        code: subjectRecord.code,
-        name: subjectRecord.name,
-        defaultDurationMinutes: subjectRecord.default_duration_minutes,
-        isCompulsory: subjectRecord.is_compulsory,
-        isActive: subjectRecord.is_active,
-        openRoomCount: rooms.length,
-      }
+    ? { ...subjectRecord, openRoomCount: rooms.length }
     : null;
 
   return { subject, rooms };
