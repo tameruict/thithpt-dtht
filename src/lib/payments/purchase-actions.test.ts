@@ -22,13 +22,16 @@ import { createPurchaseOrder } from '../../app/purchase/actions';
 const productId = '11111111-1111-4111-8111-111111111111';
 const idempotencyKey = 'checkout-test-123';
 
-function createSupabaseMock(currency: string) {
+function createSupabaseMock(
+  currency: string,
+  productKind: 'bundle' | 'exam' | 'practice' = 'bundle',
+) {
   const query = {
     select: vi.fn(),
     eq: vi.fn(),
     is: vi.fn(),
     maybeSingle: vi.fn().mockResolvedValue({
-      data: { currency },
+      data: { currency, product_kind: productKind },
       error: null,
     }),
   };
@@ -101,6 +104,17 @@ describe('createPurchaseOrder checkout guards', () => {
     await expect(createPurchaseOrder(productId, idempotencyKey)).resolves.toEqual({
       ok: false,
       error: 'PAYMENT_CURRENCY_UNSUPPORTED',
+    });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('does not create an order for a legacy exam/practice-only product', async () => {
+    const { client, rpc } = createSupabaseMock('VND', 'exam');
+    mocks.createClient.mockResolvedValue(client);
+
+    await expect(createPurchaseOrder(productId, idempotencyKey)).resolves.toEqual({
+      ok: false,
+      error: 'PRODUCT_SCOPE_UNSUPPORTED',
     });
     expect(rpc).not.toHaveBeenCalled();
   });

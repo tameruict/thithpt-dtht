@@ -7,9 +7,16 @@ vi.mock('@/lib/supabase/client', () => ({
   createClient: vi.fn(),
 }));
 
-import { buildVietQrUrl } from '../../app/purchase/PurchaseClient';
+import {
+  buildVietQrUrl,
+  PURCHASE_SCOPE_LABEL,
+} from '../../app/purchase/PurchaseClient';
 
 describe('VietQR checkout URL', () => {
+  it('labels every paid key as usable for exams and practice', () => {
+    expect(PURCHASE_SCOPE_LABEL).toBe('Dùng cho tất cả phòng thi và tự luyện');
+  });
+
   it('uses normalized bank/account path and only amount/addInfo query fields', () => {
     const qrUrl = buildVietQrUrl(
       { bankCode: ' mbbank ', bankAccount: ' 0123 456\t789 ' },

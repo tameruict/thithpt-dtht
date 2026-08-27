@@ -22,7 +22,7 @@ type Product = {
 type FormState = {
   code: string;
   name: string;
-  product_kind: 'exam' | 'practice' | 'bundle';
+  product_kind: 'bundle';
   attempt_count: string;
   price_amount: string;
   valid_days: string;
@@ -111,7 +111,7 @@ export default function KeyProductsClient() {
     setForm({
       code: product.code,
       name: product.name,
-      product_kind: product.product_kind as FormState['product_kind'],
+      product_kind: 'bundle',
       attempt_count: String(product.attempt_count),
       price_amount: String(product.price_amount),
       valid_days: product.valid_days === null ? '' : String(product.valid_days),
@@ -186,20 +186,12 @@ export default function KeyProductsClient() {
               />
             </label>
             <label>
-              Loại
-              <select
-                value={form.product_kind}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    product_kind: event.target.value as FormState['product_kind'],
-                  })
-                }
-              >
-                <option value="bundle">Bundle</option>
-                <option value="exam">Exam</option>
-                <option value="practice">Practice</option>
-              </select>
+              Phạm vi sử dụng
+              <input
+                value="Tất cả phòng thi và tự luyện"
+                readOnly
+                aria-readonly="true"
+              />
             </label>
             <label>
               Số lượt
@@ -279,6 +271,7 @@ export default function KeyProductsClient() {
                     {product.code} · {product.attempt_count} lượt ·{' '}
                     {product.price_amount.toLocaleString('vi-VN')} ₫
                   </span>
+                  <small>Dùng chung cho thi chính thức và tự luyện</small>
                 </div>
                 <span className={product.is_active && !product.archived_at ? styles.active : styles.inactive}>
                   {product.archived_at ? 'Archived' : product.is_active ? 'Active' : 'Tắt'}

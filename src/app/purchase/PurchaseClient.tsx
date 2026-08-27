@@ -12,12 +12,14 @@ export type PurchaseProduct = {
   id: string;
   code: string;
   name: string;
-  product_kind: string;
+  product_kind: 'bundle';
   attempt_count: number;
   price_amount: number;
   currency: string;
   valid_days: number | null;
 };
+
+export const PURCHASE_SCOPE_LABEL = 'Dùng cho tất cả phòng thi và tự luyện';
 
 export type CheckoutBankDetails = {
   bankCode: string;
@@ -172,7 +174,10 @@ export default function PurchaseClient({
         <div>
           <p className={styles.eyebrow}>THANH TOÁN KEY</p>
           <h1>Mua key luyện tập và thi</h1>
-          <p>Key được cấp sau khi hệ thống xác nhận đúng giao dịch ThueAPIBank.</p>
+          <p>
+            Mỗi key dùng chung số lượt cho thi chính thức và tự luyện, được cấp sau
+            khi hệ thống xác nhận đúng giao dịch ThueAPIBank.
+          </p>
         </div>
         <div className={styles.links}>
           <Link href="/subjects">Môn thi</Link>
@@ -208,6 +213,7 @@ export default function PurchaseClient({
                         ? 'hạn ' + product.valid_days + ' ngày'
                         : 'không giới hạn hạn dùng'}
                     </small>
+                    <small>{PURCHASE_SCOPE_LABEL}</small>
                   </span>
                   <b>{product.price_amount.toLocaleString('vi-VN')} ₫</b>
                 </button>

@@ -39,6 +39,7 @@ export default async function PurchasePage() {
           'id,code,name,product_kind,attempt_count,price_amount,currency,valid_days',
         )
         .eq('is_active', true)
+        .eq('product_kind', 'bundle')
         .eq('currency', 'VND')
         .is('archived_at', null)
         .order('price_amount', { ascending: true })

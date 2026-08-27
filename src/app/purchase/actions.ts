@@ -63,7 +63,7 @@ export async function createPurchaseOrder(
 
   const { data: product, error: productError } = await supabase
     .from('key_products')
-    .select('currency')
+    .select('currency,product_kind')
     .eq('id', productId)
     .eq('is_active', true)
     .is('archived_at', null)
@@ -77,6 +77,9 @@ export async function createPurchaseOrder(
   }
   if (product.currency !== 'VND') {
     return { ok: false, error: 'PAYMENT_CURRENCY_UNSUPPORTED' };
+  }
+  if (product.product_kind !== 'bundle') {
+    return { ok: false, error: 'PRODUCT_SCOPE_UNSUPPORTED' };
   }
 
   const { data, error } = await supabase.rpc('create_purchase_order', {
