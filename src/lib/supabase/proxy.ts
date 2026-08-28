@@ -3,6 +3,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getSupabaseEnv, hasSupabaseEnv } from './env';
 import type { Database } from './database';
 
+export function syncRequestCookies(request: NextRequest, requestHeaders: Headers) {
+  requestHeaders.set('cookie', request.cookies.toString());
+}
+
 export async function updateSession(
   request: NextRequest,
   requestHeaders = new Headers(request.headers),
@@ -28,6 +32,12 @@ export async function updateSession(
         cookiesToSet.forEach(({ name, value }) => {
           request.cookies.set(name, value);
         });
+
+        // Keep the refreshed cookie jar in the request forwarded to the
+        // Server Component. Passing only the original Headers object leaves
+        // the component with the expired token, so pages/actions can report
+        // NOT_AUTHENTICATED immediately after a session refresh.
+        syncRequestCookies(request, requestHeaders);
 
         supabaseResponse = NextResponse.next({
           request: { headers: requestHeaders },

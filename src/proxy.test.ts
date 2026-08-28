@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildContentSecurityPolicy, isSupabaseAuthCookie } from './proxy';
+import {
+  buildContentSecurityPolicy,
+  isProtectedRoute,
+  isSupabaseAuthCookie,
+} from './proxy';
 
 const REF = 'eskgjwzcognziachvcbl';
 
@@ -35,5 +39,13 @@ describe('buildContentSecurityPolicy', () => {
     expect(policy).toContain("object-src 'none'");
     expect(policy).toContain("frame-ancestors 'none'");
     expect(policy).toContain('https://*.supabase.co');
+  });
+});
+
+describe('isProtectedRoute', () => {
+  it('protects checkout and preserves nested route matching', () => {
+    expect(isProtectedRoute('/purchase')).toBe(true);
+    expect(isProtectedRoute('/purchase/receipt')).toBe(true);
+    expect(isProtectedRoute('/purchase-history')).toBe(false);
   });
 });

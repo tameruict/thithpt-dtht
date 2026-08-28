@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Check, Clipboard, Copy, RefreshCw, ShieldCheck } from 'lucide-react';
 import { createPurchaseOrder } from './actions';
@@ -96,6 +97,7 @@ export default function PurchaseClient({
   enabled,
   bankDetails,
 }: PurchaseClientProps) {
+  const router = useRouter();
   const [order, setOrder] = useState<OrderState | null>(null);
   const [selectedProduct, setSelectedProduct] = useState(products[0]?.id ?? '');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -174,6 +176,30 @@ export default function PurchaseClient({
     try {
       const result = await createPurchaseOrder(selected.id, idempotencyKey);
       if (!result.ok) {
+        if (result.error === 'NOT_AUTHENTICATED') {
+          // A rotated/expired SSR cookie can race the browser session. Refresh
+          // it once before asking the user to sign in again.
+          const supabase = createClient();
+          const { data: refreshed } = await supabase.auth.refreshSession();
+          if (refreshed.session) {
+            const retry = await createPurchaseOrder(selected.id, idempotencyKey);
+            if (retry.ok) {
+              if (retry.order.currency !== 'VND') {
+                setFeedback(purchaseErrorLabel('PAYMENT_CURRENCY_UNSUPPORTED'));
+                return;
+              }
+              setOrder({ ...retry.order, keyCode: null });
+              return;
+            }
+            if (retry.error !== 'NOT_AUTHENTICATED') {
+              setFeedback(purchaseErrorLabel(retry.error));
+              return;
+            }
+          }
+
+          router.push('/?redirect=%2Fpurchase', { transitionTypes: ['nav-back'] });
+          return;
+        }
         setFeedback(purchaseErrorLabel(result.error));
         return;
       }

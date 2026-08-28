@@ -18,7 +18,9 @@ export default async function PurchasePage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) redirect('/');
+  // Keep the intended destination so a session that expires between
+  // navigation and the server render can return to checkout after login.
+  if (!user) redirect('/?redirect=%2Fpurchase');
 
   const purchaseEnabled = isKeyPurchaseEnabled();
   let bankDetails: CheckoutBankDetails | null = null;

@@ -13,6 +13,7 @@ const PROTECTED_ROUTES = [
   '/room-key',
   '/join',
   '/practice',
+  '/purchase',
 ];
 
 /**
@@ -21,6 +22,12 @@ const PROTECTED_ROUTES = [
  * but we still redirect unauthenticated users here.
  */
 const STAFF_ROUTES = ['/admin'];
+
+export function isProtectedRoute(pathname: string) {
+  return [...PROTECTED_ROUTES, ...STAFF_ROUTES].some(
+    (route) => pathname === route || pathname.startsWith(route + '/'),
+  );
+}
 
 export function buildContentSecurityPolicy(nonce: string) {
   const isDevelopment = process.env.NODE_ENV === 'development';
@@ -89,9 +96,7 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Check if the route requires authentication
-  const isProtected = [...PROTECTED_ROUTES, ...STAFF_ROUTES].some(
-    (route) => pathname === route || pathname.startsWith(route + '/')
-  );
+  const isProtected = isProtectedRoute(pathname);
 
   if (isProtected) {
     // Check for Supabase auth cookies to determine if user is logged in.
