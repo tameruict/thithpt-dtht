@@ -7,6 +7,13 @@ export function translateAuthError(message: string): string {
 
   const lower = message.toLowerCase();
 
+  if (
+    lower.includes('flow_state_already_used') ||
+    lower.includes('state has already been used')
+  ) {
+    return 'Phiên đăng nhập Google đã được dùng hoặc hết hiệu lực. Hãy quay lại trang đăng nhập và thử lại.';
+  }
+
   if (lower.includes('user already registered') || lower.includes('already been registered')) {
     return 'Email này đã được đăng ký. Vui lòng đăng nhập hoặc dùng email khác.';
   }

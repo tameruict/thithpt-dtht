@@ -22,6 +22,14 @@ function getPostLoginPath() {
     : '/subjects';
 }
 
+function getOAuthErrorFromUrl() {
+  const query = new URLSearchParams(window.location.search);
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const code = query.get('auth_error') ?? query.get('error_code') ?? query.get('error') ?? hash.get('error_code') ?? hash.get('error');
+  const description = query.get('auth_error_description') ?? query.get('error_description') ?? hash.get('error_description');
+  return code ? `${code}${description ? `: ${description}` : ''}` : '';
+}
+
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -34,7 +42,24 @@ export default function LoginPage() {
   const login = useExamStore((state) => state.login);
 
   useEffect(() => {
-    if (!hasSupabaseEnv()) return;
+    const oauthError = getOAuthErrorFromUrl();
+    const oauthErrorTimer = oauthError
+      ? window.setTimeout(() => setError(translateAuthError(oauthError)), 0)
+      : undefined;
+    if (oauthError) {
+      const cleanUrl = new URL(window.location.href);
+      ['auth_error', 'auth_error_description', 'error', 'error_code', 'error_description', 'error_uri'].forEach((key) => {
+        cleanUrl.searchParams.delete(key);
+      });
+      cleanUrl.hash = '';
+      window.history.replaceState({}, '', cleanUrl.toString());
+    }
+
+    if (!hasSupabaseEnv()) {
+      return () => {
+        if (oauthErrorTimer !== undefined) window.clearTimeout(oauthErrorTimer);
+      };
+    }
 
     let isMounted = true;
     const supabase = createClient();
@@ -57,6 +82,7 @@ export default function LoginPage() {
 
     return () => {
       isMounted = false;
+      if (oauthErrorTimer !== undefined) window.clearTimeout(oauthErrorTimer);
     };
   }, [login, router]);
 
