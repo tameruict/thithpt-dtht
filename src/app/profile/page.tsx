@@ -1,8 +1,7 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { hasSupabaseEnv } from '@/lib/supabase/env';
 import {
@@ -11,7 +10,6 @@ import {
 } from '@/lib/supabase/user-profile';
 import { useExamStore } from '@/store/useExamStore';
 import { formatHanoiDateTime, hanoiTodayInputValue } from '@/lib/datetime';
-import { maskKey } from '@/lib/device';
 import styles from '@/styles/profile.module.css';
 import StudentNav from '@/components/ui/StudentNav';
 
@@ -30,22 +28,12 @@ type ProfileFormState = {
 
 type ProfileContentProps = {
   candidateInfo: CandidateInfo;
-  activeKeys: StoreState['activeKeys'];
-  usedKeys: string[];
   examHistory: StoreState['examHistory'];
-  purchaseOrders: ProfilePurchaseOrderRecord[];
   updateProfile: StoreState['updateProfile'];
   dataStatus: 'loading' | 'ready' | 'error';
   dataError: string;
   onRetryData: () => void;
   onBack: () => void;
-};
-
-type ProfileKeyRecord = {
-  code: string;
-  status: string;
-  total_attempts: number;
-  used_attempts: number;
 };
 
 type ProfileSessionRecord = {
@@ -56,16 +44,6 @@ type ProfileSessionRecord = {
   score: number | null;
   max_score: number;
   exam_rooms?: { name: string; subject_code: string } | { name: string; subject_code: string }[] | null;
-};
-
-type ProfilePurchaseOrderRecord = {
-  id: string;
-  status: string;
-  amount: number;
-  currency: string;
-  payment_code: string;
-  created_at: string;
-  fulfilled_at: string | null;
 };
 
 const genderOptions = [
@@ -127,10 +105,7 @@ export default function ProfilePage() {
     login,
     updateProfile,
   } = useExamStore();
-  const [activeKeys, setActiveKeys] = useState<StoreState['activeKeys']>([]);
-  const [usedKeys, setUsedKeys] = useState<string[]>([]);
   const [examHistory, setExamHistory] = useState<StoreState['examHistory']>([]);
-  const [purchaseOrders, setPurchaseOrders] = useState<ProfilePurchaseOrderRecord[]>([]);
   const [dataStatus, setDataStatus] = useState<'loading' | 'ready' | 'error'>(
     () => (hasSupabaseEnv() ? 'loading' : 'error'),
   );
@@ -194,58 +169,21 @@ export default function ProfilePage() {
           });
         }
 
-        const [keyResult, sessionResult, orderResult] = await Promise.all([
-          supabase
-            .from('exam_keys')
-            .select('code,status,total_attempts,used_attempts')
-            .eq('assigned_to', data.user.id)
-            .order('created_at', { ascending: false }),
-          supabase
-            .from('exam_sessions')
-            .select('id,status,started_at,submitted_at,score,max_score,exam_rooms(name,subject_code)')
-            .eq('student_id', data.user.id)
-            .order('started_at', { ascending: false })
-            .limit(20),
-          supabase
-            .from('purchase_orders')
-            .select('id,status,amount,currency,payment_code,created_at,fulfilled_at')
-            .eq('student_id', data.user.id)
-            .order('created_at', { ascending: false })
-            .limit(20),
-        ]);
+        const sessionResult = await supabase
+          .from('exam_sessions')
+          .select('id,status,started_at,submitted_at,score,max_score,exam_rooms(name,subject_code)')
+          .eq('student_id', data.user.id)
+          .order('started_at', { ascending: false })
+          .limit(20);
 
         if (!isMounted) return;
 
-        const queryError = keyResult.error ?? sessionResult.error ?? orderResult.error;
+        const queryError = sessionResult.error;
         if (queryError) {
           throw queryError;
         }
 
-        const keyRows = (keyResult.data ?? []) as unknown as ProfileKeyRecord[];
-        setActiveKeys(
-          keyRows
-            .filter((key) => {
-              const remaining = key.total_attempts - key.used_attempts;
-              return ['unused', 'active'].includes(key.status) && remaining > 0;
-            })
-            .map((key) => ({
-              code: key.code,
-              remainingAttempts: Math.max(key.total_attempts - key.used_attempts, 0),
-            })),
-        );
-        setUsedKeys(
-          keyRows
-            .filter((key) => {
-              const remaining = key.total_attempts - key.used_attempts;
-              return key.status === 'exhausted' || remaining <= 0;
-            })
-            .map((key) => key.code),
-        );
-
         const sessionRows = (sessionResult.data ?? []) as unknown as ProfileSessionRecord[];
-        setPurchaseOrders(
-          (orderResult.data ?? []) as unknown as ProfilePurchaseOrderRecord[],
-        );
         setExamHistory(
           sessionRows.map((session) => {
             const room = firstRelation(session.exam_rooms);
@@ -294,10 +232,7 @@ export default function ProfilePage() {
     <ProfileContent
       key={candidateInfo.code}
       candidateInfo={candidateInfo}
-      activeKeys={activeKeys}
-      usedKeys={usedKeys}
       examHistory={examHistory}
-      purchaseOrders={purchaseOrders}
       updateProfile={updateProfile}
       dataStatus={dataStatus}
       dataError={dataError}
@@ -309,10 +244,7 @@ export default function ProfilePage() {
 
 function ProfileContent({
   candidateInfo,
-  activeKeys,
-  usedKeys,
   examHistory,
-  purchaseOrders,
   updateProfile,
   dataStatus,
   dataError,
@@ -320,7 +252,6 @@ function ProfileContent({
   onBack,
 }: ProfileContentProps) {
   const [draftForm, setDraftForm] = useState<ProfileFormState | null>(null);
-  const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>(
     'idle',
   );
@@ -430,7 +361,7 @@ function ProfileContent({
         ) : null}
         {dataStatus === 'loading' ? (
           <p className={styles.dataLoading} role="status" aria-live="polite">
-            Đang đồng bộ key, lịch sử thi và giao dịch…
+            Đang đồng bộ hồ sơ và lịch sử thi…
           </p>
         ) : null}
         <section className={styles.card} aria-labelledby="profile-info-heading">
@@ -575,104 +506,6 @@ function ProfileContent({
         </section>
 
         <div className={styles.stack}>
-          <section className={styles.card} aria-labelledby="profile-keys-heading">
-            <h2 className={styles.sectionTitle} id="profile-keys-heading">Quản lý key phòng thi</h2>
-
-            <h3 className={styles.subsectionTitle}>Đang sử dụng</h3>
-            <p className={styles.muted}>
-              Key đã mask để chống chia sẻ. Bấm Hiện để xem, Gia hạn để cộng
-              lượt vào key cũ.
-            </p>
-            {activeKeys.length > 0 ? (
-              <ul className={styles.keyList}>
-                {activeKeys.map((key) => {
-                  const revealed = revealedKeys.has(key.code);
-                  return (
-                    <li key={key.code} className={styles.keyStat}>
-                      <span className={styles.code}>
-                        Key: {revealed ? key.code : maskKey(key.code)}
-                      </span>
-                      <span className={styles.attempts}>
-                        Còn lại: {key.remainingAttempts} lượt
-                      </span>
-                      <span className={styles.keyActions}>
-                        <button
-                          type="button"
-                          className="btn outline small"
-                          onClick={() =>
-                            setRevealedKeys((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(key.code)) next.delete(key.code);
-                              else next.add(key.code);
-                              return next;
-                            })
-                          }
-                        >
-                          {revealed ? 'Ẩn' : 'Hiện'}
-                        </button>
-                        <Link
-                          className="btn secondary small"
-                          href={`/purchase?topup=${encodeURIComponent(key.code)}`}
-                        >
-                          Gia hạn
-                        </Link>
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <div className={styles.emptyState}>Không có key nào đang dùng</div>
-            )}
-
-            <h3 className={`${styles.subsectionTitle} ${styles.spaced}`}>
-              Đã dùng hết
-            </h3>
-            {usedKeys.length > 0 ? (
-              <ul className={styles.keyList}>
-                {usedKeys.map((key) => (
-                  <li key={key} className={`${styles.keyStat} ${styles.used}`}>
-                    <span className={styles.code}>Key: {key}</span>
-                    <span className={styles.attempts}>Hết lượt</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className={styles.emptyState}>Chưa có key nào đã dùng hết</div>
-            )}
-          </section>
-
-          <section className={styles.card} aria-labelledby="profile-orders-heading">
-            <div className={styles.sectionHeader}>
-              <div>
-                <h2 className={styles.sectionTitle} id="profile-orders-heading">Lịch sử mua key</h2>
-                <p className={styles.muted}>
-                  Key đã mua được dùng cho exam và practice.
-                </p>
-              </div>
-              <Link className="btn outline small" href="/purchase">
-                Mua key
-              </Link>
-            </div>
-            {purchaseOrders.length > 0 ? (
-              <ul className={styles.purchaseList}>
-                {purchaseOrders.map((purchase) => (
-                  <li className={styles.purchaseRow} key={purchase.id}>
-                    <div>
-                      <strong>{purchase.payment_code}</strong>
-                      <span>{formatHanoiDateTime(purchase.created_at)}</span>
-                    </div>
-                    <span className={styles.purchaseAmount}>
-                      {purchase.amount.toLocaleString('vi-VN')} {purchase.currency}
-                    </span>
-                    <span className={styles.purchaseStatus}>{purchase.status}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className={styles.emptyState}>Chưa có đơn mua key nào</div>
-            )}
-          </section>
           <section className={styles.card} aria-labelledby="profile-history-heading">
             <h2 className={styles.sectionTitle} id="profile-history-heading">Lịch sử bài thi</h2>
             {examHistory.length > 0 ? (

@@ -1,15 +1,14 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FileText, KeyRound, LogOut, Moon, ShieldCheck, Sun } from 'lucide-react';
+import { FileText, LogOut, Moon, ShieldCheck, Sun } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { hasSupabaseEnv } from '@/lib/supabase/env';
 import {
   clearReferenceCache,
   fetchSubjectsDashboard,
-  formatPriceVnd,
   type ActiveSessionInfo,
   type ExamRoomSummary,
   type PracticeAvailability,
@@ -174,14 +173,6 @@ export default function SubjectsClient({
           <div className={styles.avatar} aria-hidden="true">{candidateInfo.name.charAt(0)}</div>
           <span>Profile</span>
         </button>
-        <button
-          className="btn outline small"
-          type="button"
-          onClick={() => router.push('/purchase', { transitionTypes: ['nav-forward'] })}
-        >
-          <KeyRound size={15} />
-          <span>Mua key</span>
-        </button>
         {isAdmin && (
           <button
             className={`btn outline small ${styles.profileButton}`}
@@ -300,7 +291,7 @@ export default function SubjectsClient({
             </div>
             <div className={styles.infoRow}>
               <span>Phòng thi:</span>
-              <span>Chọn theo key phòng thi</span>
+              <span>Miễn phí cho mọi học viên</span>
             </div>
           </section>
         </div>
@@ -391,7 +382,6 @@ export default function SubjectsClient({
               {!isLoading && subjects.length === 0 && !displayLoadError ? (
                 <div className={styles.emptyState}>
                   <p>Cơ sở dữ liệu chưa có môn thi đang hoạt động.</p>
-                  <Link className="btn outline small" href="/purchase">Xem gói key</Link>
                 </div>
               ) : null}
               {subjects.map((subject) => {
@@ -461,7 +451,6 @@ export default function SubjectsClient({
               {!isLoading && rooms.length === 0 && !displayLoadError ? (
                 <div className={styles.emptyState}>
                   <p>Cơ sở dữ liệu chưa có phòng thi nào đang mở.</p>
-                  <Link className="btn outline small" href="/purchase">Xem gói key</Link>
                 </div>
               ) : null}
               {rooms.map((room) => (
@@ -476,13 +465,11 @@ export default function SubjectsClient({
                       Đang mở
                     </span>
                   </div>
-                  <div className={styles.pricingPrice} aria-label={`Giá ${formatPriceVnd(room.priceVnd)}`}>
-                    {formatPriceVnd(room.priceVnd)}
-                  </div>
+                  <div className={styles.pricingPrice}>Miễn phí</div>
                   <div className={styles.pricingDesc}>
                     <strong>{room.name}</strong>
                     <br />
-                    {room.durationMinutes} phút · {room.totalAttemptsDefault} lượt/key
+                    {room.durationMinutes} phút · Không giới hạn lượt
                     <br />
                     Mã phòng: {room.code}
                   </div>
@@ -495,7 +482,6 @@ export default function SubjectsClient({
                       })
                     }
                   >
-                    <KeyRound size={16} />
                     Chọn phòng thi
                   </button>
                 </article>

@@ -1150,38 +1150,77 @@ export default function AdminDashboardClient() {
     }
   }, [hasConfiguredSupabase]);
 
+  /* ─── Lazy-load theo tab ───────────────────────────────────────────
+   * Trước đây mở trang admin là bắn 5 query nặng cùng lúc (1000 kết quả +
+   * 500 câu hỏi + 500 bài tự luận + 200 key + rooms). Nay chỉ tải dữ liệu
+   * của tab đang mở; các tab khác tải khi người dùng bấm vào. */
+  const loadedTabsRef = useRef<Set<TabId>>(new Set());
+
+  const ensureTabData = useCallback(
+    (tab: TabId) => {
+      if (!hasConfiguredSupabase) return;
+      if (loadedTabsRef.current.has(tab)) return;
+      loadedTabsRef.current.add(tab);
+
+      switch (tab) {
+        case 'overview':
+          void loadExamResults();
+          break;
+        case 'rooms':
+          // Form phòng cần subjects + blueprints nên kèm catalog.
+          void loadRooms();
+          void loadAdminCatalog();
+          break;
+        case 'bank':
+          void loadAdminCatalog();
+          break;
+        case 'keys':
+          void loadKeyManagement();
+          break;
+        case 'grading':
+          void loadPendingEssays();
+          void loadAdminCatalog();
+          break;
+      }
+    },
+    [
+      hasConfiguredSupabase,
+      loadAdminCatalog,
+      loadKeyManagement,
+      loadExamResults,
+      loadRooms,
+      loadPendingEssays,
+    ],
+  );
+
   useEffect(() => {
     if (!hasConfiguredSupabase) return;
 
     const timeoutId = window.setTimeout(() => {
-      void loadAdminCatalog();
-      void loadKeyManagement();
-      void loadExamResults();
-      void loadRooms();
-      void loadPendingEssays();
+      ensureTabData(activeTab);
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
-  }, [
-    hasConfiguredSupabase,
-    loadAdminCatalog,
-    loadKeyManagement,
-    loadExamResults,
-    loadRooms,
-    loadPendingEssays,
-  ]);
+    // activeTab cố tình không nằm trong deps: chuyển tab đi qua changeTab.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasConfiguredSupabase, ensureTabData]);
 
-  const changeTab = useCallback((tab: TabId) => {
-    setActiveTab(tab);
-    const hash = TABS.find((item) => item.id === tab)?.hash ?? '';
-    if (hash && window.location.hash !== hash) window.history.pushState(null, '', hash);
-    topbarRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, []);
+  const changeTab = useCallback(
+    (tab: TabId) => {
+      setActiveTab(tab);
+      ensureTabData(tab);
+      const hash = TABS.find((item) => item.id === tab)?.hash ?? '';
+      if (hash && window.location.hash !== hash) window.history.pushState(null, '', hash);
+      topbarRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+    [ensureTabData],
+  );
 
   useEffect(() => {
     const syncTabFromLocation = () => {
       const tab = tabFromHash(window.location.hash);
       setActiveTab(tab);
+      ensureTabData(tab);
       const targetId = TABS.find((item) => item.id === tab)?.hash.slice(1);
       if (targetId) {
         window.requestAnimationFrame(() => document.getElementById(targetId)?.scrollIntoView({ block: 'start' }));
@@ -1193,9 +1232,11 @@ export default function AdminDashboardClient() {
       window.removeEventListener('hashchange', syncTabFromLocation);
       window.removeEventListener('popstate', syncTabFromLocation);
     };
-  }, []);
+  }, [ensureTabData]);
 
   const handleRefreshAll = useCallback(() => {
+    // Đánh dấu đã tải hết để refresh không bị chặn bởi loadedTabsRef.
+    loadedTabsRef.current = new Set<TabId>(['overview', 'rooms', 'bank', 'keys', 'grading']);
     void loadAdminCatalog();
     void loadKeyManagement();
     void loadExamResults();

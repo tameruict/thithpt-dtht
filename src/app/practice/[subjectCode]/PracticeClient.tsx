@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, BookOpenCheck, Play } from 'lucide-react';
@@ -22,7 +22,6 @@ export default function PracticeClient({ subjectCode }: { subjectCode: string })
   const supabase = useMemo(() => createClient(), []);
   const setSession = useExamStore((state) => state.setSession);
   const [practice, setPractice] = useState<PracticeAvailability | null>(null);
-  const [attemptBalance, setAttemptBalance] = useState(0);
   const [questionCount, setQuestionCount] = useState<number>(20);
   const [difficulties, setDifficulties] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,7 +36,6 @@ export default function PracticeClient({ subjectCode }: { subjectCode: string })
         setPractice(
           dashboard.practice.find((item) => item.subjectCode === subjectCode) ?? null,
         );
-        setAttemptBalance(dashboard.attemptBalance);
       })
       .catch((loadError: unknown) => {
         if (mounted) {
@@ -100,13 +98,12 @@ export default function PracticeClient({ subjectCode }: { subjectCode: string })
           mã câu hỏi tùy ý.
         </p>
         <p className={styles.practiceNote}>
-          Khu tự luyện dùng lượt riêng, tách khỏi phòng thi chính thức. Điểm tự luyện
-          chỉ để bạn theo dõi tiến bộ.
+          Tự luyện hoàn toàn miễn phí và không giới hạn lượt. Điểm chỉ để bạn theo dõi tiến bộ.
         </p>
 
         <dl className={styles.stats} aria-label="Số liệu tự luyện">
-          <div><dt>Số lượt hiện có</dt><dd>{attemptBalance}</dd></div>
-          <div><dt>Chi phí mỗi phiên</dt><dd>{practice?.attemptCost ?? 3}</dd></div>
+          <div><dt>Quyền truy cập</dt><dd>Miễn phí</dd></div>
+          <div><dt>Số lượt</dt><dd>Không giới hạn</dd></div>
           <div><dt>Câu đã duyệt</dt><dd>{practice?.approvedQuestionCount ?? 0}</dd></div>
         </dl>
 
@@ -166,19 +163,13 @@ export default function PracticeClient({ subjectCode }: { subjectCode: string })
             disabled={
               loading ||
               starting ||
-              !practice?.available ||
-              attemptBalance < (practice?.attemptCost ?? 3)
+              !practice?.available
             }
             onClick={handleStart}
           >
             <Play size={17} aria-hidden="true" /> {starting ? 'Đang tạo phiên...' : 'Bắt đầu tự luyện'}
           </button>
-          {!loading && practice?.available && attemptBalance < (practice?.attemptCost ?? 3) && (
-            <p className={styles.balanceWarn} role="status">
-              Bạn không đủ lượt tự luyện. Hãy mua thêm key để tiếp tục.{' '}
-              <Link href="/purchase">Mua thêm key</Link>
-            </p>
-          )}
+
         </div>
       </main>
     </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Moon, Sun, Clock, BookOpen, Award, ChevronDown, ChevronUp } from 'lucide-react';
@@ -258,6 +258,93 @@ function getCorrectAnswerLabel(question: SessionReviewQuestion): string {
   return '—';
 }
 
+/* ─── Review item memo ───────────────────────────────────────────
+ * toRenderableQuestion tạo object mới mỗi lần gọi → phá memo của
+ * QuestionRenderer. Bọc từng dòng review trong memo + useMemo renderable
+ * để expand/collapse 1 câu không re-render 39 câu còn lại. */
+const ReviewItem = memo(function ReviewItem({
+  item,
+  expanded,
+  onToggle,
+}: {
+  item: QuestionReviewItem;
+  expanded: boolean;
+  onToggle: (id: string) => void;
+}) {
+  const renderable = useMemo(
+    () => toRenderableQuestion(item.question),
+    [item.question],
+  );
+  const statusClass =
+    item.status === 'correct'
+      ? styles.reviewItemCorrect
+      : item.status === 'wrong'
+        ? styles.reviewItemWrong
+        : styles.reviewItemUnanswered;
+
+  return (
+    <div className={`${styles.reviewItem} ${statusClass}`}>
+      <button
+        type="button"
+        className={styles.reviewItemHead}
+        aria-expanded={expanded}
+        aria-controls={`review-body-${item.question.id}`}
+        onClick={() => onToggle(item.question.id)}
+      >
+        <span className={styles.reviewItemNo}>
+          Câu {item.question.displayNo} — {questionTypeLabel(item.question.type)}
+        </span>
+        <div className={styles.reviewItemBadges}>
+          <span
+            className={`${styles.badge} ${
+              item.status === 'correct'
+                ? styles.badgeCorrect
+                : item.status === 'wrong'
+                  ? styles.badgeWrong
+                  : styles.badgeUnanswered
+            }`}
+          >
+            {item.status === 'correct'
+              ? '✓ Đúng'
+              : item.status === 'wrong'
+                ? '✗ Sai'
+                : '— Chưa trả lời'}
+          </span>
+          <span className={`${styles.badge} ${styles.badgePoints}`}>
+            {item.earnedPoints.toFixed(1)} / {item.maxPoints.toFixed(1)} đ
+          </span>
+          {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </div>
+      </button>
+
+      {expanded && (
+        <div className={styles.reviewItemBody} id={`review-body-${item.question.id}`}>
+          <QuestionRenderer
+            question={renderable}
+            selectedOptionId={item.answer?.selectedOptionId ?? undefined}
+            textValue={item.answer?.shortAnswerText ?? ''}
+            showSolutions
+          />
+          <div className={styles.answerCompare}>
+            <div className={`${styles.answerRow} ${styles.answerRowStudent}`}>
+              <span className={styles.answerLabel}>Bạn chọn:</span>
+              <span className={styles.answerValue}>
+                {getStudentAnswerLabel(item.question, item.answer)}
+              </span>
+            </div>
+            <div className={`${styles.answerRow} ${styles.answerRowCorrect}`}>
+              <span className={styles.answerLabel}>Đáp án:</span>
+              <span className={styles.answerValue}>
+                {getCorrectAnswerLabel(item.question)}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+
 /* ─── Component ──────────────────────────────────────── */
 export default function ResultPage({ sessionId }: { sessionId?: string }) {
   const router = useRouter();
@@ -411,14 +498,15 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
     ? formatDuration(review.session.startedAt, review.session.submittedAt)
     : '';
 
-  const toggleExpand = (id: string) => {
+  // useCallback để giữ tham chiếu ổn định → memo(ReviewItem) mới phát huy tác dụng.
+  const toggleExpand = useCallback((id: string) => {
     setExpandedItems((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  };
+  }, []);
 
   const handleFinish = () => {
     finishSession();
@@ -696,80 +784,14 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
                         Không có câu hỏi nào ở bộ lọc này.
                       </p>
                     )}
-                    {filteredReviewItems.map((item) => {
-                      const isExpanded = expandedItems.has(item.question.id);
-                      const statusClass =
-                        item.status === 'correct'
-                          ? styles.reviewItemCorrect
-                          : item.status === 'wrong'
-                            ? styles.reviewItemWrong
-                            : styles.reviewItemUnanswered;
-
-                      return (
-                        <div
-                          key={item.question.id}
-                          className={`${styles.reviewItem} ${statusClass}`}
-                        >
-                          <button
-                            type="button"
-                            className={styles.reviewItemHead}
-                            aria-expanded={isExpanded}
-                            aria-controls={`review-body-${item.question.id}`}
-                            onClick={() => toggleExpand(item.question.id)}
-                          >
-                            <span className={styles.reviewItemNo}>
-                              Câu {item.question.displayNo} — {questionTypeLabel(item.question.type)}
-                            </span>
-                            <div className={styles.reviewItemBadges}>
-                              <span
-                                className={`${styles.badge} ${
-                                  item.status === 'correct'
-                                    ? styles.badgeCorrect
-                                    : item.status === 'wrong'
-                                      ? styles.badgeWrong
-                                      : styles.badgeUnanswered
-                                }`}
-                              >
-                                {item.status === 'correct'
-                                  ? '✓ Đúng'
-                                  : item.status === 'wrong'
-                                    ? '✗ Sai'
-                                    : '— Chưa trả lời'}
-                              </span>
-                              <span className={`${styles.badge} ${styles.badgePoints}`}>
-                                {item.earnedPoints.toFixed(1)} / {item.maxPoints.toFixed(1)} đ
-                              </span>
-                              {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                            </div>
-                          </button>
-
-                          {isExpanded && (
-                            <div className={styles.reviewItemBody} id={`review-body-${item.question.id}`}>
-                              <QuestionRenderer
-                                question={toRenderableQuestion(item.question)}
-                                selectedOptionId={item.answer?.selectedOptionId ?? undefined}
-                                textValue={item.answer?.shortAnswerText ?? ''}
-                                showSolutions
-                              />
-                              <div className={styles.answerCompare}>
-                                <div className={`${styles.answerRow} ${styles.answerRowStudent}`}>
-                                  <span className={styles.answerLabel}>Bạn chọn:</span>
-                                  <span className={styles.answerValue}>
-                                    {getStudentAnswerLabel(item.question, item.answer)}
-                                  </span>
-                                </div>
-                                <div className={`${styles.answerRow} ${styles.answerRowCorrect}`}>
-                                  <span className={styles.answerLabel}>Đáp án:</span>
-                                  <span className={styles.answerValue}>
-                                    {getCorrectAnswerLabel(item.question)}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                    {filteredReviewItems.map((item) => (
+                      <ReviewItem
+                        key={item.question.id}
+                        item={item}
+                        expanded={expandedItems.has(item.question.id)}
+                        onToggle={toggleExpand}
+                      />
+                    ))}
                   </div>
                 </section>
               )}

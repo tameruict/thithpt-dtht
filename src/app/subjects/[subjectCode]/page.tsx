@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+﻿import type { Metadata } from 'next';
 import { requireUser } from '@/lib/supabase/session';
 import SubjectExamSetsClient from './SubjectExamSetsClient';
 
@@ -13,7 +13,7 @@ export async function generateMetadata({
   const code = subjectCode.trim().toUpperCase();
   return {
     title: `${code} — Phòng thi`,
-    description: `Chọn phòng thi đang mở cho môn ${code} và nhập key để bắt đầu.`,
+    description: `Chọn phòng thi đang mở cho môn ${code} và bắt đầu miễn phí.`,
   };
 }
 

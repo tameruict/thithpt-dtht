@@ -1,10 +1,3 @@
-import type { Metadata } from 'next';
-
-export const metadata: Metadata = {
-  title: 'Nhập key phòng thi',
-  description: 'Nhập key để tham gia phòng thi hoặc phòng tự luyện.',
-};
-
-export default function Layout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return children;
-}
+﻿import type { Metadata } from 'next';
+export const metadata: Metadata = { title: 'Vào phòng thi miễn phí', description: 'Bắt đầu phòng thi miễn phí, không cần key.' };
+export default function RoomLayout({ children }: Readonly<{ children: React.ReactNode }>) { return children; }

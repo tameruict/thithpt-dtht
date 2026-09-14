@@ -108,6 +108,8 @@
   border-radius: var(--radius-lg);
   background: var(--surface-soft);
   transition: border-color .16s ease, box-shadow .16s ease;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 76px;
 }
 
 .historyItem:hover {
@@ -451,6 +453,9 @@
   overflow: hidden;
   background: var(--surface);
   animation: fadeSlideIn .4s ease-out both;
+  /* 40 câu review: bỏ qua render các câu ngoài viewport khi cuộn. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 72px;
 }
 
 .reviewItemCorrect {

@@ -4,6 +4,7 @@ import {
   fetchSessionReview,
   getSupabaseErrorMessage,
   saveSessionAnswers,
+  startFreeExamSession,
 } from './exam-data';
 
 describe('saveSessionAnswers', () => {
@@ -67,5 +68,24 @@ describe('fetchSessionReview', () => {
     await expect(fetchSessionReview(supabase, 'submitted-session')).rejects.toThrow(
       'Đáp án và lời giải sẽ được mở lại sau khi bạn nộp bài hoặc hết giờ.',
     );
+  });
+});
+
+
+describe('startFreeExamSession', () => {
+  it('starts a room without sending a key', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 'free-session', error: null });
+    const supabase = { rpc } as unknown as SupabaseClient;
+
+    await expect(startFreeExamSession(supabase, {
+      subjectCode: 'math',
+      examRoomId: 'room-1',
+    })).resolves.toBe('free-session');
+
+    expect(rpc).toHaveBeenCalledWith('start_free_exam_session', {
+      p_subject_code: 'MATH',
+      p_exam_room_id: 'room-1',
+    });
+    expect(rpc.mock.calls[0]?.[1]).not.toHaveProperty('p_code');
   });
 });

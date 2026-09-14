@@ -1,10 +1,3 @@
-import type { Metadata } from 'next';
-
-export const metadata: Metadata = {
-  title: 'Mua key',
-  description: 'Chọn gói key và lượt thi phù hợp.',
-};
-
-export default function Layout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return children;
-}
+﻿import type { Metadata } from 'next';
+export const metadata: Metadata = { title: 'Nền tảng miễn phí', description: 'Nền tảng luyện thi hiện miễn phí cho học viên.' };
+export default function PurchaseLayout({ children }: Readonly<{ children: React.ReactNode }>) { return children; }

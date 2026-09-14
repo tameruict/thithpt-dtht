@@ -465,8 +465,25 @@ export type PracticeAvailability = {
  * get_subjects_dashboard: môn đang mở + phòng đã publish (dùng chung để đếm
  * phòng/môn) + profile của người gọi (lấy role) + phiên đang làm dở. Trước đây
  * trang bắn 3-4 request song song tới Supabase (Mumbai); nay chỉ 1.
+ *
+ * Có cache 30s + dedupe in-flight (dùng chung cachedReference): điều hướng
+ * qua lại /subjects ↔ /practice ↔ /subjects/:code dùng lại kết quả, không
+ * bắn RPC mới. Riêng phiên đang dở có thể cũ tối đa 30s — chấp nhận được cho
+ * banner "Tiếp tục bài thi" (trang exam vẫn kiểm tra status thật khi mở).
  */
+const SUBJECTS_DASHBOARD_TTL_MS = 30_000;
+
 export async function fetchSubjectsDashboard(
+  supabase: AppSupabaseClient,
+): Promise<SubjectsDashboard> {
+  return cachedReference(
+    'subjects:dashboard',
+    () => loadSubjectsDashboard(supabase),
+    SUBJECTS_DASHBOARD_TTL_MS,
+  );
+}
+
+async function loadSubjectsDashboard(
   supabase: AppSupabaseClient,
 ): Promise<SubjectsDashboard> {
   const { data, error } = await supabase.rpc('get_subjects_dashboard');
@@ -561,6 +578,20 @@ export async function fetchExamRoomById(
 
   if (error) throw error;
   return data ? mapRoom(data as unknown as PublishedRoomRecord) : null;
+}
+
+export async function startFreeExamSession(
+  supabase: AppSupabaseClient,
+  input: { subjectCode: string; examRoomId: string },
+) {
+  const { data, error } = await supabase.rpc('start_free_exam_session', {
+    p_subject_code: input.subjectCode.toUpperCase(),
+    p_exam_room_id: input.examRoomId,
+  });
+
+  if (error) throw error;
+  if (!data) throw new Error('Kh?ng t?o ???c phi?n thi mi?n ph?.');
+  return data;
 }
 
 export async function startPracticeSession(

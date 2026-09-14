@@ -16,6 +16,8 @@
   inset: 0;
   z-index: 0;
   pointer-events: none;
+  /* Lớp trang trí thuần túy: cô lập paint để cuộn trang không vẽ lại. */
+  contain: strict;
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--primary) 10%, transparent), transparent 38%),
     linear-gradient(245deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 42%);
@@ -213,6 +215,9 @@
   box-shadow: var(--shadow-soft);
   overflow: hidden;
   transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+  /* Bỏ qua render các dòng ngoài viewport khi cuộn danh sách dài. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 110px;
 }
 
 .subjectItem :global(.btn.small) {
@@ -264,6 +269,8 @@
   box-shadow: var(--shadow-soft);
   overflow: hidden;
   transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 300px;
 }
 
 .pricingCard.popular {
@@ -414,6 +421,8 @@
   box-shadow: var(--shadow-soft);
   overflow: hidden;
   transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
 }
 
 .examSetCardHeader {

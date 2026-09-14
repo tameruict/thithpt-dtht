@@ -1,14 +1,13 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BookOpen, ClipboardCheck, KeyRound, UserRound } from 'lucide-react';
+import { BookOpen, ClipboardCheck, UserRound } from 'lucide-react';
 import styles from './StudentNav.module.css';
 
 const items = [
   { href: '/subjects', label: 'Thi thử', hint: 'Chọn môn và phòng thi', Icon: ClipboardCheck },
   { href: '/result', label: 'Kết quả', hint: 'Xem lịch sử làm bài', Icon: BookOpen },
-  { href: '/purchase', label: 'Mua key', hint: 'Mua lượt thi', Icon: KeyRound },
   { href: '/profile', label: 'Hồ sơ', hint: 'Thông tin tài khoản', Icon: UserRound },
 ] as const;
 

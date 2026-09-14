@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { User, Lock, Eye, EyeOff, ShieldCheck, ClipboardList, KeyRound } from 'lucide-react';
 import styles from '@/styles/auth.module.css';
@@ -10,9 +11,14 @@ import { createClient } from '@/lib/supabase/client';
 import { hasSupabaseEnv } from '@/lib/supabase/env';
 import { loadCandidateProfile } from '@/lib/supabase/user-profile';
 import { translateAuthError } from '@/lib/supabase/auth-errors';
-import CaptchaChallenge, {
-  turnstileSiteKey,
-} from '@/components/auth/CaptchaChallenge';
+
+// Turnstile kéo script Cloudflare + lib React khá nặng: tải lười ở client để
+// không chặn First Paint của trang đăng nhập.
+const CaptchaChallenge = dynamic(
+  () => import('@/components/auth/CaptchaChallenge').then((module) => module.default),
+  { ssr: false },
+);
+const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? '';
 
 function getPostLoginPath() {
   const redirect = new URLSearchParams(window.location.search).get('redirect');

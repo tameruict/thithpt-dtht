@@ -1095,7 +1095,7 @@ export type Database = {
           grading_error: string | null
           grading_status: Database["public"]["Enums"]["exam_grading_status"]
           id: string
-          key_id: string
+          key_id: string | null
           max_score: number
           paper_id: string | null
           score: number | null
@@ -1117,7 +1117,7 @@ export type Database = {
           grading_error?: string | null
           grading_status?: Database["public"]["Enums"]["exam_grading_status"]
           id?: string
-          key_id: string
+          key_id: string | null
           max_score?: number
           paper_id?: string | null
           score?: number | null
@@ -1139,7 +1139,7 @@ export type Database = {
           grading_error?: string | null
           grading_status?: Database["public"]["Enums"]["exam_grading_status"]
           id?: string
-          key_id?: string
+          key_id?: string | null
           max_score?: number
           paper_id?: string | null
           score?: number | null
@@ -4274,6 +4274,13 @@ export type Database = {
       join_exam: {
         Args: {
           p_code: string
+          p_exam_room_id?: string
+          p_subject_code?: string
+        }
+        Returns: string
+      }
+      start_free_exam_session: {
+        Args: {
           p_exam_room_id?: string
           p_subject_code?: string
         }

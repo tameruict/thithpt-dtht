@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -8,7 +8,6 @@ import { createClient } from '@/lib/supabase/client';
 import { hasSupabaseEnv } from '@/lib/supabase/env';
 import {
   fetchSubjectWithRooms,
-  formatPriceVnd,
   type ExamRoomSummary,
   type SubjectSummary,
 } from '@/lib/supabase/exam-data';
@@ -110,8 +109,7 @@ export default function SubjectExamSetsClient({
               {subject ? `Môn ${subject.name}` : 'Đang tải môn thi'}
             </h1>
             <p>
-              Chọn một phòng thi đang mở, sau đó nhập key được cấp để bắt đầu phiên thi.
-              Giờ làm bài tính theo máy chủ.
+              Chọn một phòng thi đang mở và bắt đầu miễn phí. Giờ làm bài tính theo máy chủ.
             </p>
           </div>
           <div className={styles.heroStat} role="status" aria-live="polite">
@@ -165,8 +163,8 @@ export default function SubjectExamSetsClient({
               <p>{room.blueprintName ?? 'Phòng thi được lấy trực tiếp từ Supabase.'}</p>
               <div className={styles.examSetStats} aria-label="Thông tin phòng">
                 <span>{room.durationMinutes} phút</span>
-                <span>{room.totalAttemptsDefault} lượt/key</span>
-                <span>{formatPriceVnd(room.priceVnd)}</span>
+                <span>Kh?ng gi?i h?n l??t</span>
+                <span>Mi?n ph?</span>
               </div>
               <RoomLeaderboard roomId={room.id} />
               <div className={styles.roomFoot}>

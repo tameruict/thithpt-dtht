@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import type { ClipboardEvent, FocusEvent, KeyboardEvent } from 'react';
 import Image from 'next/image';
 import ReactMarkdown from 'react-markdown';
@@ -84,7 +84,7 @@ export function serializeShortAnswerForScoring(value: string): string {
   return normalizeShortAnswer(value).replace(',', '.');
 }
 
-function ShortAnswerInput({
+const ShortAnswerInput = memo(function ShortAnswerInput({
   value,
   disabled,
   onChange,
@@ -196,7 +196,7 @@ function ShortAnswerInput({
       ) : null}
     </div>
   );
-}
+});
 
 const mathSanitizeSchema = {
   ...defaultSchema,
@@ -208,8 +208,33 @@ const mathSanitizeSchema = {
   },
 };
 
-export function MathText({ value }: { value: string }) {
-  const validation = useMemo(() => validateMathContent(value), [value]);
+/* ─── Cache kết quả validate ──────────────────────────────────────────
+ * validateMathContent chạy KaTeX renderToString (đồng bộ, đắt) cho MỌI đoạn
+ * công thức. Cùng một nội dung câu hỏi được render lại rất nhiều lần
+ * (đồng hồ exam tick mỗi giây, chuyển tab, expand/collapse review...).
+ * Cache LRU ~800 entries ở module-scope để lần render sau lấy ngay. */
+const VALIDATION_CACHE_LIMIT = 800;
+const validationCache = new Map<string, ReturnType<typeof validateMathContent>>();
+
+function getCachedValidation(value: string) {
+  const hit = validationCache.get(value);
+  if (hit) {
+    // Refresh LRU.
+    validationCache.delete(value);
+    validationCache.set(value, hit);
+    return hit;
+  }
+  const result = validateMathContent(value);
+  validationCache.set(value, result);
+  if (validationCache.size > VALIDATION_CACHE_LIMIT) {
+    const oldest = validationCache.keys().next();
+    if (!oldest.done) validationCache.delete(oldest.value);
+  }
+  return result;
+}
+
+export const MathText = memo(function MathText({ value }: { value: string }) {
+  const validation = useMemo(() => getCachedValidation(value), [value]);
   const errorSummary = validation.issues
     .filter((issue) => issue.severity === 'error')
     .map((issue) => issue.message)
@@ -242,9 +267,9 @@ export function MathText({ value }: { value: string }) {
       ) : null}
     </div>
   );
-}
+});
 
-function QuestionImage({
+const QuestionImage = memo(function QuestionImage({
   url,
   alt,
   width,
@@ -273,12 +298,14 @@ function QuestionImage({
       width={width ?? 1200}
       height={height ?? 800}
       sizes="(max-width: 768px) 92vw, 760px"
+      loading="lazy"
+      decoding="async"
       onError={() => setFailed(true)}
     />
   );
-}
+});
 
-export default function QuestionRenderer({
+function QuestionRendererInner({
   question,
   section = 'all',
   selectedOptionId,
@@ -435,3 +462,43 @@ export default function QuestionRenderer({
     </div>
   );
 }
+
+/* memo: parent (trang exam) re-render mỗi giây vì đồng hồ; QuestionRenderer
+ * giữ nguyên props thì bỏ qua render — tránh parse lại Markdown/KaTeX đắt đỏ.
+ * Lưu ý: `question` phải là object ổn định (useMemo ở caller), còn
+ * trueFalseAnswers là object mới mỗi lần setState nên memo so sánh sâu riêng. */
+function areRendererPropsEqual(
+  prev: Readonly<QuestionRendererProps>,
+  next: Readonly<QuestionRendererProps>,
+) {
+  return (
+    prev.question === next.question &&
+    prev.section === next.section &&
+    prev.selectedOptionId === next.selectedOptionId &&
+    prev.textValue === next.textValue &&
+    prev.showSolutions === next.showSolutions &&
+    prev.onSelectOption === next.onSelectOption &&
+    prev.onTrueFalseChange === next.onTrueFalseChange &&
+    prev.onTextChange === next.onTextChange &&
+    prev.onTextBlur === next.onTextBlur &&
+    shallowTrueFalseEqual(prev.trueFalseAnswers, next.trueFalseAnswers)
+  );
+}
+
+function shallowTrueFalseEqual(
+  a: QuestionRendererProps['trueFalseAnswers'],
+  b: QuestionRendererProps['trueFalseAnswers'],
+) {
+  if (a === b) return true;
+  const aKeys = a ? Object.keys(a) : [];
+  const bKeys = b ? Object.keys(b) : [];
+  if (aKeys.length !== bKeys.length) return false;
+  for (const key of aKeys) {
+    if (a?.[key] !== b?.[key]) return false;
+  }
+  return true;
+}
+
+const QuestionRenderer = memo(QuestionRendererInner, areRendererPropsEqual);
+
+export default QuestionRenderer;

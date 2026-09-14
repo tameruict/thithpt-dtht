@@ -1,19 +1,21 @@
 import { Be_Vietnam_Pro, JetBrains_Mono } from 'next/font/google';
 import type { Metadata } from 'next';
-import { connection } from 'next/server';
 import './globals.css';
 import 'katex/dist/katex.min.css';
 import AppProviders from '@/components/providers/AppProviders';
 
+// Chỉ tải 3 weights thực sự dùng (400 body · 600 semibold · 800 heading).
+// Trước đây tải 6 weights (~2x dung lượng font chặn FCP).
 const beVietnam = Be_Vietnam_Pro({
   subsets: ['latin', 'vietnamese'],
-  weight: ['400', '500', '600', '700', '800', '900'],
+  weight: ['400', '600', '800'],
   display: 'swap',
   variable: '--font-ui',
 });
 
 const jetBrainsMono = JetBrains_Mono({
   subsets: ['latin'],
+  weight: ['400', '600'],
   display: 'swap',
   variable: '--font-mono',
 });
@@ -26,15 +28,14 @@ export const metadata: Metadata = {
   description: 'Nền tảng thi và tự luyện tốt nghiệp THPT.',
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  // A per-request CSP nonce requires dynamic rendering so Next can attach the
-  // nonce to every framework script emitted for this response.
-  await connection();
-
+  // KHÔNG gọi connection() ở đây: nó ép toàn bộ app thành dynamic rendering,
+  // mọi điều hướng đều phải chờ server — nguồn lag lớn nhất của web.
+  // Các trang cần dynamic đã tự khai báo `export const dynamic = 'force-dynamic'`.
   return (
     <html
       lang="vi"

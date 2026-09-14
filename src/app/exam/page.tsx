@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,6 +53,72 @@ function formatTime(seconds: number) {
   return `${minutes}:${remainingSeconds}`;
 }
 
+/* ─── Đồng hồ đếm ngược tự tick ──────────────────────────────────────────
+ * Trước đây `nowMs` nằm ở ExamPage nên TOÀN BỘ trang (40 nút nav + 2
+ * QuestionRenderer parse Markdown/KaTeX) re-render mỗi giây → lag thấy rõ
+ * trên máy yếu. Tách đồng hồ ra component riêng: chỉ badge đồng hồ tự
+ * render lại mỗi giây, parent đứng yên. Hết giờ → gọi onExpire 1 lần để
+ * parent tự nộp bài. */
+function useCountdown(deadlineMs: number | null, durationSeconds: number) {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    // Gần hết giờ mới cần nhịp giây; còn nhiều giờ thì tick thưa cho nhẹ.
+    const msToDeadline = deadlineMs !== null ? deadlineMs - Date.now() : durationSeconds * 1000;
+    const intervalMs = msToDeadline > 600_000 ? 5000 : 1000;
+    const timer = setInterval(() => setNowMs(Date.now()), intervalMs);
+    return () => clearInterval(timer);
+  }, [deadlineMs, durationSeconds]);
+
+  return deadlineMs !== null
+    ? Math.max(Math.floor((deadlineMs - nowMs) / 1000), 0)
+    : durationSeconds;
+}
+
+function ExamTimerBadge({
+  deadlineMs,
+  durationSeconds,
+  onExpire,
+}: {
+  deadlineMs: number | null;
+  durationSeconds: number;
+  onExpire: () => void;
+}) {
+  const timeLeft = useCountdown(deadlineMs, durationSeconds);
+  const expiredRef = useRef(false);
+  const timerWarning = timeLeft <= 60 ? 'critical' : timeLeft <= 300 ? 'warning' : 'normal';
+
+  useEffect(() => {
+    if (timeLeft === 0 && !expiredRef.current) {
+      expiredRef.current = true;
+      onExpire();
+    }
+  }, [timeLeft, onExpire]);
+
+  return (
+    <div
+      className={`${styles.timer} ${timerWarning === 'critical' ? styles.timerCritical : timerWarning === 'warning' ? styles.timerWarning : ''}`}
+      role="timer"
+      aria-live={timerWarning === 'normal' ? 'off' : 'assertive'}
+      aria-atomic="true"
+      aria-label={`Thời gian còn lại ${formatTime(timeLeft)}`}
+    >
+      <Timer size={18} aria-hidden="true" /> <span aria-hidden="true">{formatTime(timeLeft)}</span>
+    </div>
+  );
+}
+
+function ExamTimeText({
+  deadlineMs,
+  durationSeconds,
+}: {
+  deadlineMs: number | null;
+  durationSeconds: number;
+}) {
+  const timeLeft = useCountdown(deadlineMs, durationSeconds);
+  return <strong>{formatTime(timeLeft)}</strong>;
+}
+
 function toRenderableQuestion(question: ExamSessionQuestion): RenderableQuestion {
   return {
     id: question.id,
@@ -100,7 +166,6 @@ export default function ExamPage({
     marked,
     toggleMark,
     candidateInfo: storedCandidateInfo,
-    roomKey: storedRoomKey,
     currentSessionId: storedSessionId,
     examDraft,
     setDraft,
@@ -108,7 +173,6 @@ export default function ExamPage({
   } = useExamStore();
   const currentSessionId = sessionId ?? storedSessionId;
   const candidateInfo = candidate ?? storedCandidateInfo;
-  const roomKey = storedRoomKey ?? (sessionId ? 'SESSION' : null);
 
   // Tạo client 1 lần và tái sử dụng trong mọi handlers
   const supabase = useMemo(() => createClient(), []);
@@ -119,7 +183,6 @@ export default function ExamPage({
   const [trueFalseAnswers, setTrueFalseAnswers] = useState<
     Record<string, TrueFalseDraft>
   >({});
-  const [nowMs, setNowMs] = useState(() => Date.now());
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -206,10 +269,10 @@ export default function ExamPage({
       return;
     }
 
-    if (!roomKey || !currentSessionId) {
+    if (!currentSessionId) {
       router.push('/subjects');
     }
-  }, [candidateInfo, currentSessionId, hasHydrated, roomKey, router]);
+  }, [candidateInfo, currentSessionId, hasHydrated, router]);
 
   useEffect(() => {
     if (!hasHydrated || !currentSessionId) return;
@@ -268,7 +331,6 @@ export default function ExamPage({
         setChoiceAnswers(nextChoices);
         setTextAnswers(nextTexts);
         setTrueFalseAnswers(nextTrueFalse);
-        setNowMs(Date.now());
         setLoadError('');
       })
       .catch((error: unknown) => {
@@ -319,11 +381,8 @@ export default function ExamPage({
     }
   }, [currentQuestion, setCurrentQuestion, totalQuestions]);
 
-  // Đồng hồ: chỉ cần nhịp giây để tính timeLeft từ hạn chót tuyệt đối (due_at).
-  useEffect(() => {
-    const timer = setInterval(() => setNowMs(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+  // Đồng hồ tick nằm trong ExamTimerBadge/ExamTimeText (component riêng tự
+  // render lại mỗi giây). Parent không giữ nowMs nên không re-render cả trang.
 
   const answeredCount = useMemo(
     () =>
@@ -339,12 +398,7 @@ export default function ExamPage({
     [choiceAnswers, questions, textAnswers, trueFalseAnswers],
   );
 
-  const timeLeft =
-    deadlineMs !== null
-      ? Math.max(Math.floor((deadlineMs - nowMs) / 1000), 0)
-      : durationSeconds;
   const room = examData?.room;
-  const timerWarning = timeLeft <= 60 ? 'critical' : timeLeft <= 300 ? 'warning' : 'normal';
 
   const unansweredQuestions = useMemo(
     () =>
@@ -544,18 +598,12 @@ export default function ExamPage({
     await handleSubmit(true);
   }, [handleSubmit]);
 
-  useEffect(() => {
-    if (timeLeft !== 0 || isLoading || !examData || autoSubmittedRef.current) {
-      return;
-    }
-
+  // Tự nộp khi hết giờ: ExamTimerBadge gọi onExpire đúng 1 lần (guard bên trong).
+  const handleExpire = useCallback(() => {
+    if (isLoading || !examData || autoSubmittedRef.current) return;
     autoSubmittedRef.current = true;
-    const timeout = window.setTimeout(() => {
-      void handleSubmit(true);
-    }, 0);
-
-    return () => window.clearTimeout(timeout);
-  }, [examData, handleSubmit, isLoading, timeLeft]);
+    void handleSubmit(true);
+  }, [examData, handleSubmit, isLoading]);
 
   const recordViolation = useCallback(
     (type: string) => {
@@ -712,7 +760,6 @@ export default function ExamPage({
 
   if (
     !hasHydrated ||
-    !roomKey ||
     !candidateInfo ||
     !currentSessionId ||
     tabLockState === 'checking'
@@ -752,15 +799,11 @@ export default function ExamPage({
           </div>
         </div>
         <div className={styles.headerRight}>
-          <div
-            className={`${styles.timer} ${timerWarning === 'critical' ? styles.timerCritical : timerWarning === 'warning' ? styles.timerWarning : ''}`}
-            role="timer"
-            aria-live={timerWarning === 'normal' ? 'off' : 'assertive'}
-            aria-atomic="true"
-            aria-label={`Thời gian còn lại ${formatTime(timeLeft)}`}
-          >
-            <Timer size={18} aria-hidden="true" /> <span aria-hidden="true">{formatTime(timeLeft)}</span>
-          </div>
+          <ExamTimerBadge
+            deadlineMs={deadlineMs}
+            durationSeconds={durationSeconds}
+            onExpire={handleExpire}
+          />
           <div className={styles.connection} role="status" aria-live="polite">
             <span className={`${styles.connectionDot} ${saveStatus === 'error' ? styles.connectionError : ''}`} aria-hidden="true"></span>
             <span>{
@@ -1127,7 +1170,7 @@ export default function ExamPage({
             )}
 
             <div className={styles.reviewFooter}>
-              <p>Thời gian còn lại: <strong>{formatTime(timeLeft)}</strong></p>
+              <p>Thời gian còn lại: <ExamTimeText deadlineMs={deadlineMs} durationSeconds={durationSeconds} /></p>
               <div className={styles.reviewActions}>
                 <button className="btn secondary" onClick={() => setShowReviewPanel(false)}>
                   Quay lại làm bài
