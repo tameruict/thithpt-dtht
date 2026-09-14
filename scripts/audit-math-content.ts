@@ -194,6 +194,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  console.error(error instanceof Error ? (error.stack ?? error.message) : JSON.stringify(error));
   process.exitCode = 1;
 });

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Moon, Sun, Clock, BookOpen, Award, ChevronDown, ChevronUp } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
@@ -18,6 +19,7 @@ import QuestionRenderer from '@/components/question/QuestionRenderer';
 import type { RenderableQuestion } from '@/components/question/QuestionRenderer';
 import { formatHanoiDateTime } from '@/lib/datetime';
 import styles from '@/styles/result.module.css';
+import StudentNav from '@/components/ui/StudentNav';
 
 /* ─── Types ──────────────────────────────────────────── */
 type ReviewFilter = 'all' | 'correct' | 'wrong' | 'unanswered';
@@ -55,8 +57,8 @@ function ScoreDonut({ percent, score10 }: { percent: number; score10: string }) 
   }, [circumference, percent]);
 
   return (
-    <div className={styles.donutWrap}>
-      <svg viewBox="0 0 180 180">
+    <div className={styles.donutWrap} role="img" aria-label={`Điểm ${score10} trên 10`}>
+      <svg viewBox="0 0 180 180" aria-hidden="true">
         <defs>
           <linearGradient id="scoreGradient" x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" stopColor="var(--primary)" />
@@ -266,15 +268,17 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
     finishSession,
     clearDraft,
     candidateInfo,
-    roomKey,
-    currentSessionId: storedSessionId,
   } = useExamStore();
-  const currentSessionId = sessionId ?? storedSessionId;
+  // The canonical /result route is always the history list. A stored exam
+  // session must not silently turn that route into a detail page.
+  const currentSessionId = sessionId;
   const supabase = useMemo(() => createClient(), []);
   const [review, setReview] = useState<SessionReview | null>(null);
+  const [history, setHistory] = useState<Array<{ id: string; status: string; score: number | null; max_score: number; started_at: string; submitted_at: string | null; exam_rooms?: { name: string; subject_code: string } | { name: string; subject_code: string }[] | null }>>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isScoring, setIsScoring] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all');
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
@@ -289,10 +293,35 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
       return;
     }
 
-    if (hasHydrated && (!currentSessionId || (!sessionId && !roomKey))) {
-      router.push('/');
-    }
-  }, [candidateInfo, currentSessionId, hasHydrated, roomKey, router, sessionId]);
+  }, [candidateInfo, hasHydrated, router, sessionId]);
+
+  // Canonical /result is a history list; detail remains available at /result/:sessionId.
+  useEffect(() => {
+    if (!hasHydrated || !candidateInfo || currentSessionId) return;
+    let mounted = true;
+    supabase.auth.getUser().then(async ({ data: authData, error: authError }) => {
+      if (!mounted) return;
+      if (authError || !authData.user) {
+        setLoadError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+        setIsLoading(false);
+        return;
+      }
+      const { data, error } = await supabase
+        .from('exam_sessions')
+        .select('id,status,score,max_score,started_at,submitted_at,exam_rooms(name,subject_code)')
+        .eq('student_id', authData.user.id)
+        .order('started_at', { ascending: false })
+        .limit(50);
+        if (!mounted) return;
+        if (error) setLoadError(error.message);
+        else {
+          setLoadError('');
+          setHistory((data ?? []) as typeof history);
+        }
+        setIsLoading(false);
+      });
+    return () => { mounted = false; };
+  }, [candidateInfo, currentSessionId, hasHydrated, reloadKey, supabase]);
 
   useEffect(() => {
     if (!hasHydrated || !currentSessionId) return;
@@ -336,7 +365,7 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
     return () => {
       mounted = false;
     };
-  }, [currentSessionId, hasHydrated, supabase]);
+  }, [currentSessionId, hasHydrated, reloadKey, supabase]);
 
   const isPractice = (review?.session.roomCode ?? '')
     .toUpperCase()
@@ -396,14 +425,68 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
     router.push('/subjects');
   };
 
+  const handleRetry = () => {
+    setLoadError('');
+    setIsLoading(true);
+    setReloadKey((value) => value + 1);
+  };
+
   if (!hasHydrated || (!candidateInfo && !sessionId)) return null;
+
+  if (!currentSessionId) {
+    return (
+      <div className={styles.screen}>
+        <StudentNav />
+        <h1 className={styles.title} id="result-title">Lịch sử kết quả</h1>
+        <main id="main" tabIndex={-1} className={styles.center} aria-labelledby="result-title">
+          <section className={styles.card} aria-label="Danh sách phiên thi">
+            <h2>Các bài đã hoàn thành</h2>
+            <div className={styles.body}>
+              {isLoading && <p className={styles.successMessage} role="status">Đang tải lịch sử bài thi...</p>}
+              {!isLoading && loadError && (
+                <div className={styles.feedbackState} role="alert">
+                  <p className={styles.errorText}>{loadError}</p>
+                  <button className="btn outline small" type="button" onClick={handleRetry}>
+                    Thử tải lại
+                  </button>
+                </div>
+              )}
+              {!isLoading && !loadError && history.length === 0 && (
+                <div className={styles.feedbackState}>
+                  <p className={styles.emptyReviewNotice}>Chưa có bài thi nào. Hãy bắt đầu một phòng thi để xem kết quả tại đây.</p>
+                  <Link className="btn" href="/subjects">Bắt đầu thi thử</Link>
+                </div>
+              )}
+              {!isLoading && !loadError && history.length > 0 && (
+                <ul className={styles.historyList}>
+                  {history.map((item) => {
+                    const room = Array.isArray(item.exam_rooms) ? item.exam_rooms[0] : item.exam_rooms;
+                    return (
+                      <li key={item.id} className={styles.historyItem}>
+                        <div><strong>{room?.subject_code ?? 'Môn thi'}</strong><span>{room?.name ?? 'Phiên thi'} · {formatHanoiDateTime(item.submitted_at ?? item.started_at)}</span></div>
+                        <b>{typeof item.score === 'number' ? `${item.score.toFixed(2)} / ${item.max_score}` : item.status}</b>
+                        <Link className="btn outline small" href={`/result/${item.id}`}>Xem chi tiết</Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </section>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.screen}>
+      <StudentNav />
       <div className={styles.pageTools}>
         <button
           className="theme-toggle"
           type="button"
+          aria-label={theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+          aria-pressed={theme === 'dark'}
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
         >
           <span className="icon">
@@ -412,8 +495,8 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
           <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
         </button>
       </div>
-      <h1 className={styles.title}>KẾT QUẢ PHIÊN THI</h1>
-      <div className={styles.center}>
+      <h1 className={styles.title} id="result-title">Kết quả phiên thi</h1>
+      <main id="main" tabIndex={-1} className={styles.center} aria-labelledby="result-title">
         <div className={styles.mainLayout}>
           {/* ─── Loading / Error card ─── */}
           {(isLoading || loadError) && (
@@ -427,7 +510,14 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
                       : 'Đang tải kết quả từ Supabase...'}
                   </p>
                 )}
-                {loadError && <p className={styles.errorText}>{loadError}</p>}
+                {loadError && (
+                  <div className={styles.feedbackState} role="alert">
+                    <p className={styles.errorText}>{loadError}</p>
+                    <button className="btn outline small" type="button" onClick={handleRetry}>
+                      Thử tải lại
+                    </button>
+                  </div>
+                )}
               </div>
             </section>
           )}
@@ -436,8 +526,8 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
           {!isLoading && !loadError && review && (
             <>
               {/* Score Hero Card */}
-              <section className={styles.card}>
-                <h2>
+              <section className={styles.card} aria-labelledby="result-score-heading">
+                <h2 id="result-score-heading">
                   {subjectName} — {examRoomName}
                 </h2>
                 {review.session.gradingStatus === 'pending_manual' && (
@@ -487,42 +577,49 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
                 </div>
 
                 {/* Meta tags */}
-                <div className={styles.metaBar}>
-                  <span className={styles.metaTag}>
-                    <Clock size={14} />
+                <ul className={styles.metaBar} aria-label="Thông tin phiên thi">
+                  <li className={styles.metaTag}>
+                    <Clock size={14} aria-hidden="true" />
                     Thời gian: {timeTaken}
-                  </span>
-                  <span className={styles.metaTag}>
-                    <BookOpen size={14} />
+                  </li>
+                  <li className={styles.metaTag}>
+                    <BookOpen size={14} aria-hidden="true" />
                     {resultStats.answered} / {resultStats.total} câu đã trả lời
-                  </span>
-                  <span className={styles.metaTag}>
-                    <Award size={14} />
+                  </li>
+                  <li className={styles.metaTag}>
+                    <Award size={14} aria-hidden="true" />
                     Lần thi thứ {review.session.attemptNumber}
-                  </span>
+                  </li>
                   {review.session.submittedAt ? (
-                    <span className={styles.metaTag}>
-                      <Clock size={14} />
+                    <li className={styles.metaTag}>
+                      <Clock size={14} aria-hidden="true" />
                       Nộp lúc: {formatHanoiDateTime(review.session.submittedAt)}
-                    </span>
+                    </li>
                   ) : null}
-                </div>
+                </ul>
               </section>
 
               {/* Score Breakdown by Type */}
               {typeBreakdowns.length > 0 && (
-                <section className={styles.card}>
-                  <h2>Phân tích điểm theo dạng câu hỏi</h2>
-                  <div className={styles.breakdownGrid}>
+                <section className={styles.card} aria-labelledby="result-breakdown-heading">
+                  <h2 id="result-breakdown-heading">Phân tích điểm theo dạng câu hỏi</h2>
+                  <ul className={styles.breakdownGrid} aria-label="Điểm theo dạng câu hỏi">
                     {typeBreakdowns.map((b) => {
                       const pct = b.max > 0 ? (b.earned / b.max) * 100 : 0;
                       return (
-                        <div key={b.type} className={styles.breakdownItem}>
+                        <li key={b.type} className={styles.breakdownItem}>
                           <div className={styles.breakdownType}>{b.label}</div>
                           <div className={styles.breakdownScore}>
                             {b.earned.toFixed(1)} <span>/ {b.max.toFixed(1)} điểm</span>
                           </div>
-                          <div className={styles.breakdownBar}>
+                          <div
+                            className={styles.breakdownBar}
+                            role="progressbar"
+                            aria-valuenow={Math.round(pct)}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-label={`${b.label}: ${b.earned.toFixed(1)} trên ${b.max.toFixed(1)} điểm`}
+                          >
                             <div
                               className={styles.breakdownBarFill}
                               style={{ width: `${pct}%` }}
@@ -531,10 +628,10 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
                           <div className={styles.breakdownCount}>
                             {b.correct} đúng · {b.wrong} sai · {b.unanswered} bỏ trống — {b.total} câu
                           </div>
-                        </div>
+                        </li>
                       );
                     })}
-                  </div>
+                  </ul>
                 </section>
               )}
 
@@ -554,10 +651,10 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
                   </p>
                 </section>
               ) : (
-                <section className={styles.card}>
+                <section className={styles.card} aria-labelledby="result-review-heading">
                   <div className={styles.reviewHeader}>
-                    <h3 className={styles.reviewTitle}>Xem lại bài làm &amp; đáp án</h3>
-                    <div className={styles.reviewFilter}>
+                    <h3 className={styles.reviewTitle} id="result-review-heading">Xem lại bài làm &amp; đáp án</h3>
+                    <div className={styles.reviewFilter} role="tablist" aria-label="Lọc câu hỏi theo kết quả">
                       {(
                         [
                           ['all', 'Tất cả'],
@@ -569,6 +666,8 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
                         <button
                           key={value}
                           type="button"
+                          role="tab"
+                          aria-selected={reviewFilter === value}
                           className={`${styles.filterBtn} ${
                             reviewFilter === value ? styles.filterBtnActive : ''
                           }`}
@@ -614,6 +713,8 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
                           <button
                             type="button"
                             className={styles.reviewItemHead}
+                            aria-expanded={isExpanded}
+                            aria-controls={`review-body-${item.question.id}`}
                             onClick={() => toggleExpand(item.question.id)}
                           >
                             <span className={styles.reviewItemNo}>
@@ -643,7 +744,7 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
                           </button>
 
                           {isExpanded && (
-                            <div className={styles.reviewItemBody}>
+                            <div className={styles.reviewItemBody} id={`review-body-${item.question.id}`}>
                               <QuestionRenderer
                                 question={toRenderableQuestion(item.question)}
                                 selectedOptionId={item.answer?.selectedOptionId ?? undefined}
@@ -676,13 +777,13 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
               {/* Finish button */}
               <div className={styles.actions}>
                 <button className="btn" type="button" onClick={handleFinish}>
-                  Hoàn thành
+                  Về trang chọn môn
                 </button>
               </div>
             </>
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 }

@@ -1,10 +1,16 @@
 import { redirect } from 'next/navigation';
+import type { Metadata } from 'next';
 import { requireUser } from '@/lib/supabase/session';
 import { loadCandidateProfile } from '@/lib/supabase/user-profile';
 import type { CandidateInfo } from '@/store/useExamStore';
 import ExamPage from '../page';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = {
+  title: 'Bài thi đang diễn ra',
+  description: 'Hoàn thành các câu hỏi trong phiên thi hiện tại.',
+};
 
 export default async function SessionExamPage({
   params,

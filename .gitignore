@@ -13,6 +13,11 @@
 # testing
 /coverage
 /.codex-tmp/
+/artifacts/
+
+# local tooling and reference checkouts
+/.mcp.json
+/ui-ux-pro-max-skill/
 
 # next.js
 /.next/

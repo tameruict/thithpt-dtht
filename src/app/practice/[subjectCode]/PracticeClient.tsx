@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, BookOpenCheck, Play } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import {
@@ -12,6 +13,7 @@ import {
 } from '@/lib/supabase/exam-data';
 import { useExamStore } from '@/store/useExamStore';
 import styles from '@/styles/practice.module.css';
+import StudentNav from '@/components/ui/StudentNav';
 
 const QUESTION_COUNTS = [10, 20, 30, 40] as const;
 
@@ -83,21 +85,26 @@ export default function PracticeClient({ subjectCode }: { subjectCode: string })
 
   return (
     <div className={styles.page}>
+      <StudentNav />
       <header className={styles.header}>
-        <button type="button" className="btn outline" onClick={() => router.back()}>
-          <ArrowLeft size={16} /> Quay lại
+        <button type="button" className="btn outline small" onClick={() => router.back()} aria-label="Quay lại trang trước">
+          <ArrowLeft size={16} aria-hidden="true" /> Quay lại
         </button>
-        <span className={styles.badge}><BookOpenCheck size={16} /> Tự luyện</span>
+        <span className={styles.badge}><BookOpenCheck size={16} aria-hidden="true" /> Tự luyện · không tính điểm thi</span>
       </header>
 
-      <section className={styles.card} aria-busy={loading}>
-        <h1>Tự luyện {practice?.subjectName ?? subjectCode}</h1>
+      <main id="main" tabIndex={-1} className={styles.card} aria-labelledby="practice-title" aria-busy={loading}>
+        <h1 id="practice-title">Tự luyện {practice?.subjectName ?? subjectCode}</h1>
         <p>
           Hệ thống tự chọn câu đã duyệt trên máy chủ. Client không thể gửi danh sách
           mã câu hỏi tùy ý.
         </p>
+        <p className={styles.practiceNote}>
+          Khu tự luyện dùng lượt riêng, tách khỏi phòng thi chính thức. Điểm tự luyện
+          chỉ để bạn theo dõi tiến bộ.
+        </p>
 
-        <dl className={styles.stats}>
+        <dl className={styles.stats} aria-label="Số liệu tự luyện">
           <div><dt>Số lượt hiện có</dt><dd>{attemptBalance}</dd></div>
           <div><dt>Chi phí mỗi phiên</dt><dd>{practice?.attemptCost ?? 3}</dd></div>
           <div><dt>Câu đã duyệt</dt><dd>{practice?.approvedQuestionCount ?? 0}</dd></div>
@@ -142,27 +149,38 @@ export default function PracticeClient({ subjectCode }: { subjectCode: string })
           </div>
         </fieldset>
 
-        {error && <p className={styles.error} role="alert" aria-live="assertive">{error}</p>}
+        <div aria-live="assertive">
+          {error && <p className={styles.error} role="alert">{error}</p>}
+        </div>
         {!loading && !practice?.available && !error && (
-          <p className={styles.error} role="status">
-            Môn này chưa có phòng tự luyện sẵn sàng.
-          </p>
+          <div className={styles.error} role="status">
+            <p>Môn này chưa có phòng tự luyện sẵn sàng.</p>
+            <Link className="btn outline small" href="/subjects">Chọn môn khác</Link>
+          </div>
         )}
 
-        <button
-          type="button"
-          className="btn"
-          disabled={
-            loading ||
-            starting ||
-            !practice?.available ||
-            attemptBalance < (practice?.attemptCost ?? 3)
-          }
-          onClick={handleStart}
-        >
-          <Play size={17} /> {starting ? 'Đang tạo phiên...' : 'Bắt đầu tự luyện'}
-        </button>
-      </section>
+        <div className={styles.startRow}>
+          <button
+            type="button"
+            className="btn"
+            disabled={
+              loading ||
+              starting ||
+              !practice?.available ||
+              attemptBalance < (practice?.attemptCost ?? 3)
+            }
+            onClick={handleStart}
+          >
+            <Play size={17} aria-hidden="true" /> {starting ? 'Đang tạo phiên...' : 'Bắt đầu tự luyện'}
+          </button>
+          {!loading && practice?.available && attemptBalance < (practice?.attemptCost ?? 3) && (
+            <p className={styles.balanceWarn} role="status">
+              Bạn không đủ lượt tự luyện. Hãy mua thêm key để tiếp tục.{' '}
+              <Link href="/purchase">Mua thêm key</Link>
+            </p>
+          )}
+        </div>
+      </main>
     </div>
   );
 }

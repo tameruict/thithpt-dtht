@@ -11,7 +11,9 @@ import {
 } from '@/lib/supabase/user-profile';
 import { useExamStore } from '@/store/useExamStore';
 import { formatHanoiDateTime, hanoiTodayInputValue } from '@/lib/datetime';
+import { maskKey } from '@/lib/device';
 import styles from '@/styles/profile.module.css';
+import StudentNav from '@/components/ui/StudentNav';
 
 type StoreState = ReturnType<typeof useExamStore.getState>;
 type CandidateInfo = NonNullable<StoreState['candidateInfo']>;
@@ -33,6 +35,9 @@ type ProfileContentProps = {
   examHistory: StoreState['examHistory'];
   purchaseOrders: ProfilePurchaseOrderRecord[];
   updateProfile: StoreState['updateProfile'];
+  dataStatus: 'loading' | 'ready' | 'error';
+  dataError: string;
+  onRetryData: () => void;
   onBack: () => void;
 };
 
@@ -64,10 +69,10 @@ type ProfilePurchaseOrderRecord = {
 };
 
 const genderOptions = [
-  { value: '', label: 'Chá»n giá»›i tÃ­nh' },
+  { value: '', label: 'Chọn giới tính' },
   { value: 'male', label: 'Nam' },
-  { value: 'female', label: 'Ná»¯' },
-  { value: 'other', label: 'KhÃ¡c' },
+  { value: 'female', label: 'Nữ' },
+  { value: 'other', label: 'Khác' },
 ];
 
 function toDateInputValue(value: string) {
@@ -88,10 +93,10 @@ function toGenderValue(value: string) {
   const normalized = value.trim().toLowerCase();
 
   if (normalized === 'male' || normalized === 'nam') return 'male';
-  if (normalized === 'female' || normalized === 'ná»¯' || normalized === 'nu') {
+  if (normalized === 'female' || normalized === 'nữ' || normalized === 'nu') {
     return 'female';
   }
-  if (normalized === 'other' || normalized === 'khÃ¡c' || normalized === 'khac') {
+  if (normalized === 'other' || normalized === 'khác' || normalized === 'khac') {
     return 'other';
   }
 
@@ -126,6 +131,13 @@ export default function ProfilePage() {
   const [usedKeys, setUsedKeys] = useState<string[]>([]);
   const [examHistory, setExamHistory] = useState<StoreState['examHistory']>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<ProfilePurchaseOrderRecord[]>([]);
+  const [dataStatus, setDataStatus] = useState<'loading' | 'ready' | 'error'>(
+    () => (hasSupabaseEnv() ? 'loading' : 'error'),
+  );
+  const [dataError, setDataError] = useState(() =>
+    hasSupabaseEnv() ? '' : 'Chưa cấu hình Supabase nên không thể tải dữ liệu hồ sơ.',
+  );
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (hasHydrated && !candidateInfo) {
@@ -134,7 +146,10 @@ export default function ProfilePage() {
   }, [hasHydrated, candidateInfo, router]);
 
   useEffect(() => {
-    if (!hasHydrated || !hasSupabaseEnv()) return;
+    if (!hasHydrated) return;
+    if (!hasSupabaseEnv()) {
+      return;
+    }
 
     const currentProfile = useExamStore.getState().candidateInfo;
     if (!currentProfile) return;
@@ -201,6 +216,11 @@ export default function ProfilePage() {
 
         if (!isMounted) return;
 
+        const queryError = keyResult.error ?? sessionResult.error ?? orderResult.error;
+        if (queryError) {
+          throw queryError;
+        }
+
         const keyRows = (keyResult.data ?? []) as unknown as ProfileKeyRecord[];
         setActiveKeys(
           keyRows
@@ -236,7 +256,7 @@ export default function ProfilePage() {
 
             return {
               id: session.id,
-              subject: room?.subject_code ?? 'ChÆ°a rÃµ mÃ´n',
+              subject: room?.subject_code ?? 'Chưa rõ môn',
               examSet: room?.name,
               score,
               date: formatHanoiDateTime(
@@ -245,15 +265,30 @@ export default function ProfilePage() {
             };
           }),
         );
+        setDataStatus('ready');
       })
-      .catch(() => undefined);
+      .catch((loadError: unknown) => {
+        if (!isMounted) return;
+        setDataStatus('error');
+        setDataError(
+          loadError instanceof Error
+            ? loadError.message
+            : 'Không thể tải dữ liệu hồ sơ. Vui lòng thử lại.',
+        );
+      });
 
     return () => {
       isMounted = false;
     };
-  }, [hasHydrated, login, router]);
+  }, [hasHydrated, login, reloadKey, router]);
 
-  if (!hasHydrated || !candidateInfo) return null;
+  if (!hasHydrated || !candidateInfo) {
+    return (
+      <main id="main" tabIndex={-1} className={styles.loadingState} role="status" aria-live="polite">
+        Đang tải hồ sơ thí sinh…
+      </main>
+    );
+  }
 
   return (
     <ProfileContent
@@ -264,6 +299,9 @@ export default function ProfilePage() {
       examHistory={examHistory}
       purchaseOrders={purchaseOrders}
       updateProfile={updateProfile}
+      dataStatus={dataStatus}
+      dataError={dataError}
+      onRetryData={() => setReloadKey((current) => current + 1)}
       onBack={() => router.push('/subjects')}
     />
   );
@@ -276,9 +314,13 @@ function ProfileContent({
   examHistory,
   purchaseOrders,
   updateProfile,
+  dataStatus,
+  dataError,
+  onRetryData,
   onBack,
 }: ProfileContentProps) {
   const [draftForm, setDraftForm] = useState<ProfileFormState | null>(null);
+  const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>(
     'idle',
   );
@@ -305,13 +347,13 @@ function ProfileContent({
     const fullName = form.name.trim();
     if (!fullName) {
       setStatus('error');
-      setFeedback('Vui lÃ²ng nháº­p há» vÃ  tÃªn há»c sinh.');
+      setFeedback('Vui lòng nhập họ và tên học sinh.');
       return;
     }
 
     if (!hasSupabaseEnv()) {
       setStatus('error');
-      setFeedback('ChÆ°a cáº¥u hÃ¬nh Supabase nÃªn khÃ´ng thá»ƒ lÆ°u há»“ sÆ¡.');
+      setFeedback('Chưa cấu hình Supabase nên không thể lưu hồ sơ.');
       return;
     }
 
@@ -324,7 +366,7 @@ function ProfileContent({
 
       if (!data.user) {
         throw new Error(
-          'PhiÃªn Ä‘Äƒng nháº­p Supabase Ä‘Ã£ háº¿t háº¡n. Vui lÃ²ng Ä‘Äƒng nháº­p láº¡i Ä‘á»ƒ lÆ°u há»“ sÆ¡.',
+          'Phiên đăng nhập Supabase đã hết hạn. Vui lòng đăng nhập lại để lưu hồ sơ.',
         );
       }
 
@@ -353,12 +395,12 @@ function ProfileContent({
       });
       setDraftForm(null);
       setStatus('success');
-      setFeedback('ÄÃ£ lÆ°u thÃ´ng tin vÃ o cÆ¡ sá»Ÿ dá»¯ liá»‡u.');
+      setFeedback('Đã lưu thông tin vào cơ sở dữ liệu.');
     } catch (saveError) {
       const message =
         saveError instanceof Error
           ? saveError.message
-          : 'KhÃ´ng thá»ƒ lÆ°u há»“ sÆ¡ há»c sinh.';
+          : 'Không thể lưu hồ sơ học sinh.';
       setStatus('error');
       setFeedback(message);
     }
@@ -366,30 +408,52 @@ function ProfileContent({
 
   return (
     <div className={styles.container}>
-      <div className={styles.header}>
-        <h1 className={styles.title}>Quáº£n lÃ½ há»“ sÆ¡</h1>
+      <StudentNav />
+      <header className={styles.header}>
+        <h1 className={styles.title}>Quản lý hồ sơ</h1>
         <button className="btn outline" type="button" onClick={onBack}>
-          Quay láº¡i chá»n mÃ´n
+          Quay lại chọn môn
         </button>
-      </div>
+      </header>
 
-      <div className={styles.grid}>
-        <div className={styles.card}>
-          <h2 className={styles.sectionTitle}>ThÃ´ng tin há»c sinh</h2>
+      <main id="main" tabIndex={-1} className={styles.grid} aria-label="Hồ sơ thí sinh">
+        {dataStatus === 'error' ? (
+          <section className={styles.dataError} role="alert" aria-labelledby="profile-data-error-title">
+            <div>
+              <h2 id="profile-data-error-title">Không thể tải đầy đủ dữ liệu hồ sơ</h2>
+              <p>{dataError}</p>
+            </div>
+            <button className="btn secondary" type="button" onClick={onRetryData}>
+              Thử lại
+            </button>
+          </section>
+        ) : null}
+        {dataStatus === 'loading' ? (
+          <p className={styles.dataLoading} role="status" aria-live="polite">
+            Đang đồng bộ key, lịch sử thi và giao dịch…
+          </p>
+        ) : null}
+        <section className={styles.card} aria-labelledby="profile-info-heading">
+          <h2 className={styles.sectionTitle} id="profile-info-heading">Thông tin học sinh</h2>
           <form onSubmit={handleSave}>
             <div className={styles.formGroup}>
-              <label className={styles.label}>Sá»‘ bÃ¡o danh / MÃ£ thÃ­ sinh</label>
+              <label className={styles.label} htmlFor="profile-code">Số báo danh / Mã thí sinh</label>
               <input
+                id="profile-code"
+                name="candidateCode"
                 type="text"
                 className={styles.input}
                 value={candidateInfo.code}
                 disabled
+                aria-disabled="true"
               />
             </div>
 
             <div className={styles.formGroup}>
-              <label className={styles.label}>Há» vÃ  tÃªn</label>
+              <label className={styles.label} htmlFor="profile-name">Họ và tên</label>
               <input
+                id="profile-name"
+                name="fullName"
                 type="text"
                 required
                 className={styles.input}
@@ -401,8 +465,10 @@ function ProfileContent({
 
             <div className={styles.formGrid}>
               <div className={styles.formGroup}>
-                <label className={styles.label}>NgÃ y sinh</label>
+                <label className={styles.label} htmlFor="profile-dob">Ngày sinh</label>
                 <input
+                  id="profile-dob"
+                  name="dob"
                   type="date"
                   required
                   max={today}
@@ -413,8 +479,10 @@ function ProfileContent({
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.label}>Giá»›i tÃ­nh</label>
+                <label className={styles.label} htmlFor="profile-gender">Giới tính</label>
                 <select
+                  id="profile-gender"
+                  name="gender"
                   className={styles.input}
                   value={form.gender}
                   onChange={updateField('gender')}
@@ -429,8 +497,10 @@ function ProfileContent({
             </div>
 
             <div className={styles.formGroup}>
-              <label className={styles.label}>TrÆ°á»ng há»c</label>
+              <label className={styles.label} htmlFor="profile-school">Trường học</label>
               <input
+                id="profile-school"
+                name="school"
                 type="text"
                 className={styles.input}
                 value={form.school}
@@ -441,94 +511,141 @@ function ProfileContent({
 
             <div className={styles.formGrid}>
               <div className={styles.formGroup}>
-                <label className={styles.label}>Tá»‰nh / ThÃ nh phá»‘</label>
+                <label className={styles.label} htmlFor="profile-province">Tỉnh / Thành phố</label>
                 <input
+                  id="profile-province"
+                  name="province"
                   type="text"
                   className={styles.input}
                   value={form.province}
+                  autoComplete="address-level1"
                   onChange={updateField('province')}
                 />
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.label}>Quáº­n / Huyá»‡n</label>
+                <label className={styles.label} htmlFor="profile-district">Quận / Huyện</label>
                 <input
+                  id="profile-district"
+                  name="district"
                   type="text"
                   className={styles.input}
                   value={form.district}
+                  autoComplete="address-level2"
                   onChange={updateField('district')}
                 />
               </div>
             </div>
 
             <div className={styles.formGroup}>
-              <label className={styles.label}>Sá»‘ Ä‘iá»‡n thoáº¡i</label>
+              <label className={styles.label} htmlFor="profile-phone">Số điện thoại</label>
               <input
+                id="profile-phone"
+                name="phone"
                 type="tel"
                 className={styles.input}
                 value={form.phone}
                 autoComplete="tel"
+                inputMode="tel"
                 onChange={updateField('phone')}
               />
             </div>
 
-            {feedback && (
-              <p
-                className={`${styles.feedback} ${
-                  status === 'error' ? styles.feedbackError : styles.feedbackSuccess
-                }`}
-              >
-                {feedback}
-              </p>
-            )}
+            <div aria-live="polite">
+              {feedback && (
+                <p
+                  role={status === 'error' ? 'alert' : 'status'}
+                  className={`${styles.feedback} ${
+                    status === 'error' ? styles.feedbackError : styles.feedbackSuccess
+                  }`}
+                >
+                  {feedback}
+                </p>
+              )}
+            </div>
 
             <button
               type="submit"
               className={`btn ${styles.submitBtn}`}
               disabled={status === 'saving'}
             >
-              {status === 'saving' ? 'Äang lÆ°u...' : 'LÆ°u thay Ä‘á»•i'}
+              {status === 'saving' ? 'Đang lưu...' : 'Lưu thay đổi'}
             </button>
           </form>
-        </div>
+        </section>
 
         <div className={styles.stack}>
-          <div className={styles.card}>
-            <h2 className={styles.sectionTitle}>Quáº£n lÃ½ key phÃ²ng thi</h2>
+          <section className={styles.card} aria-labelledby="profile-keys-heading">
+            <h2 className={styles.sectionTitle} id="profile-keys-heading">Quản lý key phòng thi</h2>
 
-            <h3 className={styles.subsectionTitle}>Äang sá»­ dá»¥ng</h3>
+            <h3 className={styles.subsectionTitle}>Đang sử dụng</h3>
+            <p className={styles.muted}>
+              Key đã mask để chống chia sẻ. Bấm Hiện để xem, Gia hạn để cộng
+              lượt vào key cũ.
+            </p>
             {activeKeys.length > 0 ? (
-              activeKeys.map((key) => (
-                <div key={key.code} className={styles.keyStat}>
-                  <span className={styles.code}>Key: {key.code}</span>
-                  <span className={styles.attempts}>
-                    CÃ²n láº¡i: {key.remainingAttempts} lÆ°á»£t
-                  </span>
-                </div>
-              ))
+              <ul className={styles.keyList}>
+                {activeKeys.map((key) => {
+                  const revealed = revealedKeys.has(key.code);
+                  return (
+                    <li key={key.code} className={styles.keyStat}>
+                      <span className={styles.code}>
+                        Key: {revealed ? key.code : maskKey(key.code)}
+                      </span>
+                      <span className={styles.attempts}>
+                        Còn lại: {key.remainingAttempts} lượt
+                      </span>
+                      <span className={styles.keyActions}>
+                        <button
+                          type="button"
+                          className="btn outline small"
+                          onClick={() =>
+                            setRevealedKeys((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(key.code)) next.delete(key.code);
+                              else next.add(key.code);
+                              return next;
+                            })
+                          }
+                        >
+                          {revealed ? 'Ẩn' : 'Hiện'}
+                        </button>
+                        <Link
+                          className="btn secondary small"
+                          href={`/purchase?topup=${encodeURIComponent(key.code)}`}
+                        >
+                          Gia hạn
+                        </Link>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
             ) : (
-              <div className={styles.emptyState}>KhÃ´ng cÃ³ key nÃ o Ä‘ang dÃ¹ng</div>
+              <div className={styles.emptyState}>Không có key nào đang dùng</div>
             )}
 
             <h3 className={`${styles.subsectionTitle} ${styles.spaced}`}>
-              ÄÃ£ dÃ¹ng háº¿t
+              Đã dùng hết
             </h3>
             {usedKeys.length > 0 ? (
-              usedKeys.map((key) => (
-                <div key={key} className={`${styles.keyStat} ${styles.used}`}>
-                  <span className={styles.code}>Key: {key}</span>
-                  <span className={styles.attempts}>Háº¿t lÆ°á»£t</span>
-                </div>
-              ))
+              <ul className={styles.keyList}>
+                {usedKeys.map((key) => (
+                  <li key={key} className={`${styles.keyStat} ${styles.used}`}>
+                    <span className={styles.code}>Key: {key}</span>
+                    <span className={styles.attempts}>Hết lượt</span>
+                  </li>
+                ))}
+              </ul>
             ) : (
-              <div className={styles.emptyState}>ChÆ°a cÃ³ key nÃ o Ä‘Ã£ dÃ¹ng háº¿t</div>
+              <div className={styles.emptyState}>Chưa có key nào đã dùng hết</div>
             )}
-          </div>
+          </section>
 
-          <div className={styles.card}>
+          <section className={styles.card} aria-labelledby="profile-orders-heading">
             <div className={styles.sectionHeader}>
               <div>
-                <h2 className={styles.sectionTitle}>Lịch sử mua key</h2>
+                <h2 className={styles.sectionTitle} id="profile-orders-heading">Lịch sử mua key</h2>
                 <p className={styles.muted}>
                   Key đã mua được dùng cho exam và practice.
                 </p>
@@ -538,9 +655,9 @@ function ProfileContent({
               </Link>
             </div>
             {purchaseOrders.length > 0 ? (
-              <div className={styles.purchaseList}>
+              <ul className={styles.purchaseList}>
                 {purchaseOrders.map((purchase) => (
-                  <div className={styles.purchaseRow} key={purchase.id}>
+                  <li className={styles.purchaseRow} key={purchase.id}>
                     <div>
                       <strong>{purchase.payment_code}</strong>
                       <span>{formatHanoiDateTime(purchase.created_at)}</span>
@@ -549,22 +666,23 @@ function ProfileContent({
                       {purchase.amount.toLocaleString('vi-VN')} {purchase.currency}
                     </span>
                     <span className={styles.purchaseStatus}>{purchase.status}</span>
-                  </div>
+                  </li>
                 ))}
-              </div>
+              </ul>
             ) : (
               <div className={styles.emptyState}>Chưa có đơn mua key nào</div>
             )}
-          </div>
-          <div className={styles.card}>
-            <h2 className={styles.sectionTitle}>Lá»‹ch sá»­ bÃ i thi</h2>
+          </section>
+          <section className={styles.card} aria-labelledby="profile-history-heading">
+            <h2 className={styles.sectionTitle} id="profile-history-heading">Lịch sử bài thi</h2>
             {examHistory.length > 0 ? (
               <table className={styles.table}>
+                <caption className={styles.visuallyHidden}>Lịch sử các bài thi đã làm</caption>
                 <thead>
                   <tr>
-                    <th>MÃ´n thi</th>
-                    <th>NgÃ y hoÃ n thÃ nh</th>
-                    <th>Äiá»ƒm sá»‘</th>
+                    <th scope="col">Môn thi</th>
+                    <th scope="col">Ngày hoàn thành</th>
+                    <th scope="col">Điểm số</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -586,12 +704,12 @@ function ProfileContent({
               </table>
             ) : (
               <div className={styles.emptyState}>
-                ChÆ°a cÃ³ lá»‹ch sá»­ lÃ m bÃ i nÃ o
+                Chưa có lịch sử làm bài nào
               </div>
             )}
-          </div>
+          </section>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

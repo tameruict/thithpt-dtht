@@ -25,9 +25,9 @@
   justify-content: space-between;
   gap: 18px;
   padding: 9px 18px 9px 22px;
-  border-bottom: 3px solid #fbbf24;
+  border-bottom: 3px solid var(--warning);
   background: var(--header-gradient);
-  color: #FFFFFF;
+  color: #fff;
   box-shadow: 0 12px 28px color-mix(in srgb, var(--header) 28%, transparent);
 }
 
@@ -70,25 +70,25 @@
 }
 
 .timerWarning {
-  border-color: rgba(245, 184, 0, .7);
-  background: rgba(245, 184, 0, .3);
-  box-shadow: 0 0 12px rgba(245, 184, 0, .2);
+  border-color: color-mix(in srgb, var(--warning) 70%, transparent);
+  background: color-mix(in srgb, var(--warning) 30%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--warning) 24%, transparent);
 }
 
 .timerCritical {
-  border-color: rgba(239, 68, 68, .8);
-  background: rgba(239, 68, 68, .4);
+  border-color: color-mix(in srgb, var(--danger) 80%, transparent);
+  background: color-mix(in srgb, var(--danger) 40%, transparent);
   animation: timerPulse 1s ease-in-out infinite;
 }
 
 @keyframes timerPulse {
-  0%, 100% { background: rgba(239, 68, 68, .3); }
-  50% { background: rgba(239, 68, 68, .55); }
+  0%, 100% { background: color-mix(in srgb, var(--danger) 30%, transparent); }
+  50% { background: color-mix(in srgb, var(--danger) 55%, transparent); }
 }
 
 .connectionError {
   background: var(--danger) !important;
-  box-shadow: 0 0 0 4px rgba(239, 68, 68, .18) !important;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 20%, transparent) !important;
 }
 
 /* Tab switch warning toast */
@@ -103,11 +103,11 @@
   gap: 8px;
   padding: 10px 20px;
   border-radius: var(--radius-lg);
-  background: rgba(239, 68, 68, .95);
-  color: #FFFFFF;
+  background: color-mix(in srgb, var(--danger) 94%, transparent);
+  color: #fff;
   font-size: 14px;
   font-weight: 800;
-  box-shadow: 0 12px 30px rgba(239, 68, 68, .35);
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--danger) 38%, transparent);
   animation: slideDown .3s ease;
 }
 
@@ -122,19 +122,19 @@
   gap: 10px;
   padding: 10px 16px;
   border-radius: var(--radius-lg);
-  background: rgba(217, 119, 6, .96);
-  color: #FFFFFF;
+  background: color-mix(in srgb, var(--warning) 94%, transparent);
+  color: #fff;
   font-size: 14px;
   font-weight: 800;
-  box-shadow: 0 12px 30px rgba(217, 119, 6, .35);
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--warning) 38%, transparent);
 }
 
 .fullscreenPrompt button {
   padding: 6px 12px;
-  border: 1px solid rgba(255, 255, 255, .6);
+  border: 1px solid color-mix(in srgb, #fff 60%, transparent);
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, .16);
-  color: #FFFFFF;
+  background: color-mix(in srgb, #fff 16%, transparent);
+  color: #fff;
   font: inherit;
   font-weight: 900;
   font-size: 13px;
@@ -142,7 +142,7 @@
 }
 
 .fullscreenPrompt button:hover {
-  background: rgba(255, 255, 255, .28);
+  background: color-mix(in srgb, #fff 28%, transparent);
 }
 
 @keyframes slideDown {
@@ -289,8 +289,8 @@
 
 .reviewQuestionBtn.reviewMarked {
   border-color: var(--warning);
-  color: #B77900;
-  background: rgba(245, 184, 0, .1);
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
 }
 
 .reviewFooter {
@@ -321,7 +321,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: rgba(255, 255, 255, .9);
+  color: color-mix(in srgb, #fff 90%, transparent);
 }
 
 .connectionDot {
@@ -336,33 +336,42 @@
   min-height: 38px;
   padding: 0 16px;
   border-radius: var(--radius-md);
-  background: #FFFFFF;
+  background: #fff;
   color: var(--header);
   font-size: 13px;
   font-weight: 900;
-  box-shadow: 0 8px 18px rgba(20, 3, 6, .18);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--header) 22%, transparent);
   transition: transform .16s ease, box-shadow .16s ease;
 }
 
 .submitBtn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 10px 22px rgba(20, 3, 6, .24);
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--header) 28%, transparent);
+}
+
+.submitBtn:focus-visible,
+.qNumber:focus-visible,
+.flagBtn:focus-visible,
+.reviewClose:focus-visible,
+.reviewQuestionBtn:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
 }
 
 .headerIconBtn {
   width: 38px;
   height: 38px;
-  border: 1px solid rgba(255, 255, 255, .34);
+  border: 1px solid color-mix(in srgb, #fff 34%, transparent);
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, .1);
-  color: #FFFFFF;
+  background: color-mix(in srgb, #fff 10%, transparent);
+  color: #fff;
   display: grid;
   place-items: center;
   transition: background .16s ease, transform .16s ease;
 }
 
 .headerIconBtn:hover {
-  background: rgba(255, 255, 255, .18);
+  background: color-mix(in srgb, #fff 18%, transparent);
   transform: translateY(-1px);
 }
 
@@ -570,7 +579,7 @@
 }
 
 .questionBlock.answered:not(.current) {
-  box-shadow: inset 3px 0 0 rgba(24, 169, 87, .72);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--success) 72%, transparent);
 }
 
 .questionBlock.marked {
@@ -621,9 +630,9 @@
 }
 
 .flagBtn.marked {
-  border-color: rgba(245, 184, 0, .54);
-  background: rgba(245, 184, 0, .16);
-  color: #B77900;
+  border-color: color-mix(in srgb, var(--warning) 54%, transparent);
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+  color: var(--warning);
 }
 
 .answers {
@@ -727,7 +736,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--surface) 92%, transparent);
-  box-shadow: 0 10px 22px rgba(136, 54, 82, .16);
+  box-shadow: var(--shadow-soft);
   backdrop-filter: blur(4px);
 }
 
@@ -776,19 +785,19 @@
 .qNumber.current {
   border-color: var(--primary);
   background: var(--primary);
-  color: #FFFFFF;
+  color: #fff;
 }
 
 .qNumber.answered {
   border-color: var(--success);
   background: var(--success);
-  color: #FFFFFF;
+  color: #fff;
 }
 
 .qNumber.marked {
   border-color: var(--warning);
   background: var(--warning);
-  color: #1F2937;
+  color: color-mix(in srgb, black 78%, var(--warning));
 }
 
 .legend {
@@ -810,7 +819,7 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #E5E7EB;
+  background: var(--border);
 }
 
 .legendDot.done { background: var(--success); }
@@ -973,5 +982,21 @@
     width: 40px;
     height: 40px;
     flex-basis: 40px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timerCritical,
+  .tabWarning,
+  .reviewOverlay,
+  .reviewPanel {
+    animation: none;
+  }
+
+  .submitBtn,
+  .headerIconBtn,
+  .qNumber,
+  .reviewQuestionBtn {
+    transition: none;
   }
 }

@@ -43,7 +43,6 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <body className={`${beVietnam.variable} ${jetBrainsMono.variable}`}>
-        <a className="skip-link" href="#app">Bỏ qua đến nội dung chính</a>
         <AppProviders>{children}</AppProviders>
       </body>
     </html>

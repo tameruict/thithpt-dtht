@@ -236,7 +236,7 @@ export function MathText({ value }: { value: string }) {
         {validation.normalized}
       </ReactMarkdown>
       {!validation.valid ? (
-        <span className={styles.mathError} role="status">
+        <span className={styles.mathError} role="status" aria-live="polite">
           Công thức cần được quản trị viên kiểm tra.
         </span>
       ) : null}
@@ -319,7 +319,11 @@ export default function QuestionRenderer({
       ) : null}
 
       {showAnswer && question.type === 'multiple_choice' ? (
-        <div className={styles.options}>
+        <div
+          className={styles.options}
+          role="radiogroup"
+          aria-label={`Đáp án Câu ${question.displayNo}`}
+        >
           {question.options.map((option) => (
             <label
               key={option.id}
@@ -358,7 +362,12 @@ export default function QuestionRenderer({
       {showAnswer && question.type === 'true_false' ? (
         <div className={styles.trueFalseList}>
           {question.trueFalseItems.map((item) => (
-            <div key={item.id} className={styles.trueFalseItem}>
+            <div
+              key={item.id}
+              className={styles.trueFalseItem}
+              role="radiogroup"
+              aria-label={`Câu ${question.displayNo} ý ${item.label ?? ''}`}
+            >
               <div>
                 {item.label ? <strong>{item.label}) </strong> : null}
                 <MathText value={item.content} />
@@ -402,15 +411,26 @@ export default function QuestionRenderer({
       ) : null}
 
       {showAnswer && question.type === 'essay' ? (
-        <textarea
-          className={styles.textAnswer}
-          value={textValue}
-          disabled={!onTextChange}
-          onChange={(event) => onTextChange?.(event.target.value)}
-          onBlur={onTextBlur}
-          placeholder="Nhập bài làm"
-          rows={8}
-        />
+        <div>
+          <label
+            htmlFor={`essay-${question.id}`}
+            className={styles.meta}
+            style={{ display: 'block' }}
+          >
+            Bài làm tự luận Câu {question.displayNo}
+          </label>
+          <textarea
+            id={`essay-${question.id}`}
+            name={`essay-${question.id}`}
+            className={styles.textAnswer}
+            value={textValue}
+            disabled={!onTextChange}
+            onChange={(event) => onTextChange?.(event.target.value)}
+            onBlur={onTextBlur}
+            placeholder="Nhập bài làm"
+            rows={8}
+          />
+        </div>
       ) : null}
     </div>
   );

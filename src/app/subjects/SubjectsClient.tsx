@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FileText, KeyRound, LogOut, Moon, ShieldCheck, Sun } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
@@ -17,6 +18,7 @@ import {
 import { useExamStore, type CandidateInfo } from '@/store/useExamStore';
 import { formatHanoiTime } from '@/lib/datetime';
 import styles from '@/styles/subjects.module.css';
+import StudentNav from '@/components/ui/StudentNav';
 
 const genderLabels: Record<string, string> = {
   male: 'Nam',
@@ -58,6 +60,7 @@ export default function SubjectsClient({
   const [practice, setPractice] = useState<PracticeAvailability[]>([]);
   const [isLoading, setIsLoading] = useState(hasConfiguredSupabase);
   const [loadError, setLoadError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [activeSession, setActiveSession] = useState<ActiveSessionInfo | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -129,14 +132,14 @@ export default function SubjectsClient({
     return () => {
       isMounted = false;
     };
-  }, [candidateInfo, hasConfiguredSupabase, hasHydrated]);
+  }, [candidateInfo, hasConfiguredSupabase, hasHydrated, reloadKey]);
 
   if (!hasHydrated) {
     return (
       <div className={styles.screen}>
-        <div className={styles.main}>
+        <main id="main" tabIndex={-1} className={styles.main}>
           <div className={styles.emptyState}>Đang tải phiên đăng nhập...</div>
-        </div>
+        </main>
       </div>
     );
   }
@@ -144,9 +147,9 @@ export default function SubjectsClient({
   if (!candidateInfo) {
     return (
       <div className={styles.screen}>
-        <div className={styles.main}>
+        <main id="main" tabIndex={-1} className={styles.main}>
           <div className={styles.emptyState}>Đang chuyển về màn đăng nhập...</div>
-        </div>
+        </main>
       </div>
     );
   }
@@ -161,13 +164,14 @@ export default function SubjectsClient({
 
   return (
     <div className={styles.screen}>
+      <StudentNav />
       <div className={styles.pageTools}>
         <button
           className={`btn outline small ${styles.profileButton}`}
           type="button"
           onClick={() => router.push('/profile', { transitionTypes: ['nav-forward'] })}
         >
-          <div className={styles.avatar}>{candidateInfo.name.charAt(0)}</div>
+          <div className={styles.avatar} aria-hidden="true">{candidateInfo.name.charAt(0)}</div>
           <span>Profile</span>
         </button>
         <button
@@ -191,6 +195,8 @@ export default function SubjectsClient({
         <button
           className="theme-toggle"
           type="button"
+          aria-label={theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+          aria-pressed={theme === 'dark'}
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
         >
           <span className="icon">
@@ -209,30 +215,35 @@ export default function SubjectsClient({
         </button>
       </div>
 
-      <div className={styles.main}>
-        <h1 className={styles.examTitle}>Kỳ thi tốt nghiệp THPT 2026</h1>
+      <main id="main" tabIndex={-1} className={styles.main}>
+        <header className={styles.siteHeader}>
+          <span className={styles.siteKicker}>Kỳ thi tốt nghiệp THPT 2026</span>
+          <h1>Chọn môn thi và phòng thi</h1>
+          <p>
+            Phòng thi chính thức tính giờ theo máy chủ. Mục “Tự luyện” là khu riêng để
+            ôn tập, không tính điểm thi.
+          </p>
+          <div className={styles.siteMeta} aria-label="Thông tin hội đồng">
+            <span>{candidateInfo.province || 'Hội đồng thi'}</span>
+            <span>{candidateInfo.school || 'Điểm thi'}</span>
+            <span>SBD {candidateInfo.code}</span>
+          </div>
+        </header>
 
         {activeSession ? (
           <section
-            className="card"
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '12px',
-              borderLeft: '4px solid var(--primary)',
-              marginBottom: '16px',
-            }}
+            className={styles.resumeBanner}
+            aria-live="polite"
+            aria-label="Bài thi đang làm dở"
           >
             <div>
               <strong>Bạn có một bài thi đang làm dở</strong>
-              <div style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
+              <small>
                 {activeSession.subjectName ?? activeSession.roomName}
                 {activeSession.dueAt
                   ? ` · Hết giờ lúc ${formatHanoiTime(activeSession.dueAt)}`
                   : ''}
-              </div>
+              </small>
             </div>
             <button
               className="btn"
@@ -294,54 +305,119 @@ export default function SubjectsClient({
           </section>
         </div>
 
-        <section className={`card ${styles.subjectList}`}>
-          <div className={styles.tabsContainer}>
+        <section className={`card ${styles.subjectList}`} aria-label="Danh sách thi">
+          <div className={styles.tabsContainer} role="tablist" aria-label="Chế độ thi">
             <button
+              id="tab-subjects"
+              role="tab"
+              aria-selected={activeTab === 'subjects'}
+              aria-controls="panel-subjects"
+              tabIndex={activeTab === 'subjects' ? 0 : -1}
               className={`${styles.tabButton} ${
                 activeTab === 'subjects' ? styles.activeTab : ''
               }`}
               type="button"
               onClick={() => setActiveTab('subjects')}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowRight' || e.key === 'End') {
+                  e.preventDefault();
+                  setActiveTab('rooms');
+                  document.getElementById('tab-rooms')?.focus();
+                }
+                if (e.key === 'Home') {
+                  e.preventDefault();
+                  document.getElementById('tab-subjects')?.focus();
+                }
+              }}
             >
               Danh sách môn thi
             </button>
             <button
+              id="tab-rooms"
+              role="tab"
+              aria-selected={activeTab === 'rooms'}
+              aria-controls="panel-rooms"
+              tabIndex={activeTab === 'rooms' ? 0 : -1}
               className={`${styles.tabButton} ${
                 activeTab === 'rooms' ? styles.activeTab : ''
               }`}
               type="button"
               onClick={() => setActiveTab('rooms')}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowLeft' || e.key === 'Home') {
+                  e.preventDefault();
+                  setActiveTab('subjects');
+                  document.getElementById('tab-subjects')?.focus();
+                }
+                if (e.key === 'End') {
+                  e.preventDefault();
+                  document.getElementById('tab-rooms')?.focus();
+                }
+              }}
             >
               Phòng thi đang mở
             </button>
           </div>
 
           {displayLoadError ? (
-            <div className={styles.emptyState}>{displayLoadError}</div>
+            <div className={styles.emptyState} role="alert">
+              <p>{displayLoadError}</p>
+              {hasConfiguredSupabase ? (
+                <button
+                  className="btn outline small"
+                  type="button"
+                  onClick={() => {
+                    setLoadError('');
+                    setIsLoading(true);
+                    setReloadKey((value) => value + 1);
+                  }}
+                >
+                  Thử tải lại
+                </button>
+              ) : null}
+            </div>
           ) : null}
 
           {activeTab === 'subjects' ? (
-            <div className={styles.subjectsGrid}>
+            <div
+              id="panel-subjects"
+              role="tabpanel"
+              aria-labelledby="tab-subjects"
+              className={styles.subjectsGrid}
+            >
               {isLoading ? (
-                <div className={styles.emptyState}>Đang tải môn thi từ cơ sở dữ liệu...</div>
+                <div className={styles.emptyState} role="status">Đang tải môn thi từ cơ sở dữ liệu...</div>
               ) : null}
               {!isLoading && subjects.length === 0 && !displayLoadError ? (
                 <div className={styles.emptyState}>
-                  Cơ sở dữ liệu chưa có môn thi đang hoạt động.
+                  <p>Cơ sở dữ liệu chưa có môn thi đang hoạt động.</p>
+                  <Link className="btn outline small" href="/purchase">Xem gói key</Link>
                 </div>
               ) : null}
-              {subjects.map((subject) => (
+              {subjects.map((subject) => {
+                const hasPractice = practice.some(
+                  (item) => item.subjectCode === subject.code && item.available,
+                );
+                const ready = subject.openRoomCount > 0;
+                return (
                 <div key={subject.code} className={styles.subjectItem}>
                   <div>
                     <span className={styles.subjectName}>{subject.name}</span>
                     <span className={styles.subjectMeta}>
                       {subject.openRoomCount} phòng thi đang mở
                     </span>
+                    <span className={styles.subjectFoot}>
+                      <span className={`${styles.readinessBadge} ${ready ? styles.readinessReady : styles.readinessEmpty}`}>
+                        <span className={styles.readinessDot} aria-hidden="true" />
+                        {ready ? 'Sẵn sàng' : 'Chưa có phòng'}
+                      </span>
+                      {hasPractice && (
+                        <span className={styles.practiceBadge}>Tự luyện riêng</span>
+                      )}
+                    </span>
                   </div>
                   <div className={styles.subjectActions}>
-                    {practice.some(
-                      (item) => item.subjectCode === subject.code && item.available,
-                    ) && (
+                    {hasPractice && (
                       <button
                         className="btn secondary small"
                         type="button"
@@ -358,6 +434,7 @@ export default function SubjectsClient({
                       className="btn small"
                       type="button"
                       disabled={subject.openRoomCount === 0}
+                      aria-disabled={subject.openRoomCount === 0}
                       onClick={() =>
                         router.push(`/subjects/${subject.code.toLowerCase()}`, {
                           transitionTypes: ['nav-forward'],
@@ -368,25 +445,38 @@ export default function SubjectsClient({
                     </button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
-            <div className={styles.pricingGrid}>
+            <div
+              id="panel-rooms"
+              role="tabpanel"
+              aria-labelledby="tab-rooms"
+              className={styles.pricingGrid}
+            >
               {isLoading ? (
-                <div className={styles.emptyState}>Đang tải phòng thi từ cơ sở dữ liệu...</div>
+                <div className={styles.emptyState} role="status" aria-live="polite">Đang tải phòng thi từ cơ sở dữ liệu...</div>
               ) : null}
               {!isLoading && rooms.length === 0 && !displayLoadError ? (
                 <div className={styles.emptyState}>
-                  Cơ sở dữ liệu chưa có phòng thi nào đang mở.
+                  <p>Cơ sở dữ liệu chưa có phòng thi nào đang mở.</p>
+                  <Link className="btn outline small" href="/purchase">Xem gói key</Link>
                 </div>
               ) : null}
               {rooms.map((room) => (
-                <article key={room.id} className={styles.pricingCard}>
+                <article key={room.id} className={styles.pricingCard} aria-label={`${room.subjectName} — ${room.name}`}>
                   <div className={styles.pricingTitle}>
-                    <FileText size={18} />
+                    <FileText size={18} aria-hidden="true" />
                     <span>{room.subjectName}</span>
                   </div>
-                  <div className={styles.pricingPrice}>
+                  <div>
+                    <span className={`${styles.readinessBadge} ${styles.readinessReady}`}>
+                      <span className={styles.readinessDot} aria-hidden="true" />
+                      Đang mở
+                    </span>
+                  </div>
+                  <div className={styles.pricingPrice} aria-label={`Giá ${formatPriceVnd(room.priceVnd)}`}>
                     {formatPriceVnd(room.priceVnd)}
                   </div>
                   <div className={styles.pricingDesc}>
@@ -423,7 +513,7 @@ export default function SubjectsClient({
             Quay lại
           </button>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

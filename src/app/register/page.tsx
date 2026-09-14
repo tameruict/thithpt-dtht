@@ -113,34 +113,56 @@ export default function RegisterPage() {
 
   return (
     <div className={styles.container}>
-      <div className={styles.logoArea}>
-        <div className={styles.logoText}>BỘ GIÁO DỤC VÀ ĐÀO TẠO</div>
-        <div className={styles.logoSub}>KỲ THI TỐT NGHIỆP THPT QUỐC GIA</div>
-      </div>
-      
-      <div className={styles.orbStage} aria-hidden="true">
-        <span className={styles.orbitRing} />
-        <span className={styles.orbitRingAlt} />
-        <div className={styles.energyOrb}>
-          <span className={styles.orbGrid} />
-          <span className={styles.orbLightning} />
-          <span className={styles.orbCore} />
+      <header className={styles.topbar}>
+        <div className={styles.topbarInner}>
+          <span className={styles.crest} aria-hidden="true">THPT</span>
+          <div>
+            <p className={styles.brandTitle}>Kỳ thi tốt nghiệp THPT Quốc gia</p>
+            <p className={styles.brandSub}>Tạo tài khoản thí sinh — miễn phí, 1 phút</p>
+          </div>
         </div>
-      </div>
+      </header>
 
-      <div className={styles.card}>
-        <h1 className={styles.title}>Đăng ký</h1>
-        <p className={styles.subtitle}>
-          Bạn đã có tài khoản? <Link href="/" transitionTypes={['nav-back']} className={styles.linkRed}>Đăng nhập ngay</Link>
-        </p>
+      <div className={styles.main}>
+        <section className={styles.heroPanel} aria-labelledby="register-hero-title">
+          <span className={styles.heroKicker}>Thí sinh mới</span>
+          <h1 id="register-hero-title" className={styles.heroTitle}>
+            Một tài khoản cho mọi môn thi
+          </h1>
+          <p className={styles.heroText}>
+            Họ tên dùng để in số báo danh và bảng điểm. Email dùng để đăng nhập và
+            khôi phục mật khẩu. Mật khẩu tối thiểu {MIN_PASSWORD_LENGTH} ký tự.
+          </p>
+          <ol className={styles.steps}>
+            <li className={styles.step}>
+              <span className={styles.stepNum} aria-hidden="true">1</span>
+              <div><strong>Nhập họ tên + email</strong><span>Viết đúng dấu để bảng điểm đẹp.</span></div>
+            </li>
+            <li className={styles.step}>
+              <span className={styles.stepNum} aria-hidden="true">2</span>
+              <div><strong>Tạo mật khẩu</strong><span>Tối thiểu {MIN_PASSWORD_LENGTH} ký tự, nên có số.</span></div>
+            </li>
+            <li className={styles.step}>
+              <span className={styles.stepNum} aria-hidden="true">3</span>
+              <div><strong>Xác nhận email</strong><span>Kiểm tra hộp thư nếu được yêu cầu.</span></div>
+            </li>
+          </ol>
+        </section>
+
+        <main id="main" tabIndex={-1} className={styles.card} aria-labelledby="register-title">
+          <h1 id="register-title" className={styles.title}>Đăng ký</h1>
+          <p className={styles.subtitle}>
+            Bạn đã có tài khoản? <Link href="/" transitionTypes={['nav-back']} className={styles.linkRed}>Đăng nhập ngay</Link>
+          </p>
 
         <form onSubmit={handleRegister}>
           <div className={styles.formGroup}>
             <label className={styles.label} htmlFor="register-name">Họ và tên <span className={styles.required}>*</span></label>
             <div className={styles.inputWrapper}>
-              <User className={styles.inputIcon} />
+              <User className={styles.inputIcon} aria-hidden="true" />
               <input
                 id="register-name"
+                name="fullName"
                 type="text"
                 required
                 className={styles.input}
@@ -155,9 +177,10 @@ export default function RegisterPage() {
           <div className={styles.formGroup}>
             <label className={styles.label} htmlFor="register-email">Email <span className={styles.required}>*</span></label>
             <div className={styles.inputWrapper}>
-              <Mail className={styles.inputIcon} />
+              <Mail className={styles.inputIcon} aria-hidden="true" />
               <input
                 id="register-email"
+                name="email"
                 type="email"
                 required
                 className={styles.input}
@@ -172,15 +195,17 @@ export default function RegisterPage() {
           <div className={styles.formGroup}>
             <label className={styles.label} htmlFor="register-password">Mật khẩu <span className={styles.required}>*</span></label>
             <div className={styles.inputWrapper}>
-              <Lock className={styles.inputIcon} />
+              <Lock className={styles.inputIcon} aria-hidden="true" />
               <input
                 id="register-password"
+                name="newPassword"
                 type={showPassword ? 'text' : 'password'}
                 required
                 minLength={MIN_PASSWORD_LENGTH}
                 className={styles.input}
                 placeholder="Tạo mật khẩu"
                 autoComplete="new-password"
+                aria-describedby="register-password-hint"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
@@ -189,20 +214,25 @@ export default function RegisterPage() {
                 className={styles.inputRightIcon}
                 onClick={() => setShowPassword(!showPassword)}
                 aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                aria-pressed={showPassword}
               >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                {showPassword ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
               </button>
             </div>
+            <p id="register-password-hint" className={styles.fieldHint}>Tối thiểu {MIN_PASSWORD_LENGTH} ký tự.</p>
           </div>
 
           <CaptchaChallenge onToken={setCaptchaToken} />
-          {error && <p className={styles.errorText} role="alert" aria-live="assertive">{error}</p>}
-          {message && <p className={`${styles.errorText} ${styles.successText}`}>{message}</p>}
+          <div aria-live="assertive">
+            {error && <p className={styles.errorText} role="alert">{error}</p>}
+            {message && <p className={`${styles.errorText} ${styles.successText}`} role="status">{message}</p>}
+          </div>
 
           <button type="submit" className={styles.submitBtn} disabled={loading}>
-            Đăng ký
+            {loading ? 'Đang tạo tài khoản...' : 'Đăng ký'}
           </button>
         </form>
+        </main>
       </div>
     </div>
   );

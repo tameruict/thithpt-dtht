@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { User, Lock, Eye, EyeOff } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, ShieldCheck, ClipboardList, KeyRound } from 'lucide-react';
 import styles from '@/styles/auth.module.css';
 import { useExamStore } from '@/store/useExamStore';
 import { createClient } from '@/lib/supabase/client';
@@ -91,7 +91,7 @@ export default function LoginPage() {
     setError('');
 
     if (!hasSupabaseEnv()) {
-      setError('Chua cau hinh Supabase. Hay them .env.local truoc khi dang nhap.');
+      setError('Chưa cấu hình Supabase. Hãy thêm .env.local trước khi đăng nhập.');
       return;
     }
 
@@ -173,112 +173,150 @@ export default function LoginPage() {
 
   return (
     <div className={styles.container}>
-      <div className={styles.logoArea}>
-        <div className={styles.logoText}>BỘ GIÁO DỤC VÀ ĐÀO TẠO</div>
-        <div className={styles.logoSub}>KỲ THI TỐT NGHIỆP THPT QUỐC GIA</div>
-      </div>
-      
-      <div className={styles.orbStage} aria-hidden="true">
-        <span className={styles.orbitRing} />
-        <span className={styles.orbitRingAlt} />
-        <div className={styles.energyOrb}>
-          <span className={styles.orbGrid} />
-          <span className={styles.orbLightning} />
-          <span className={styles.orbCore} />
+      <header className={styles.topbar}>
+        <div className={styles.topbarInner}>
+          <span className={styles.crest} aria-hidden="true">THPT</span>
+          <div>
+            <p className={styles.brandTitle}>Kỳ thi tốt nghiệp THPT Quốc gia</p>
+            <p className={styles.brandSub}>Cổng thi trực tuyến — đăng nhập để dự thi</p>
+          </div>
         </div>
-      </div>
+      </header>
 
-      <div className={styles.card}>
-        <h1 className={styles.title}>Đăng nhập</h1>
-        <p className={styles.subtitle}>
-          Bạn chưa có tài khoản? <Link href="/register" transitionTypes={['nav-forward']} className={styles.linkRed}>Đăng ký ngay</Link>
-        </p>
+      <div className={styles.main}>
+        <section className={styles.heroPanel} aria-labelledby="login-hero-title">
+          <span className={styles.heroKicker}>Kỳ thi 2026</span>
+          <h1 id="login-hero-title" className={styles.heroTitle}>
+            Phòng thi trực tuyến, đúng giờ, đúng đề
+          </h1>
+          <p className={styles.heroText}>
+            Đăng nhập bằng tài khoản thí sinh để chọn môn, nhập mã phòng thi và làm bài.
+            Giờ làm bài tính theo máy chủ, bài làm tự lưu trong lúc thi.
+          </p>
+          <ol className={styles.steps}>
+            <li className={styles.step}>
+              <span className={styles.stepNum} aria-hidden="true">1</span>
+              <div><strong>Đăng nhập</strong><span>Dùng email và mật khẩu đã đăng ký.</span></div>
+            </li>
+            <li className={styles.step}>
+              <span className={styles.stepNum} aria-hidden="true">2</span>
+              <div><strong>Chọn môn &amp; phòng thi</strong><span>Xem phòng đang mở, kiểm tra thời gian.</span></div>
+            </li>
+            <li className={styles.step}>
+              <span className={styles.stepNum} aria-hidden="true">3</span>
+              <div><strong>Nhập mã &amp; làm bài</strong><span>Mã key do hội đồng thi cấp.</span></div>
+            </li>
+          </ol>
+          <p className={styles.supportBox}>
+            Gặp sự cố đăng nhập? Kiểm tra email viết đúng, mật khẩu đủ độ dài, hoặc dùng “Quên mật khẩu”.
+          </p>
+        </section>
 
-        <form onSubmit={handleLogin}>
-          <div className={styles.formGroup}>
-            <label className={styles.label} htmlFor="login-email">Email <span className={styles.required}>*</span></label>
-            <div className={styles.inputWrapper}>
-              <User className={styles.inputIcon} />
-              <input 
-                id="login-email"
-                type="email" 
-                required 
-                className={styles.input} 
-                value={email}
-                placeholder="nhap-email@example.com"
-                autoComplete="email"
-                onChange={(e) => setEmail(e.target.value)}
-              />
+        <main id="main" tabIndex={-1} className={styles.card} aria-labelledby="login-title">
+          <h1 id="login-title" className={styles.title}>Đăng nhập</h1>
+          <p className={styles.subtitle}>
+            Bạn chưa có tài khoản? <Link href="/register" transitionTypes={['nav-forward']} className={styles.linkRed}>Đăng ký ngay</Link>
+          </p>
+
+          <form onSubmit={handleLogin} noValidate={false}>
+            <div className={styles.formGroup}>
+              <label className={styles.label} htmlFor="login-email">Email <span className={styles.required} aria-hidden="true">*</span></label>
+              <div className={styles.inputWrapper}>
+                <User className={styles.inputIcon} aria-hidden="true" />
+                <input
+                  id="login-email"
+                  name="email"
+                  type="email"
+                  required
+                  className={styles.input}
+                  value={email}
+                  placeholder="nhap-email@example.com"
+                  autoComplete="email"
+                  inputMode="email"
+                  aria-describedby="login-email-hint"
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+              <p id="login-email-hint" className={styles.fieldHint}>Dùng email đã đăng ký tài khoản thí sinh.</p>
             </div>
-          </div>
 
-          <div className={styles.formGroup}>
-            <label className={styles.label} htmlFor="login-password">Mật khẩu <span className={styles.required}>*</span></label>
-            <div className={styles.inputWrapper}>
-              <Lock className={styles.inputIcon} />
-              <input 
-                id="login-password"
-                type={showPassword ? "text" : "password"} 
-                required 
-                className={styles.input} 
-                value={password}
-                placeholder="Nhập mật khẩu"
-                autoComplete="current-password"
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              <button 
-                type="button" 
-                className={styles.inputRightIcon}
-                onClick={() => setShowPassword(!showPassword)}
-                aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-              >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
+            <div className={styles.formGroup}>
+              <label className={styles.label} htmlFor="login-password">Mật khẩu <span className={styles.required} aria-hidden="true">*</span></label>
+              <div className={styles.inputWrapper}>
+                <Lock className={styles.inputIcon} aria-hidden="true" />
+                <input
+                  id="login-password"
+                  name="password"
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  className={styles.input}
+                  value={password}
+                  placeholder="Nhập mật khẩu"
+                  autoComplete="current-password"
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className={styles.inputRightIcon}
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                  aria-pressed={showPassword}
+                >
+                  {showPassword ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+                </button>
+              </div>
             </div>
-          </div>
 
-          <CaptchaChallenge onToken={setCaptchaToken} />
-          {error && <p className={styles.errorText} role="alert" aria-live="assertive">{error}</p>}
+            <CaptchaChallenge onToken={setCaptchaToken} />
+            <div aria-live="assertive">
+              {error && <p className={styles.errorText} role="alert">{error}</p>}
+            </div>
+
+            <button
+              type="submit"
+              className={styles.submitBtn}
+              disabled={loading || googleLoading}
+            >
+              {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
+            </button>
+          </form>
+
+          <div className={styles.authDivider} aria-hidden="true">
+            <span>hoặc</span>
+          </div>
 
           <button
-            type="submit"
-            className={styles.submitBtn}
+            type="button"
+            className={styles.googleBtn}
+            onClick={handleGoogleLogin}
             disabled={loading || googleLoading}
+            aria-busy={googleLoading}
           >
-            {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
+            <svg className={styles.googleIcon} viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.4-.19-2.07H12v3.92h5.38a4.6 4.6 0 0 1-2 3.02v2.54h3.24c1.9-1.75 2.98-4.33 2.98-7.41Z" />
+              <path fill="#34A853" d="M12 22c2.7 0 4.97-.9 6.62-2.36l-3.24-2.54c-.9.6-2.05.96-3.38.96-2.6 0-4.81-1.76-5.6-4.13H3.05v2.62A10 10 0 0 0 12 22Z" />
+              <path fill="#FBBC05" d="M6.4 13.93A6.02 6.02 0 0 1 6.08 12c0-.67.12-1.32.32-1.93V7.45H3.05A10 10 0 0 0 2 12c0 1.61.39 3.14 1.05 4.55l3.35-2.62Z" />
+              <path fill="#EA4335" d="M12 5.94c1.47 0 2.79.5 3.83 1.5l2.87-2.87A9.64 9.64 0 0 0 12 2a10 10 0 0 0-8.95 5.45l3.35 2.62c.79-2.37 3-4.13 5.6-4.13Z" />
+            </svg>
+            <span>{googleLoading ? 'Đang chuyển tới Google...' : 'Tiếp tục với Google'}</span>
           </button>
-        </form>
 
-        <div className={styles.authDivider} aria-hidden="true">
-          <span>hoặc</span>
-        </div>
-
-        <button
-          type="button"
-          className={styles.googleBtn}
-          onClick={handleGoogleLogin}
-          disabled={loading || googleLoading}
-          aria-busy={googleLoading}
-        >
-          <svg className={styles.googleIcon} viewBox="0 0 24 24" aria-hidden="true">
-            <path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.4-.19-2.07H12v3.92h5.38a4.6 4.6 0 0 1-2 3.02v2.54h3.24c1.9-1.75 2.98-4.33 2.98-7.41Z" />
-            <path fill="#34A853" d="M12 22c2.7 0 4.97-.9 6.62-2.36l-3.24-2.54c-.9.6-2.05.96-3.38.96-2.6 0-4.81-1.76-5.6-4.13H3.05v2.62A10 10 0 0 0 12 22Z" />
-            <path fill="#FBBC05" d="M6.4 13.93A6.02 6.02 0 0 1 6.08 12c0-.67.12-1.32.32-1.93V7.45H3.05A10 10 0 0 0 2 12c0 1.61.39 3.14 1.05 4.55l3.35-2.62Z" />
-            <path fill="#EA4335" d="M12 5.94c1.47 0 2.79.5 3.83 1.5l2.87-2.87A9.64 9.64 0 0 0 12 2a10 10 0 0 0-8.95 5.45l3.35 2.62c.79-2.37 3-4.13 5.6-4.13Z" />
-          </svg>
-          <span>{googleLoading ? 'Đang chuyển tới Google...' : 'Tiếp tục với Google'}</span>
-        </button>
-
-        {error && <p className={styles.errorText}>{error}</p>}
-
-        <div className={styles.footerLinks}>
-          <Link
-            href={email ? `/reset-password?email=${encodeURIComponent(email)}` : '/reset-password'}
-            className={styles.forgotLink}
-          >
-            Quên mật khẩu?
-          </Link>
-        </div>
+          <div className={styles.footerLinks}>
+            <Link
+              href={email ? `/reset-password?email=${encodeURIComponent(email)}` : '/reset-password'}
+              className={styles.forgotLink}
+            >
+              Quên mật khẩu?
+            </Link>
+            <span className={styles.fieldHint} style={{ margin: 0 }}>
+              <ShieldCheck size={14} aria-hidden="true" style={{ verticalAlign: -2 }} /> Bảo mật theo phiên Supabase
+              {' · '}
+              <ClipboardList size={14} aria-hidden="true" style={{ verticalAlign: -2 }} /> Đề thi chuẩn
+              {' · '}
+              <KeyRound size={14} aria-hidden="true" style={{ verticalAlign: -2 }} /> Vào phòng bằng key
+            </span>
+          </div>
+        </main>
       </div>
     </div>
   );

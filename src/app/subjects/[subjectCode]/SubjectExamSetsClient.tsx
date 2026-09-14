@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, FileText, Moon, Sun } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
@@ -12,6 +13,8 @@ import {
   type SubjectSummary,
 } from '@/lib/supabase/exam-data';
 import { useExamStore } from '@/store/useExamStore';
+import RoomLeaderboard from '@/components/leaderboard/RoomLeaderboard';
+import StudentNav from '@/components/ui/StudentNav';
 import styles from '@/styles/subjects.module.css';
 
 export default function SubjectExamSetsClient({
@@ -28,6 +31,7 @@ export default function SubjectExamSetsClient({
   const [rooms, setRooms] = useState<ExamRoomSummary[]>([]);
   const [isLoading, setIsLoading] = useState(hasConfiguredSupabase);
   const [loadError, setLoadError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!hasConfiguredSupabase) return;
@@ -63,7 +67,7 @@ export default function SubjectExamSetsClient({
     return () => {
       isMounted = false;
     };
-  }, [hasConfiguredSupabase, router, subjectCode]);
+  }, [hasConfiguredSupabase, reloadKey, router, subjectCode]);
 
   const displayLoadError =
     loadError ||
@@ -73,10 +77,13 @@ export default function SubjectExamSetsClient({
 
   return (
     <div className={styles.screen}>
+      <StudentNav />
       <div className={styles.pageTools}>
         <button
           className="theme-toggle"
           type="button"
+          aria-label={theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+          aria-pressed={theme === 'dark'}
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
         >
           <span className="icon">
@@ -86,7 +93,7 @@ export default function SubjectExamSetsClient({
         </button>
       </div>
 
-      <div className={styles.main}>
+      <main id="main" tabIndex={-1} className={styles.main}>
         <button
           className={`btn secondary small ${styles.backButton}`}
           type="button"
@@ -96,64 +103,88 @@ export default function SubjectExamSetsClient({
           Quay lại môn thi
         </button>
 
-        <section className={styles.examListHero}>
+        <section className={styles.examListHero} aria-labelledby="subject-rooms-title">
           <div>
             <span className={styles.heroKicker}>Phòng thi từ cơ sở dữ liệu</span>
-            <h1 className={styles.examTitle}>
+            <h1 id="subject-rooms-title" className={styles.examTitle}>
               {subject ? `Môn ${subject.name}` : 'Đang tải môn thi'}
             </h1>
             <p>
               Chọn một phòng thi đang mở, sau đó nhập key được cấp để bắt đầu phiên thi.
+              Giờ làm bài tính theo máy chủ.
             </p>
           </div>
-          <div className={styles.heroStat}>
+          <div className={styles.heroStat} role="status" aria-live="polite">
             <strong>{rooms.length}</strong>
             <span>phòng đang mở</span>
           </div>
         </section>
 
         {displayLoadError ? (
-          <div className={styles.emptyState}>{displayLoadError}</div>
+          <div className={styles.emptyState} role="alert">
+            <p>{displayLoadError}</p>
+            {hasConfiguredSupabase ? (
+              <button
+                className="btn outline small"
+                type="button"
+                onClick={() => {
+                  setLoadError('');
+                  setIsLoading(true);
+                  setReloadKey((value) => value + 1);
+                }}
+              >
+                Thử tải lại
+              </button>
+            ) : null}
+          </div>
         ) : null}
 
         <section className={styles.examSetGrid}>
           {isLoading ? (
-            <div className={styles.emptyState}>Đang tải phòng thi từ Supabase...</div>
+            <div className={styles.emptyState} role="status" aria-live="polite">Đang tải phòng thi từ Supabase...</div>
           ) : null}
           {!isLoading && rooms.length === 0 && !displayLoadError ? (
             <div className={styles.emptyState}>
-              Cơ sở dữ liệu chưa có phòng thi đang mở cho môn này.
+              <p>Cơ sở dữ liệu chưa có phòng thi đang mở cho môn này.</p>
+              <Link className="btn outline small" href="/subjects">Chọn môn khác</Link>
             </div>
           ) : null}
           {rooms.map((room) => (
-            <article key={room.id} className={styles.examSetCard}>
+            <article key={room.id} className={styles.examSetCard} aria-label={`${room.name} — ${room.code}`}>
               <div className={styles.examSetCardHeader}>
-                <span className={styles.examSetCardIcon}>
+                <span className={styles.examSetCardIcon} aria-hidden="true">
                   <FileText size={18} />
                 </span>
                 <span>{room.code}</span>
+                <span className={`${styles.readinessBadge} ${styles.readinessReady}`}>
+                  <span className={styles.readinessDot} aria-hidden="true" />
+                  Sẵn sàng
+                </span>
               </div>
               <h2>{room.name}</h2>
               <p>{room.blueprintName ?? 'Phòng thi được lấy trực tiếp từ Supabase.'}</p>
-              <div className={styles.examSetStats}>
+              <div className={styles.examSetStats} aria-label="Thông tin phòng">
                 <span>{room.durationMinutes} phút</span>
                 <span>{room.totalAttemptsDefault} lượt/key</span>
                 <span>{formatPriceVnd(room.priceVnd)}</span>
               </div>
-              <button
-                className="btn"
-                type="button"
-                onClick={() => {
-                  selectExamSet(room.subjectCode, room.id);
-                  router.push(`/join/${room.id}`, { transitionTypes: ['nav-forward'] });
-                }}
-              >
-                Chọn phòng này
-              </button>
+              <RoomLeaderboard roomId={room.id} />
+              <div className={styles.roomFoot}>
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => {
+                    selectExamSet(room.subjectCode, room.id);
+                    router.push(`/join/${room.id}`, { transitionTypes: ['nav-forward'] });
+                  }}
+                >
+                  Chọn phòng này
+                </button>
+              </div>
             </article>
           ))}
         </section>
-      </div>
+      </main>
     </div>
   );
 }

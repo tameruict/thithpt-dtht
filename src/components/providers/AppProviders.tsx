@@ -23,7 +23,10 @@ export default function AppProviders({ children }: { children: React.ReactNode }
 
   return (
     <>
-      <main id="app">
+      <a href="#main" className="skip-link">
+        Bỏ qua tới nội dung chính
+      </a>
+      <div id="app" role="presentation">
         <ViewTransition
           enter={{
             default: 'route-enter',
@@ -39,7 +42,7 @@ export default function AppProviders({ children }: { children: React.ReactNode }
         >
           {children}
         </ViewTransition>
-      </main>
+      </div>
       <ToastProvider />
     </>
   );

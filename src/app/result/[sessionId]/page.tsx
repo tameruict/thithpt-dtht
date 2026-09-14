@@ -1,8 +1,14 @@
 import { redirect } from 'next/navigation';
+import type { Metadata } from 'next';
 import { requireUser } from '@/lib/supabase/session';
 import ResultPage from '../page';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = {
+  title: 'Chi tiết kết quả',
+  description: 'Xem điểm số, thống kê và đáp án của phiên thi.',
+};
 
 export default async function SessionResultPage({
   params,

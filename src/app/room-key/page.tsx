@@ -8,6 +8,7 @@ import styles from '@/styles/auth.module.css';
 import { useExamStore } from '@/store/useExamStore';
 import { createClient } from '@/lib/supabase/client';
 import { hasSupabaseEnv } from '@/lib/supabase/env';
+import StudentNav from '@/components/ui/StudentNav';
 import {
   fetchExamRoomById,
   formatPriceVnd,
@@ -131,6 +132,7 @@ export default function RoomKeyPage({ roomId }: { roomId?: string }) {
       const supabase = createClient();
 
       // Keys are global; the selected room determines the concrete exam session.
+      // Key bind vao tai khoan (assigned_to) — khong bind thiet bi.
       const { data: sessionId, error: rpcError } = await supabase.rpc('join_exam', {
         p_code: trimmedKey,
         p_subject_code: selectedRoom.subjectCode,
@@ -169,59 +171,102 @@ export default function RoomKeyPage({ roomId }: { roomId?: string }) {
       ? 'Chưa cấu hình Supabase nên không thể tải phòng thi.'
       : '');
 
+  const isRoomReady = Boolean(selectedRoom);
+
   return (
-    <div className={styles.container}>
-      <div className={styles.logoArea}>
-        <div className={styles.logoText}>BỘ GIÁO DỤC VÀ ĐÀO TẠO</div>
-        <div className={styles.logoSub}>KỲ THI TỐT NGHIỆP THPT QUỐC GIA</div>
-      </div>
-
-      <div className={styles.orbStage} aria-hidden="true">
-        <span className={styles.orbitRing} />
-        <span className={styles.orbitRingAlt} />
-        <div className={styles.energyOrb}>
-          <span className={styles.orbGrid} />
-          <span className={styles.orbLightning} />
-          <span className={styles.orbCore} />
-        </div>
-      </div>
-
-      <div className={styles.card}>
-        <h1 className={styles.title}>Nhập Mã Phòng Thi</h1>
-        <p className={styles.subtitle}>
-          Vui lòng nhập mã phòng thi được cấp trong hệ thống để bắt đầu phiên thi.
-        </p>
-        {selectedRoom ? (
-          <div className={styles.selectionSummary}>
-            <span>{selectedRoom.subjectName}</span>
-            <strong>{selectedRoom.name}</strong>
-            <small>
-              {selectedRoom.code} · {selectedRoom.durationMinutes} phút ·{' '}
-              {formatPriceVnd(selectedRoom.priceVnd)}
-            </small>
+    <div className={`${styles.container} ${styles.withStudentNav}`}>
+      <StudentNav />
+      <header className={styles.topbar}>
+        <div className={styles.topbarInner}>
+          <span className={styles.crest} aria-hidden="true">THPT</span>
+          <div>
+            <p className={styles.brandTitle}>Kỳ thi tốt nghiệp THPT Quốc gia</p>
+            <p className={styles.brandSub}>Bước 2/3 — nhập mã phòng thi</p>
           </div>
-        ) : null}
+        </div>
+      </header>
+
+      <div className={styles.main}>
+        <section className={styles.heroPanel} aria-labelledby="roomkey-hero-title">
+          <span className={styles.heroKicker}>Vào phòng thi</span>
+          <h1 id="roomkey-hero-title" className={styles.heroTitle}>Kiểm tra phòng trước khi nhập key</h1>
+          <p className={styles.heroText}>
+            Mỗi key gắn với một phòng và số lượt nhất định. Kiểm tra đúng môn, đúng
+            ca rồi mới nhập mã để tránh mất lượt.
+          </p>
+          <ol className={styles.steps}>
+            <li className={styles.step}>
+              <span className={styles.stepNum} aria-hidden="true">1</span>
+              <div><strong>Đã chọn phòng</strong><span>Thông tin phòng hiện ở thẻ bên phải.</span></div>
+            </li>
+            <li className={styles.step}>
+              <span className={styles.stepNum} aria-hidden="true">2</span>
+              <div><strong>Nhập key IN HOA</strong><span>Tối thiểu 6 ký tự, hệ thống tự viết hoa.</span></div>
+            </li>
+            <li className={styles.step}>
+              <span className={styles.stepNum} aria-hidden="true">3</span>
+              <div><strong>Vào phòng làm bài</strong><span>Giờ tính từ máy chủ ngay khi vào.</span></div>
+            </li>
+          </ol>
+        </section>
+
+        <main id="main" tabIndex={-1} className={styles.card} aria-labelledby="roomkey-title">
+          <h1 id="roomkey-title" className={styles.title}>Nhập mã phòng thi</h1>
+          <p className={styles.subtitle}>
+            Vui lòng nhập mã phòng thi được cấp trong hệ thống để bắt đầu phiên thi.
+          </p>
+          <div className={styles.readinessRow} role="status" aria-live="polite">
+            <span className={`${styles.badge} ${isRoomReady ? styles.badgeReady : styles.badgeWarn}`}>
+              <span className={styles.badgeDot} aria-hidden="true" />
+              {isLoadingRoom ? 'Đang kiểm tra phòng…' : isRoomReady ? 'Phòng sẵn sàng' : 'Chưa chọn được phòng'}
+            </span>
+            {selectedRoom ? (
+              <span className={styles.badge}>
+                {selectedRoom.durationMinutes} phút · {formatPriceVnd(selectedRoom.priceVnd)}
+              </span>
+            ) : null}
+          </div>
+          {selectedRoom ? (
+            <div className={styles.selectionSummary}>
+              <span>{selectedRoom.subjectName}</span>
+              <strong>{selectedRoom.name}</strong>
+              <small>
+                {selectedRoom.code} · {selectedRoom.durationMinutes} phút ·{' '}
+                {formatPriceVnd(selectedRoom.priceVnd)}
+              </small>
+            </div>
+          ) : null}
 
         <form onSubmit={handleSubmit}>
           <div className={styles.formGroup}>
-            <label className={styles.label}>
-              Mã phòng thi <span className={styles.required}>*</span>
+            <label className={styles.label} htmlFor="room-key-input">
+              Mã phòng thi <span className={styles.required} aria-hidden="true">*</span>
             </label>
             <div className={styles.inputWrapper}>
-              <KeyRound className={styles.inputIcon} />
+              <KeyRound className={styles.inputIcon} aria-hidden="true" />
               <input
+                id="room-key-input"
+                name="roomKey"
                 type="text"
                 required
+                minLength={6}
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
                 className={styles.input}
                 value={key}
                 onChange={(event) => {
                   setKey(event.target.value.toUpperCase());
                   setError('');
                 }}
-                placeholder="Nhập key từ cơ sở dữ liệu"
+                placeholder="VD: THPT-XXXXXX"
+                aria-describedby="room-key-hint"
               />
             </div>
-            {displayError && <p className={styles.errorText}>{displayError}</p>}
+            <p id="room-key-hint" className={styles.fieldHint}>Mã IN HOA, tối thiểu 6 ký tự, do hội đồng thi cấp.</p>
+            <div aria-live="assertive">
+              {displayError && <p className={styles.errorText} role="alert">{displayError}</p>}
+            </div>
           </div>
 
           <button
@@ -241,6 +286,7 @@ export default function RoomKeyPage({ roomId }: { roomId?: string }) {
             &larr; Quay lại chọn môn và phòng thi
           </Link>
         </div>
+        </main>
       </div>
     </div>
   );

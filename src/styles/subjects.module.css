@@ -511,7 +511,7 @@
 
 @media (max-width: 640px) {
   .screen {
-    padding: calc(20px + env(safe-area-inset-top, 0px)) 14px calc(28px + env(safe-area-inset-bottom, 0px));
+    padding: calc(20px + env(safe-area-inset-top, 0px)) 14px calc(108px + env(safe-area-inset-bottom, 0px));
   }
 
   .pageTools {
@@ -576,5 +576,249 @@
     transform: translateY(-2px);
     border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
     box-shadow: var(--shadow);
+  }
+}
+
+/* ── Public-flow rebuild: header quốc gia, card đều nhau, readiness badge ── */
+
+.siteHeader {
+  position: relative;
+  z-index: 1;
+  width: min(var(--content-max), 100%);
+  margin: 0 auto 20px;
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--header-gradient);
+  color: #fff;
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+
+.siteHeader h1 {
+  margin: 6px 0 6px;
+  font-size: clamp(22px, 3vw, 30px);
+  font-weight: 900;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.siteHeader p {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 14px;
+  line-height: 1.6;
+  opacity: 0.9;
+}
+
+.siteKicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, #fff 36%, transparent);
+  background: color-mix(in srgb, #fff 14%, transparent);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.siteMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.siteMeta span {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #fff 14%, transparent);
+  border: 1px solid color-mix(in srgb, #fff 26%, transparent);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.resumeBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border));
+  border-left: 4px solid var(--primary);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: var(--shadow-soft);
+}
+
+.resumeBanner strong {
+  display: block;
+  font-size: 15px;
+}
+
+.resumeBanner small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Card đều nhau: ép stretch + nội dung co giãn, nút luôn đáy. */
+.subjectsGrid,
+.pricingGrid,
+.examSetGrid {
+  align-items: stretch;
+}
+
+.subjectItem,
+.pricingCard,
+.examSetCard {
+  height: 100%;
+}
+
+.examSetCard h2 {
+  text-wrap: balance;
+}
+
+/* Readiness badge — trạng thái phòng thi. */
+.readinessBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.readinessDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+.readinessReady {
+  border-color: color-mix(in srgb, var(--success) 44%, var(--border));
+  background: color-mix(in srgb, var(--success) 12%, var(--surface));
+  color: var(--success);
+}
+
+.readinessEmpty {
+  border-color: color-mix(in srgb, var(--warning) 46%, var(--border));
+  background: color-mix(in srgb, var(--warning) 12%, var(--surface));
+  color: var(--warning);
+}
+
+.readinessOff {
+  border-color: var(--border);
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.practiceBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 44%, var(--border));
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.subjectFoot,
+.roomFoot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.examSetCard .roomFoot {
+  margin-top: auto;
+  padding-top: 6px;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.leaderboard {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--primary-soft) 35%, transparent);
+}
+
+.leaderboard li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.leaderboard li b {
+  margin-left: auto;
+  color: var(--primary);
+}
+
+.leaderRank {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 900;
+  color: var(--warning);
+  min-width: 44px;
+}
+
+@media (max-width: 640px) {
+  .siteHeader {
+    padding: 18px 16px;
+    border-radius: var(--radius-lg);
+  }
+
+  .resumeBanner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .resumeBanner :global(.btn) {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .infoCard,
+  .subjectItem,
+  .pricingCard,
+  .examSetCard {
+    transition: none;
   }
 }

@@ -1,6 +1,8 @@
 import { requireAdmin } from '@/lib/supabase/admin';
 import type { Json } from '@/lib/supabase/database';
 import ContentQualityClient, { type ContentReview } from './ContentQualityClient';
+import AdminSuiteNav from '../AdminSuiteNav';
+import styles from './content-quality.module.css';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,10 +23,15 @@ export default async function ContentQualityPage() {
 
   if (error) {
     return (
-      <main style={{ maxWidth: 900, margin: '48px auto', padding: 24 }}>
-        <h1>Chất lượng nội dung</h1>
-        <p>Database staging chưa có migration Markdown + KaTeX v2.</p>
-        <code>{error.code}</code>
+      <main className={styles.page} id="main">
+        <AdminSuiteNav active="content" />
+        <section className={styles.errorState} role="alert" aria-labelledby="content-quality-error-title">
+          <p className={styles.errorEyebrow}>ADMIN - CONTENT</p>
+          <h1 id="content-quality-error-title">Không thể tải hàng đợi duyệt nội dung</h1>
+          <p>Dịch vụ duyệt chưa sẵn sàng hoặc migration chưa hoàn tất. Vui lòng thử lại.</p>
+          <code>Mã lỗi: {error.code || 'UNKNOWN'}</code>
+          <a className={styles.errorAction} href="/admin/content-quality">Thử lại</a>
+        </section>
       </main>
     );
   }

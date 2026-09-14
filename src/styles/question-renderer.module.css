@@ -1,5 +1,5 @@
 .renderer {
-  color: var(--text, #30262c);
+  color: var(--text);
   line-height: 1.75;
 }
 
@@ -9,7 +9,7 @@
 
 .meta {
   margin: 6px 0 14px;
-  color: #8a7380;
+  color: var(--muted);
   font-size: 0.82rem;
 }
 
@@ -59,14 +59,14 @@
 }
 
 .invalidMath {
-  text-decoration: underline wavy color-mix(in srgb, var(--danger, #b42318) 70%, transparent);
+  text-decoration: underline wavy color-mix(in srgb, var(--danger) 70%, transparent);
   text-underline-offset: 4px;
 }
 
 .mathError {
   display: block;
   margin-top: 6px;
-  color: var(--danger, #b42318);
+  color: var(--danger);
   font-size: 0.78rem;
   font-weight: 600;
 }
@@ -215,7 +215,7 @@
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 0;
-  color: var(--text, #30262c);
+  color: var(--text);
   background: var(--surface-elevated);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 1.65rem;

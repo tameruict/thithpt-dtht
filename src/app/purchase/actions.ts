@@ -32,6 +32,8 @@ function asRecord(value: unknown) {
 export async function createPurchaseOrder(
   productId: string,
   idempotencyKey: string = randomUUID(),
+  couponCode?: string,
+  targetKeyId?: string,
 ): Promise<CreatePurchaseOrderResult> {
   if (!isKeyPurchaseEnabled()) {
     return { ok: false, error: 'CHECKOUT_DISABLED' };
@@ -82,9 +84,19 @@ export async function createPurchaseOrder(
     return { ok: false, error: 'PRODUCT_SCOPE_UNSUPPORTED' };
   }
 
+  const normalizedCoupon = couponCode?.trim().toUpperCase() ?? '';
+  if (normalizedCoupon && !/^[A-Z0-9_-]{3,32}$/.test(normalizedCoupon)) {
+    return { ok: false, error: 'COUPON_INVALID' };
+  }
+  if (targetKeyId && !/^[0-9a-f-]{36}$/i.test(targetKeyId)) {
+    return { ok: false, error: 'TARGET_KEY_INVALID' };
+  }
+
   const { data, error } = await supabase.rpc('create_purchase_order', {
     p_product_id: productId,
     p_idempotency_key: idempotencyKey,
+    p_coupon_code: normalizedCoupon ? normalizedCoupon : null,
+    p_target_key_id: targetKeyId ?? null,
   });
 
   if (error) {

@@ -122,6 +122,7 @@ export default function ExamPage({
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [saveError, setSaveError] = useState('');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [showReviewPanel, setShowReviewPanel] = useState(false);
@@ -286,7 +287,7 @@ export default function ExamPage({
     };
     // examDraft cố tình không nằm trong deps: chỉ overlay 1 lần lúc load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSessionId, hasHydrated, supabase, router]);
+  }, [currentSessionId, hasHydrated, loadAttempt, supabase, router]);
 
   const questions = useMemo(() => examData?.questions ?? [], [examData]);
   const totalQuestions = questions.length;
@@ -740,7 +741,7 @@ export default function ExamPage({
       onPaste={(event) => event.preventDefault()}
       onContextMenu={(event) => event.preventDefault()}
     >
-      <header className={styles.header}>
+      <header className={styles.header} aria-label="Thông tin phiên thi">
         <div>
           <div className={styles.candidateLine}>{candidateInfo.name}</div>
           <div className={styles.candidateSub}>
@@ -751,11 +752,17 @@ export default function ExamPage({
           </div>
         </div>
         <div className={styles.headerRight}>
-          <div className={`${styles.timer} ${timerWarning === 'critical' ? styles.timerCritical : timerWarning === 'warning' ? styles.timerWarning : ''}`}>
-            <Timer size={18} aria-hidden="true" /> <span>{formatTime(timeLeft)}</span>
+          <div
+            className={`${styles.timer} ${timerWarning === 'critical' ? styles.timerCritical : timerWarning === 'warning' ? styles.timerWarning : ''}`}
+            role="timer"
+            aria-live={timerWarning === 'normal' ? 'off' : 'assertive'}
+            aria-atomic="true"
+            aria-label={`Thời gian còn lại ${formatTime(timeLeft)}`}
+          >
+            <Timer size={18} aria-hidden="true" /> <span aria-hidden="true">{formatTime(timeLeft)}</span>
           </div>
-          <div className={styles.connection}>
-            <span className={`${styles.connectionDot} ${saveStatus === 'error' ? styles.connectionError : ''}`}></span>
+          <div className={styles.connection} role="status" aria-live="polite">
+            <span className={`${styles.connectionDot} ${saveStatus === 'error' ? styles.connectionError : ''}`} aria-hidden="true"></span>
             <span>{
               saveStatus === 'saving' ? 'Đang lưu...' :
               saveStatus === 'saved' ? '✓ Đã lưu' :
@@ -795,55 +802,58 @@ export default function ExamPage({
         </div>
       </header>
 
-      <div className={styles.toolbar}>
+      <div className={styles.toolbar} role="toolbar" aria-label="Điều khiển làm bài">
         <div className={styles.toolbarGroup}>
-          <button className="btn secondary small" onClick={handlePrev}>
+          <button className="btn secondary small" onClick={handlePrev} disabled={currentQuestion <= 1} aria-label="Về câu trước">
             Quay lại
           </button>
-          <button className="btn small" onClick={handleNext}>
+          <button className="btn small" onClick={handleNext} disabled={currentQuestion >= totalQuestions} aria-label="Sang câu tiếp theo">
             Tiếp theo
           </button>
           <button
             className="btn secondary small"
             onClick={() => setZoom(Math.max(100, zoom - 25))}
+            aria-label="Giảm cỡ chữ"
           >
             A-
           </button>
           <button
             className="btn secondary small"
             onClick={() => setZoom(Math.min(150, zoom + 25))}
+            aria-label="Tăng cỡ chữ"
           >
             A+
           </button>
-          <span className={styles.zoomValue}>{zoom}%</span>
-          <button className="btn secondary small" onClick={() => setZoom(100)}>
+          <span className={styles.zoomValue} aria-live="polite">Cỡ chữ {zoom}%</span>
+          <button className="btn secondary small" onClick={() => setZoom(100)} aria-label="Đặt lại cỡ chữ 100%">
             Đặt lại
           </button>
         </div>
         <div className={styles.toolbarGroup}>
-          <span className={styles.answeredCount}>
+          <span className={styles.answeredCount} role="status" aria-live="polite">
             Đã trả lời: {answeredCount} / {totalQuestions}
             {markedQuestions.length > 0 && ` · ${markedQuestions.length} đánh dấu`}
           </span>
           <button
             className="btn outline small"
             onClick={() => setShowReviewPanel(true)}
+            aria-haspopup="dialog"
           >
-            <Eye size={14} /> Xem lại
+            <Eye size={14} aria-hidden="true" /> Xem lại
           </button>
         </div>
       </div>
 
       {/* Cảnh báo rời khu vực thi (rời tab / thoát toàn màn hình) */}
       {showTabWarning && (
-        <div className={styles.tabWarning}>
-          <AlertTriangle size={16} />
+        <div className={styles.tabWarning} role="alert" aria-live="assertive">
+          <AlertTriangle size={16} aria-hidden="true" />
           <span>Bạn đã rời khỏi khu vực thi! ({tabSwitchCount} lần)</span>
         </div>
       )}
 
       {!isFullscreen && examData && !isLoading && (
-        <div className={styles.fullscreenPrompt}>
+        <div className={styles.fullscreenPrompt} role="alert">
           <AlertTriangle size={16} />
           <span>Bài thi yêu cầu chế độ toàn màn hình.</span>
           <button
@@ -860,17 +870,34 @@ export default function ExamPage({
           id="exam-question-prompt"
           className={styles.passagePanel}
           aria-label="Nội dung câu hỏi"
+          aria-busy={isLoading}
+          tabIndex={-1}
         >
           {isLoading ? (
-            <div className={styles.emptyState}>Đang tải câu hỏi từ Supabase...</div>
+            <div className={styles.emptyState} role="status" aria-live="polite">Đang tải câu hỏi từ Supabase...</div>
           ) : null}
           {!isLoading && questions.length === 0 && !loadError ? (
             <div className={styles.emptyState}>
               Cơ sở dữ liệu chưa có câu hỏi cho phiên thi này.
             </div>
           ) : null}
-          {loadError ? <p className={styles.errorText}>{loadError}</p> : null}
-          {saveError ? <p className={styles.errorText}>{saveError}</p> : null}
+          {loadError ? (
+            <div className={styles.emptyState} role="alert">
+              <p className={styles.errorText}>{loadError}</p>
+              <button
+                className="btn outline small"
+                type="button"
+                onClick={() => {
+                  setLoadError('');
+                  setIsLoading(true);
+                  setLoadAttempt((attempt) => attempt + 1);
+                }}
+              >
+                Thử tải lại
+              </button>
+            </div>
+          ) : null}
+          {saveError ? <p className={styles.errorText} role="alert">{saveError}</p> : null}
 
           {activeQuestion && renderableQuestion ? (
             <article className={styles.promptCard}>
@@ -891,7 +918,8 @@ export default function ExamPage({
         <section
           id="exam-answer-panel"
           className={styles.questionPanel}
-          aria-label="Phần trả lời"
+          aria-label={`Phần trả lời — Câu ${activeQuestion?.displayNo ?? ''}`}
+          tabIndex={-1}
         >
           {activeQuestion && renderableQuestion ? (
             <article className={styles.answerCard}>
@@ -901,13 +929,15 @@ export default function ExamPage({
                   <h2>Câu {activeQuestion.displayNo}</h2>
                 </div>
                 <button
+                  type="button"
                   className={`${styles.flagBtn} ${
                     marked.includes(activeQuestion.number) ? styles.marked : ''
                   }`}
+                  aria-pressed={marked.includes(activeQuestion.number)}
                   aria-label={
                     marked.includes(activeQuestion.number)
                       ? 'Bỏ đánh dấu câu hỏi'
-                      : 'Đánh dấu câu hỏi'
+                      : 'Đánh dấu câu hỏi để xem lại'
                   }
                   onClick={() => toggleMark(activeQuestion.number)}
                 >
@@ -943,21 +973,47 @@ export default function ExamPage({
         </section>
       </div>
 
-      <nav className={styles.questionNav}>
-        <div className={styles.questionButtons}>
+      <nav className={styles.questionNav} aria-label="Danh sách câu hỏi">
+        <div
+          className={styles.questionButtons}
+          role="listbox"
+          aria-label="Chọn câu hỏi"
+          aria-orientation="horizontal"
+          onKeyDown={(e) => {
+            const buttons = Array.from(
+              e.currentTarget.querySelectorAll<HTMLButtonElement>('button'),
+            );
+            const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+            if (index < 0) return;
+            let next = -1;
+            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (index + 1) % buttons.length;
+            else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = (index - 1 + buttons.length) % buttons.length;
+            else if (e.key === 'Home') next = 0;
+            else if (e.key === 'End') next = buttons.length - 1;
+            if (next >= 0) {
+              e.preventDefault();
+              buttons[next].focus();
+            }
+          }}
+        >
           {questions.map((question) => {
             const answered =
               Boolean(choiceAnswers[question.id]) ||
               Boolean(textAnswers[question.id]?.trim()) ||
               Object.keys(trueFalseAnswers[question.id] ?? {}).length > 0;
             const isMarked = marked.includes(question.number);
+            const isCurrent = question.number === currentQuestion;
             return (
               <button
                 key={question.id}
+                type="button"
+                role="option"
+                aria-selected={isCurrent}
+                aria-label={`Câu ${question.displayNo}${answered ? ', đã trả lời' : ', chưa trả lời'}${isMarked ? ', đã đánh dấu' : ''}`}
                 className={`${styles.qNumber} ${
                   answered ? styles.answered : ''
                 } ${isMarked ? styles.marked : ''} ${
-                  question.number === currentQuestion ? styles.current : ''
+                  isCurrent ? styles.current : ''
                 }`}
                 onClick={() => {
                   setCurrentQuestion(question.number);
@@ -987,12 +1043,29 @@ export default function ExamPage({
 
       {/* Answer Review Panel */}
       {showReviewPanel && (
-        <div className={styles.reviewOverlay} onClick={() => setShowReviewPanel(false)}>
-          <div className={styles.reviewPanel} onClick={(e) => e.stopPropagation()}>
+        <div
+          className={styles.reviewOverlay}
+          onClick={() => setShowReviewPanel(false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setShowReviewPanel(false);
+          }}
+        >
+          <div
+            className={styles.reviewPanel}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="exam-review-title"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className={styles.reviewHeader}>
-              <h2>Xem lại bài làm</h2>
-              <button className={styles.reviewClose} onClick={() => setShowReviewPanel(false)}>
-                <X size={20} />
+              <h2 id="exam-review-title">Xem lại bài làm</h2>
+              <button
+                className={styles.reviewClose}
+                onClick={() => setShowReviewPanel(false)}
+                autoFocus
+                aria-label="Đóng bảng xem lại"
+              >
+                <X size={20} aria-hidden="true" />
               </button>
             </div>
 
@@ -1060,7 +1133,7 @@ export default function ExamPage({
                   Quay lại làm bài
                 </button>
                 <button className="btn" onClick={() => void handleConfirmSubmit()}>
-                  <CheckCircle size={16} /> Xác nhận nộp bài
+                  <CheckCircle size={16} aria-hidden="true" /> Xác nhận nộp bài
                 </button>
               </div>
             </div>
