@@ -1,4 +1,4 @@
-﻿-- Free student access: exam sessions no longer require a room key.
+-- Free student access: exam sessions no longer require a room key.
 
 alter table public.exam_sessions
   alter column key_id drop not null;
