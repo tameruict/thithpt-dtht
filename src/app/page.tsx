@@ -11,6 +11,7 @@ import { createClient } from '@/lib/supabase/client';
 import { hasSupabaseEnv } from '@/lib/supabase/env';
 import { loadCandidateProfile } from '@/lib/supabase/user-profile';
 import { translateAuthError } from '@/lib/supabase/auth-errors';
+import { beginGoogleOAuth } from '@/lib/supabase/google-oauth';
 
 // Turnstile kéo script Cloudflare + lib React khá nặng: tải lười ở client để
 // không chặn First Paint của trang đăng nhập.
@@ -134,6 +135,13 @@ export default function LoginPage() {
       }
 
       router.push(getPostLoginPath(), { transitionTypes: ['nav-forward'] });
+    } catch (loginError) {
+      console.error('Password login exception:', loginError);
+      setError(
+        loginError instanceof Error
+          ? translateAuthError(loginError.message)
+          : 'Không thể đăng nhập lúc này. Vui lòng kiểm tra kết nối và thử lại.',
+      );
     } finally {
       setLoading(false);
     }
@@ -154,18 +162,11 @@ export default function LoginPage() {
       callbackUrl.searchParams.set('next', getPostLoginPath());
 
       const supabase = createClient();
-      const { error: authError } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: callbackUrl.toString(),
-        },
-      });
-
-      if (authError) {
-        console.error('Google OAuth error:', authError);
-        setError(translateAuthError(authError.message));
-        setGoogleLoading(false);
-      }
+      await beginGoogleOAuth(
+        (request) => supabase.auth.signInWithOAuth(request),
+        callbackUrl.toString(),
+        (url) => window.location.assign(url),
+      );
     } catch (loginError) {
       console.error('Google login exception:', loginError);
       setError(

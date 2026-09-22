@@ -73,6 +73,14 @@ function ResetPasswordForm() {
       setMessage(`Đã gửi mã OTP gồm ${OTP_LENGTH} số đến ${targetEmail}. Vui lòng kiểm tra hộp thư (kể cả mục Spam).`);
       setCooldown(RESEND_COOLDOWN);
       return true;
+    } catch (sendError) {
+      console.error('Password reset request exception:', sendError);
+      setError(
+        sendError instanceof Error
+          ? translateAuthError(sendError.message)
+          : 'Không thể gửi mã OTP lúc này. Vui lòng kiểm tra kết nối và thử lại.',
+      );
+      return false;
     } finally {
       setLoading(false);
       sendingRef.current = false;
@@ -159,6 +167,13 @@ function ResetPasswordForm() {
 
       setMessage('Đổi mật khẩu thành công! Đang chuyển hướng…');
       router.push('/subjects');
+    } catch (verifyError) {
+      console.error('Password reset verification exception:', verifyError);
+      setError(
+        verifyError instanceof Error
+          ? translateAuthError(verifyError.message)
+          : 'Không thể đổi mật khẩu lúc này. Vui lòng kiểm tra kết nối và thử lại.',
+      );
     } finally {
       setLoading(false);
     }

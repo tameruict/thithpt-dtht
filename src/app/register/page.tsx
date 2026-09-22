@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/client';
 import { hasSupabaseEnv } from '@/lib/supabase/env';
 import { ensureStudentProfile, loadCandidateProfile } from '@/lib/supabase/user-profile';
 import { translateAuthError } from '@/lib/supabase/auth-errors';
+import { beginGoogleOAuth } from '@/lib/supabase/google-oauth';
 import {
   getPasswordPolicyError,
   MIN_PASSWORD_LENGTH,
@@ -133,17 +134,11 @@ export default function RegisterPage() {
       callbackUrl.searchParams.set('next', '/subjects');
 
       const supabase = createClient();
-      const { error: authError } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: callbackUrl.toString(),
-        },
-      });
-
-      if (authError) {
-        setError(translateAuthError(authError.message));
-        setGoogleLoading(false);
-      }
+      await beginGoogleOAuth(
+        (request) => supabase.auth.signInWithOAuth(request),
+        callbackUrl.toString(),
+        (url) => window.location.assign(url),
+      );
     } catch (googleError) {
       setError(
         googleError instanceof Error
