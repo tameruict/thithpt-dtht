@@ -2,6 +2,13 @@
 -- số) đã tồn tại trên DB production nhưng thiếu file migration trong repo. File
 -- này scaffold idempotent để môi trường mới khớp production, và bật Realtime cho
 -- purchase_orders để checkout cập nhật tức thì khi webhook fulfill đơn.
+--
+-- CẬP NHẬT 2026-09-23: file này chỉ dựng 2 BẢNG (coupons, key_topups) + Realtime.
+-- Phần THÂN HÀM 4-tham-số create_purchase_order, bản fulfill_purchase_order có
+-- top-up, và 4 cột thương mại trên purchase_orders (coupon_code, discount_amount,
+-- original_amount, target_key_id) đã được bắt trọn vào
+-- 20260923000000_reconcile_commerce_functions.sql. Kết hợp 2 file này thì môi
+-- trường dựng mới từ repo mới có checkout hoạt động.
 
 -- 1) coupons (scaffold — production đã có; IF NOT EXISTS nên no-op ở prod).
 create table if not exists public.coupons (
