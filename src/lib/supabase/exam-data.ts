@@ -590,8 +590,40 @@ export async function startFreeExamSession(
   });
 
   if (error) throw error;
-  if (!data) throw new Error('Kh?ng t?o ???c phi?n thi mi?n ph?.');
+  if (!data) throw new Error('Không tạo được phiên thi miễn phí.');
   return data;
+}
+
+export type AttemptStatus = {
+  freeQuota: number;
+  freeUsed: number;
+  freeRemaining: number;
+  keyRemaining: number;
+  totalRemaining: number;
+};
+
+/**
+ * Số lượt thi còn lại của thí sinh (freemium): hạn mức miễn phí + lượt từ key đã
+ * mua. Dùng cho KPI ở dashboard và quyết định hiển thị CTA "Mua thêm lượt".
+ */
+export async function getAttemptStatus(
+  supabase: AppSupabaseClient,
+): Promise<AttemptStatus> {
+  // get_attempt_status is newer than the generated Supabase schema; cast the rpc
+  // name locally rather than widen the whole generated client type.
+  const rpc = supabase.rpc as unknown as (
+    name: string,
+  ) => Promise<{ data: unknown; error: { message?: string } | null }>;
+  const { data, error } = await rpc('get_attempt_status');
+  if (error) throw error;
+  const row = (data ?? {}) as Record<string, number>;
+  return {
+    freeQuota: Number(row.free_quota ?? 0),
+    freeUsed: Number(row.free_used ?? 0),
+    freeRemaining: Number(row.free_remaining ?? 0),
+    keyRemaining: Number(row.key_remaining ?? 0),
+    totalRemaining: Number(row.total_remaining ?? 0),
+  };
 }
 
 export async function startPracticeSession(

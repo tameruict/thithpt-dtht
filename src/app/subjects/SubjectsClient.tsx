@@ -1,15 +1,17 @@
 ﻿'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FileText, LogOut, Moon, ShieldCheck, Sun } from 'lucide-react';
+import { FileText, KeyRound, LogOut, Moon, ShieldCheck, Sun, Ticket } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { hasSupabaseEnv } from '@/lib/supabase/env';
 import {
   clearReferenceCache,
   fetchSubjectsDashboard,
+  formatPriceVnd,
+  getAttemptStatus,
   type ActiveSessionInfo,
+  type AttemptStatus,
   type ExamRoomSummary,
   type PracticeAvailability,
   type SubjectSummary,
@@ -62,6 +64,7 @@ export default function SubjectsClient({
   const [reloadKey, setReloadKey] = useState(0);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [activeSession, setActiveSession] = useState<ActiveSessionInfo | null>(null);
+  const [attempts, setAttempts] = useState<AttemptStatus | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
   const logout = useExamStore((state) => state.logout);
   const setSession = useExamStore((state) => state.setSession);
@@ -86,6 +89,21 @@ export default function SubjectsClient({
       router.push('/');
     }
   }, [candidateInfo, hasHydrated, router]);
+
+  useEffect(() => {
+    if (!hasConfiguredSupabase || !candidateInfo) return;
+    let mounted = true;
+    getAttemptStatus(createClient())
+      .then((status) => {
+        if (mounted) setAttempts(status);
+      })
+      .catch(() => {
+        // Non-fatal: KPI just stays hidden if the status can't be read.
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [hasConfiguredSupabase, candidateInfo, reloadKey]);
 
   useEffect(() => {
     if (hasHydrated) return;
@@ -173,6 +191,14 @@ export default function SubjectsClient({
           <div className={styles.avatar} aria-hidden="true">{candidateInfo.name.charAt(0)}</div>
           <span>Profile</span>
         </button>
+        <button
+          className="btn outline small"
+          type="button"
+          onClick={() => router.push('/purchase', { transitionTypes: ['nav-forward'] })}
+        >
+          <KeyRound size={15} />
+          <span>Mua thêm lượt</span>
+        </button>
         {isAdmin && (
           <button
             className={`btn outline small ${styles.profileButton}`}
@@ -220,6 +246,33 @@ export default function SubjectsClient({
             <span>SBD {candidateInfo.code}</span>
           </div>
         </header>
+
+        {attempts ? (
+          <section className={styles.attemptStatus} aria-live="polite">
+            <div className={styles.attemptInfo}>
+              <Ticket size={18} aria-hidden="true" />
+              <div>
+                <strong>{attempts.totalRemaining} lượt thi còn lại</strong>
+                <span>
+                  {attempts.freeRemaining} lượt miễn phí
+                  {attempts.keyRemaining > 0
+                    ? ` + ${attempts.keyRemaining} lượt đã mua`
+                    : ''}
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn small"
+              onClick={() =>
+                router.push('/purchase', { transitionTypes: ['nav-forward'] })
+              }
+            >
+              <KeyRound size={15} aria-hidden="true" />
+              {attempts.totalRemaining === 0 ? 'Hết lượt — mua thêm' : 'Mua thêm lượt'}
+            </button>
+          </section>
+        ) : null}
 
         {activeSession ? (
           <section
@@ -291,7 +344,7 @@ export default function SubjectsClient({
             </div>
             <div className={styles.infoRow}>
               <span>Phòng thi:</span>
-              <span>Miễn phí cho mọi học viên</span>
+              <span>Cần key để vào thi chính thức</span>
             </div>
           </section>
         </div>
@@ -465,11 +518,11 @@ export default function SubjectsClient({
                       Đang mở
                     </span>
                   </div>
-                  <div className={styles.pricingPrice}>Miễn phí</div>
+                  <div className={styles.pricingPrice}>{formatPriceVnd(room.priceVnd)}</div>
                   <div className={styles.pricingDesc}>
                     <strong>{room.name}</strong>
                     <br />
-                    {room.durationMinutes} phút · Không giới hạn lượt
+                    {room.durationMinutes} phút · {room.totalAttemptsDefault} lượt/key
                     <br />
                     Mã phòng: {room.code}
                   </div>

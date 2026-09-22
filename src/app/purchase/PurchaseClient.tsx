@@ -225,6 +225,53 @@ export default function PurchaseClient({
     return () => window.clearInterval(interval);
   }, [order, refreshOrder]);
 
+  // Realtime: react the instant the webhook flips the order (poll above is the
+  // fallback the MBBank V4 docs recommend running alongside the webhook).
+  useEffect(() => {
+    if (!order || TERMINAL_ORDER_STATUSES.has(order.status)) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel('order-' + order.orderId)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'purchase_orders',
+          filter: 'id=eq.' + order.orderId,
+        },
+        () => {
+          void refreshOrder();
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [order, refreshOrder]);
+
+  // Live countdown to the 24h payment window so the pressure/urgency is clear.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!order || TERMINAL_ORDER_STATUSES.has(order.status) || !order.expiresAt) {
+      return;
+    }
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [order]);
+
+  const countdown = useMemo(() => {
+    if (!order?.expiresAt) return null;
+    const remaining = new Date(order.expiresAt).getTime() - now;
+    if (remaining <= 0) return '00:00';
+    const totalSeconds = Math.floor(remaining / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return (hours > 0 ? pad(hours) + ':' : '') + pad(minutes) + ':' + pad(seconds);
+  }, [order, now]);
+
   const copyValue = async (value: string, label: string) => {
     try {
       await navigator.clipboard.writeText(value);
@@ -545,18 +592,13 @@ export default function PurchaseClient({
                     </div>
                   </div>
                   <p className={styles.pending}>
-                    Hệ thống tự kiểm tra mỗi 4 giây. Chuyển đúng số tiền và giữ
+                    Xác nhận tức thì khi nhận được tiền (webhook), đồng thời hệ
+                    thống tự đối soát mỗi 4 giây. Chuyển đúng số tiền và giữ
                     nguyên nội dung thanh toán.
                   </p>
-                  {order.expiresAt ? (
-                    <p className={styles.expiry}>
-                      Đơn hết hạn lúc {new Intl.DateTimeFormat('vi-VN', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric',
-                      }).format(new Date(order.expiresAt))}.
+                  {countdown ? (
+                    <p className={styles.expiry} aria-live="off">
+                      Đơn còn hiệu lực: <strong>{countdown}</strong>
                     </p>
                   ) : null}
                   <button

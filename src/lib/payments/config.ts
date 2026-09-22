@@ -40,6 +40,14 @@ export function getCheckoutBankDetails() {
   };
 }
 
+export function getWebhookSecret(): string {
+  const secret = process.env.THUEAPIBANK_WEBHOOK_SECRET?.trim() ?? '';
+  if (!secret) {
+    throw new Error('Missing THUEAPIBANK_WEBHOOK_SECRET.');
+  }
+  return secret;
+}
+
 export function getPaymentPollFunctionConfig() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? '';
   const pollSecret = process.env.THUEAPIBANK_POLL_SECRET?.trim() ?? '';

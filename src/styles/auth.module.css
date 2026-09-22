@@ -373,15 +373,73 @@
   width: 100%;
   min-height: 52px;
   margin-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   border-radius: var(--radius-lg);
   background: var(--brand-gradient);
   color: #fff;
   font-size: 16px;
   font-weight: 900;
+  text-decoration: none;
   box-shadow: 0 14px 30px color-mix(in srgb, var(--primary) 26%, transparent);
   cursor: pointer;
   transition: filter .18s ease, transform .18s ease, box-shadow .18s ease;
 }
+
+/* Freemium attempt indicator + out-of-attempts upsell + manual-key fallback. */
+.attemptBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 14px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--surface-tint);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.attemptBar strong { color: var(--text-primary); }
+
+.upsell {
+  margin: 6px 0 4px;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  background: var(--warning-soft);
+  border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent);
+}
+
+.upsell p {
+  margin: 0 0 12px;
+  color: var(--text-body);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.manualKey {
+  margin-top: 18px;
+  border-top: 1px dashed var(--border);
+  padding-top: 14px;
+}
+
+.manualKey summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  list-style: none;
+  user-select: none;
+}
+
+.manualKey summary::-webkit-details-marker { display: none; }
+.manualKey summary:hover { color: var(--primary); }
+.manualKey form { margin-top: 12px; display: grid; gap: 10px; }
 
 .submitBtn:hover {
   filter: brightness(1.04);

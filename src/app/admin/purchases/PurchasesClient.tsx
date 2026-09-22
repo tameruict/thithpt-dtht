@@ -2,9 +2,10 @@
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ChevronLeft, ChevronRight, Download, Inbox, Play, RefreshCw, RotateCcw, Search, ShieldAlert } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Inbox, Play, RefreshCw, RotateCcw, Search, ShieldAlert, BadgeCheck } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { showToast } from '@/components/ui/Toast';
+import { confirmManualPayment } from './actions';
 import AdminSuiteNav from '../AdminSuiteNav';
 import styles from '@/styles/adminPurchase.module.css';
 
@@ -73,6 +74,7 @@ export default function PurchasesClient() {
   const [revokeId, setRevokeId] = useState<string | null>(null);
   const [revokeReason, setRevokeReason] = useState('');
   const [revoking, setRevoking] = useState(false);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const revokeInputRef = useRef<HTMLInputElement>(null);
   const revokeTriggerRef = useRef<HTMLButtonElement | null>(null);
   const deferredSearch = useDeferredValue(search);
@@ -191,6 +193,32 @@ export default function PurchasesClient() {
       showToast('Đã gửi yêu cầu đối soát đơn.', 'success');
     }
     await load();
+  };
+
+  const confirmManual = async (orderId: string, paymentCode: string) => {
+    if (!window.confirm(`Xác nhận đã nhận tiền Zalo/CK cho đơn ${paymentCode}? Key sẽ được cấp ngay.`)) {
+      return;
+    }
+    setConfirmingId(orderId);
+    setFeedback('');
+    try {
+      const result = await confirmManualPayment(orderId);
+      if (!result.ok) {
+        setFeedback(result.error);
+        showToast(result.error, 'error');
+      } else {
+        showToast(
+          result.keyCode ? `Đã cấp key ${result.keyCode}.` : 'Đã xác nhận thanh toán.',
+          'success',
+        );
+      }
+    } catch {
+      setFeedback('CONFIRM_MANUAL_FAILED');
+      showToast('Không xác nhận được đơn.', 'error');
+    } finally {
+      setConfirmingId(null);
+      await load();
+    }
   };
 
   const revoke = async () => {
@@ -422,6 +450,15 @@ export default function PurchasesClient() {
                     </td>
                     <td>{order.provider_order_ref ?? '—'}</td>
                     <td className={styles.rowActions}>
+                      <button
+                        type="button"
+                        onClick={() => void confirmManual(order.id, order.payment_code)}
+                        disabled={order.status !== 'pending' || confirmingId === order.id}
+                        title="Xác nhận đã nhận tiền (Zalo/thủ công) và cấp key"
+                        aria-label={`Xác nhận thanh toán đơn ${order.payment_code}`}
+                      >
+                        <BadgeCheck size={15} aria-hidden="true" />
+                      </button>
                       <button
                         type="button"
                         onClick={() => void reconcile(order.id)}

@@ -46,3 +46,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Saved reference webpage (MBBank V4 webhook doc) — not app source
+/Cấu hình Webhook MBBank V4*
