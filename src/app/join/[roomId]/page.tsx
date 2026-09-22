@@ -1,5 +1,5 @@
 import { requireUser } from '@/lib/supabase/session';
-import RoomKeyPage from '../../room-key/page';
+import RoomKeyPageClient from '../../room-key/RoomKeyPageClient';
 import PurchasePage from '../../purchase/page';
 
 export const dynamic = 'force-dynamic';
@@ -14,5 +14,5 @@ export default async function JoinRoomPage({
   if (roomId === '__purchase') {
     return <PurchasePage />;
   }
-  return <RoomKeyPage roomId={roomId} />;
+  return <RoomKeyPageClient roomId={roomId} />;
 }

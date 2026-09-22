@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { requireUser } from '@/lib/supabase/session';
 import { loadCandidateProfile } from '@/lib/supabase/user-profile';
 import type { CandidateInfo } from '@/store/useExamStore';
-import ExamPage from '../page';
+import ExamPageClient from '../ExamPageClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,5 +43,5 @@ export default async function SessionExamPage({
     session: null,
   };
 
-  return <ExamPage sessionId={sessionId} candidate={candidate} />;
+  return <ExamPageClient sessionId={sessionId} candidate={candidate} />;
 }

@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { requireUser } from '@/lib/supabase/session';
-import ResultPage from '../page';
+import ResultPageClient from '../ResultPageClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,5 +25,5 @@ export default async function SessionResultPage({
     .maybeSingle();
 
   if (!session) redirect('/subjects');
-  return <ResultPage sessionId={sessionId} />;
+  return <ResultPageClient sessionId={sessionId} />;
 }
