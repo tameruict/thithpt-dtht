@@ -164,24 +164,24 @@ function ResetPasswordForm() {
     }
   };
 
+  const otpIncomplete = otp.length > 0 && otp.length < OTP_LENGTH;
+  const confirmMismatch =
+    confirmPassword.length > 0 && password !== confirmPassword;
+
   return (
     <div className={styles.container}>
-      <div className={styles.logoArea}>
-        <div className={styles.logoText}>BỘ GIÁO DỤC VÀ ĐÀO TẠO</div>
-        <div className={styles.logoSub}>KỲ THI TỐT NGHIỆP THPT QUỐC GIA</div>
-      </div>
-
-      <div className={styles.orbStage} aria-hidden="true">
-        <span className={styles.orbitRing} />
-        <span className={styles.orbitRingAlt} />
-        <div className={styles.energyOrb}>
-          <span className={styles.orbGrid} />
-          <span className={styles.orbLightning} />
-          <span className={styles.orbCore} />
+      <header className={styles.topbar}>
+        <div className={styles.topbarInner}>
+          <span className={styles.crest} aria-hidden="true">THPT</span>
+          <div>
+            <p className={styles.brandTitle}>Kỳ thi tốt nghiệp THPT Quốc gia</p>
+            <p className={styles.brandSub}>Khôi phục mật khẩu tài khoản thí sinh</p>
+          </div>
         </div>
-      </div>
+      </header>
 
-      <div className={styles.card}>
+      <div className={styles.cardWrap}>
+      <main id="main" tabIndex={-1} className={styles.card}>
         {step === 'request' ? (
           <>
             <h1 className={styles.title}>Quên mật khẩu</h1>
@@ -210,7 +210,7 @@ function ResetPasswordForm() {
               <CaptchaChallenge onToken={setCaptchaToken} />
               {error && <p className={styles.errorText} role="alert" aria-live="assertive">{error}</p>}
 
-              <button type="submit" className={styles.submitBtn} disabled={loading}>
+              <button type="submit" className={styles.submitBtn} disabled={loading} aria-busy={loading}>
                 {loading ? 'Đang gửi…' : 'Gửi mã OTP'}
               </button>
             </form>
@@ -237,9 +237,16 @@ function ResetPasswordForm() {
                     className={styles.input}
                     value={otp}
                     placeholder={`${OTP_LENGTH} số`}
+                    aria-invalid={otpIncomplete}
+                    aria-describedby={otpIncomplete ? 'recovery-otp-error' : undefined}
                     onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, OTP_LENGTH))}
                   />
                 </div>
+                {otpIncomplete ? (
+                  <p id="recovery-otp-error" className={styles.fieldError} role="alert">
+                    Mã OTP gồm {OTP_LENGTH} số, còn thiếu {OTP_LENGTH - otp.length} số.
+                  </p>
+                ) : null}
               </div>
 
               <div className={styles.formGroup}>
@@ -253,8 +260,9 @@ function ResetPasswordForm() {
                     minLength={MIN_PASSWORD_LENGTH}
                     className={styles.input}
                     value={password}
-                    placeholder="Tối thiểu 10 ký tự, gồm chữ và số"
+                    placeholder={`Tối thiểu ${MIN_PASSWORD_LENGTH} ký tự, gồm chữ và số`}
                     autoComplete="new-password"
+                    aria-describedby="recovery-password-hint"
                     onChange={(e) => setPassword(e.target.value)}
                   />
                   <button
@@ -266,6 +274,7 @@ function ResetPasswordForm() {
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
+                <p id="recovery-password-hint" className={styles.fieldHint}>Tối thiểu {MIN_PASSWORD_LENGTH} ký tự.</p>
               </div>
 
               <div className={styles.formGroup}>
@@ -280,15 +289,26 @@ function ResetPasswordForm() {
                     value={confirmPassword}
                     placeholder="Nhập lại mật khẩu mới"
                     autoComplete="new-password"
+                    aria-invalid={confirmMismatch}
+                    aria-describedby={confirmMismatch ? 'recovery-confirm-error' : undefined}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                   />
                 </div>
+                {confirmMismatch ? (
+                  <p id="recovery-confirm-error" className={styles.fieldError} role="alert">
+                    Mật khẩu nhập lại chưa khớp.
+                  </p>
+                ) : null}
               </div>
 
               {error && <p className={styles.errorText} role="alert" aria-live="assertive">{error}</p>}
-              {message && <p className={`${styles.errorText} ${styles.successText}`}>{message}</p>}
+              {message && (
+                <p className={`${styles.errorText} ${styles.successText}`} role="status" aria-live="polite">
+                  {message}
+                </p>
+              )}
 
-              <button type="submit" className={styles.submitBtn} disabled={loading}>
+              <button type="submit" className={styles.submitBtn} disabled={loading} aria-busy={loading}>
                 {loading ? 'Đang xử lý…' : 'Đổi mật khẩu'}
               </button>
             </form>
@@ -308,9 +328,36 @@ function ResetPasswordForm() {
 
         <div className={`${styles.footerLinks} ${styles.centered}`}>
           <Link href="/" className={styles.forgotLink}>
-            <ArrowLeft size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+            <ArrowLeft size={14} className={styles.backIcon} aria-hidden="true" />
             Quay lại đăng nhập
           </Link>
+        </div>
+      </main>
+      </div>
+    </div>
+  );
+}
+
+function ResetPasswordFallback() {
+  return (
+    <div className={styles.container}>
+      <header className={styles.topbar}>
+        <div className={styles.topbarInner}>
+          <span className={styles.crest} aria-hidden="true">THPT</span>
+          <div>
+            <p className={styles.brandTitle}>Kỳ thi tốt nghiệp THPT Quốc gia</p>
+            <p className={styles.brandSub}>Khôi phục mật khẩu tài khoản thí sinh</p>
+          </div>
+        </div>
+      </header>
+      <div className={styles.cardWrap}>
+        <div className={styles.card} role="status" aria-live="polite" aria-busy="true">
+          <span className={styles.visuallyHidden}>Đang tải trang khôi phục mật khẩu…</span>
+          <div className={`${styles.skeletonLine} ${styles.skeletonTitle}`} aria-hidden="true" />
+          <div className={styles.skeletonLine} style={{ width: '85%', marginBottom: 24 }} aria-hidden="true" />
+          <div className={styles.skeletonLine} style={{ marginBottom: 18 }} aria-hidden="true" />
+          <div className={styles.skeletonLine} style={{ marginBottom: 18 }} aria-hidden="true" />
+          <div className={`${styles.skeletonLine} ${styles.skeletonBtn}`} aria-hidden="true" />
         </div>
       </div>
     </div>
@@ -319,7 +366,7 @@ function ResetPasswordForm() {
 
 export default function ResetPasswordPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<ResetPasswordFallback />}>
       <ResetPasswordForm />
     </Suspense>
   );

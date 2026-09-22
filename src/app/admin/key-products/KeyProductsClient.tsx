@@ -1,7 +1,6 @@
 'use client';
 
 import { FormEvent, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
 import { Archive, ChevronLeft, ChevronRight, Inbox, Pencil, Plus, Power, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { showToast } from '@/components/ui/Toast';
@@ -267,24 +266,20 @@ export default function KeyProductsClient() {
           <h1>Gói key</h1>
           <p>Cấu hình catalog, bật/tắt hoặc archive sản phẩm.</p>
         </div>
-        <div className={styles.links}>
-          <Link href="/admin/purchases">Đơn ThueAPIBank</Link>
-          <Link href="/admin">Dashboard</Link>
-        </div>
       </div>
 
       <AdminSuiteNav active="products" />
 
-      <div className={styles.providerStatus} aria-label="Thống kê gói key">
-        <div>
+      <div className={styles.kpiGrid} aria-label="Thống kê gói key">
+        <div className={styles.kpi}>
           <span>Tổng gói</span>
           <strong>{stats.total}</strong>
         </div>
-        <div>
+        <div className={styles.kpi}>
           <span>Đang bán</span>
           <strong>{stats.active}</strong>
         </div>
-        <div>
+        <div className={styles.kpi}>
           <span>Đã archive</span>
           <strong>{stats.archived}</strong>
         </div>
@@ -417,7 +412,6 @@ export default function KeyProductsClient() {
                 }}
                 placeholder="Mã hoặc tên gói..."
                 aria-label="Tìm gói key"
-                className={styles.dialogInput}
               />
             </label>
           </div>

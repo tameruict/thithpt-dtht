@@ -43,8 +43,22 @@
 }
 
 .links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-height);
+  padding: 0 12px;
+  border-radius: var(--radius-md);
   color: var(--primary);
   font-weight: 700;
+}
+
+.links a:hover {
+  background: var(--primary-soft);
+}
+
+.links a:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 4px var(--ring);
 }
 
 .grid {
@@ -113,7 +127,7 @@
   box-shadow: 0 0 0 4px var(--ring);
 }
 
-.product[aria-pressed="true"] {
+.product[aria-checked="true"] {
   border-color: var(--primary);
   background: color-mix(in srgb, var(--primary-soft) 60%, transparent);
 }
@@ -381,6 +395,81 @@
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 4px var(--ring);
+}
+
+/* Tóm tắt đơn (preview giá) hiển thị trước nút tạo đơn — chốt giá, tăng chuyển đổi. */
+.orderSummary {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 12px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+  border-radius: var(--radius-lg);
+  background: var(--primary-soft);
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  font-size: 14px;
+}
+
+.summaryRow span {
+  color: var(--muted);
+}
+
+.summaryRow strong {
+  color: var(--text);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.summaryTotal {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border));
+}
+
+.summaryTotal span:first-child {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.orderSummary .total {
+  font-family: var(--font-code);
+  color: var(--primary);
+  font-weight: 900;
+  font-size: 16px;
+}
+
+.orderSummary small {
+  margin-top: 2px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.submitBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.spinner {
+  animation: purchaseSpin .8s linear infinite;
+}
+
+@keyframes purchaseSpin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
 }
 
 /* TẠM THỜI: box liên hệ Zalo thay QR payment. */

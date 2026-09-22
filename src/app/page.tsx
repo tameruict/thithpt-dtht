@@ -192,9 +192,9 @@ export default function LoginPage() {
       <div className={styles.main}>
         <section className={styles.heroPanel} aria-labelledby="login-hero-title">
           <span className={styles.heroKicker}>Kỳ thi 2026</span>
-          <h1 id="login-hero-title" className={styles.heroTitle}>
+          <h2 id="login-hero-title" className={styles.heroTitle}>
             Phòng thi trực tuyến, đúng giờ, đúng đề
-          </h1>
+          </h2>
           <p className={styles.heroText}>
             Đăng nhập bằng tài khoản thí sinh để chọn môn, nhập mã phòng thi và làm bài.
             Giờ làm bài tính theo máy chủ, bài làm tự lưu trong lúc thi.
@@ -202,15 +202,15 @@ export default function LoginPage() {
           <ol className={styles.steps}>
             <li className={styles.step}>
               <span className={styles.stepNum} aria-hidden="true">1</span>
-              <div><strong>Đăng nhập</strong><span>Dùng email và mật khẩu đã đăng ký.</span></div>
+              <div><strong>Đăng nhập</strong><span className={styles.stepDesc}>Dùng email và mật khẩu đã đăng ký.</span></div>
             </li>
             <li className={styles.step}>
               <span className={styles.stepNum} aria-hidden="true">2</span>
-              <div><strong>Chọn môn &amp; phòng thi</strong><span>Xem phòng đang mở, kiểm tra thời gian.</span></div>
+              <div><strong>Chọn môn &amp; phòng thi</strong><span className={styles.stepDesc}>Xem phòng đang mở, kiểm tra thời gian.</span></div>
             </li>
             <li className={styles.step}>
               <span className={styles.stepNum} aria-hidden="true">3</span>
-              <div><strong>Nhập mã &amp; làm bài</strong><span>Mã key do hội đồng thi cấp.</span></div>
+              <div><strong>Nhập mã &amp; làm bài</strong><span className={styles.stepDesc}>Mã key do hội đồng thi cấp.</span></div>
             </li>
           </ol>
           <p className={styles.supportBox}>
@@ -282,6 +282,7 @@ export default function LoginPage() {
               type="submit"
               className={styles.submitBtn}
               disabled={loading || googleLoading}
+              aria-busy={loading}
             >
               {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
             </button>
@@ -314,13 +315,17 @@ export default function LoginPage() {
             >
               Quên mật khẩu?
             </Link>
-            <span className={styles.fieldHint} style={{ margin: 0 }}>
-              <ShieldCheck size={14} aria-hidden="true" style={{ verticalAlign: -2 }} /> Bảo mật theo phiên Supabase
-              {' · '}
-              <ClipboardList size={14} aria-hidden="true" style={{ verticalAlign: -2 }} /> Đề thi chuẩn
-              {' · '}
-              <KeyRound size={14} aria-hidden="true" style={{ verticalAlign: -2 }} /> Vào phòng bằng key
-            </span>
+            <ul className={styles.metaList}>
+              <li className={styles.metaItem}>
+                <ShieldCheck size={14} aria-hidden="true" /> Bảo mật theo phiên Supabase
+              </li>
+              <li className={styles.metaItem}>
+                <ClipboardList size={14} aria-hidden="true" /> Đề thi chuẩn
+              </li>
+              <li className={styles.metaItem}>
+                <KeyRound size={14} aria-hidden="true" /> Vào phòng bằng key
+              </li>
+            </ul>
           </div>
         </main>
       </div>

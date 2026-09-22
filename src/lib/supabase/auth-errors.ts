@@ -14,6 +14,10 @@ export function translateAuthError(message: string): string {
     return 'Phiên đăng nhập Google đã được dùng hoặc hết hiệu lực. Hãy quay lại trang đăng nhập và thử lại.';
   }
 
+  if (lower.includes('bad_oauth_state') || lower.includes('oauth state has expired')) {
+    return 'Phiên đăng nhập Google đã hết hạn do thao tác quá lâu. Vui lòng bấm "Tiếp tục với Google" và hoàn tất trong vài phút.';
+  }
+
   if (lower.includes('user already registered') || lower.includes('already been registered')) {
     return 'Email này đã được đăng ký. Vui lòng đăng nhập hoặc dùng email khác.';
   }

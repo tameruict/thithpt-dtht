@@ -16,6 +16,15 @@ type Row = {
   submitted_at: string | null;
 };
 
+// Màu huy chương rank 1-3: đây là màu trang trí (vàng/bạc/đồng) theo quy ước,
+// không phải màu ngữ nghĩa theme nên không có token trong globals.css. Chọn
+// tông trung tính để đọc được trên cả nền sáng lẫn tối.
+const MEDAL_COLORS: Record<number, string> = {
+  1: '#c8940f',
+  2: '#8a94a6',
+  3: '#b5651d',
+};
+
 /* ─── Cache + dedupe BXH ─────────────────────────────────────────────
  * Trang môn thi render N phòng × 1 RoomLeaderboard = N RPC song song tới
  * Supabase (Mumbai). Cache kết quả 60s ở module-scope + gộp các lần gọi
@@ -110,14 +119,25 @@ export default function RoomLeaderboard({ roomId }: { roomId: string }) {
     <ol ref={rootRef as React.RefObject<HTMLOListElement>} className={styles.leaderboard} aria-label="Bảng xếp hạng phòng thi">
       {rows.slice(0, 5).map((row) => (
         <li key={row.rank + '-' + row.submitted_at}>
-          <span className={styles.leaderRank}>
+          <span
+            className={styles.leaderRank}
+            style={row.rank <= 3 ? { color: MEDAL_COLORS[row.rank] } : undefined}
+          >
             {row.rank <= 3 ? <Trophy size={13} aria-hidden="true" /> : null}#{row.rank}
           </span>
-          <span>
+          <span
+            style={{
+              flex: 1,
+              minWidth: 0,
+              overflow: 'hidden',
+              whiteSpace: 'nowrap',
+              textOverflow: 'ellipsis',
+            }}
+          >
             <strong>{row.name}</strong>
             {row.school ? <small> · {row.school}</small> : null}
           </span>
-          <b>{Number(row.score10).toFixed(2)}</b>
+          <b style={{ fontFamily: 'var(--font-code)' }}>{Number(row.score10).toFixed(2)}</b>
         </li>
       ))}
     </ol>

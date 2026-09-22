@@ -92,7 +92,7 @@ export default function PracticeClient({ subjectCode }: { subjectCode: string })
       </header>
 
       <main id="main" tabIndex={-1} className={styles.card} aria-labelledby="practice-title" aria-busy={loading}>
-        <h1 id="practice-title">Tự luyện {practice?.subjectName ?? subjectCode}</h1>
+        <h1 id="practice-title">Tự luyện {practice?.subjectName ?? (loading ? '…' : subjectCode)}</h1>
         <p>
           Hệ thống tự chọn câu đã duyệt trên máy chủ. Client không thể gửi danh sách
           mã câu hỏi tùy ý.

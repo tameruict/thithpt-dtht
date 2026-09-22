@@ -3,9 +3,10 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Moon, Sun, Clock, BookOpen, Award, ChevronDown, ChevronUp } from 'lucide-react';
+import { Moon, Sun, Clock, BookOpen, Award, ChevronDown, ChevronUp, Inbox, KeyRound, LogOut } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import {
+  clearReferenceCache,
   fetchSessionReview,
   getSupabaseErrorMessage,
   questionTypeLabel,
@@ -41,6 +42,14 @@ type TypeBreakdown = {
   wrong: number;
   unanswered: number;
   total: number;
+};
+
+/* Nhãn tiếng Việt cho status enum (khi phiên chưa có điểm). */
+const STATUS_VN: Record<string, string> = {
+  in_progress: 'Đang làm',
+  submitted: 'Chờ chấm',
+  expired: 'Hết giờ',
+  abandoned: 'Đã hủy',
 };
 
 /* ─── SVG Donut Chart ────────────────────────────────── */
@@ -355,7 +364,9 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
     finishSession,
     clearDraft,
     candidateInfo,
+    logout,
   } = useExamStore();
+  const [loggingOut, setLoggingOut] = useState(false);
   // The canonical /result route is always the history list. A stored exam
   // session must not silently turn that route into a detail page.
   const currentSessionId = sessionId;
@@ -519,12 +530,59 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
     setReloadKey((value) => value + 1);
   };
 
+  const handleLogout = useCallback(async () => {
+    setLoggingOut(true);
+    try {
+      await supabase.auth.signOut();
+      clearReferenceCache();
+      logout();
+      router.push('/', { transitionTypes: ['nav-back'] });
+    } catch {
+      setLoggingOut(false);
+    }
+  }, [logout, router, supabase]);
+
+  const accountTools = (
+    <div className={styles.pageTools}>
+      <button
+        className="btn outline small"
+        type="button"
+        onClick={() => router.push('/purchase', { transitionTypes: ['nav-forward'] })}
+      >
+        <KeyRound size={15} />
+        <span>Mua thêm lượt</span>
+      </button>
+      <button
+        className="theme-toggle"
+        type="button"
+        aria-label={theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+        aria-pressed={theme === 'dark'}
+        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+      >
+        <span className="icon">
+          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+        </span>
+        <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+      </button>
+      <button
+        className="btn outline small"
+        type="button"
+        onClick={handleLogout}
+        disabled={loggingOut}
+      >
+        <LogOut size={15} />
+        <span>{loggingOut ? 'Đang đăng xuất...' : 'Đăng xuất'}</span>
+      </button>
+    </div>
+  );
+
   if (!hasHydrated || (!candidateInfo && !sessionId)) return null;
 
   if (!currentSessionId) {
     return (
       <div className={styles.screen}>
         <StudentNav />
+        {accountTools}
         <h1 className={styles.title} id="result-title">Lịch sử kết quả</h1>
         <main id="main" tabIndex={-1} className={styles.center} aria-labelledby="result-title">
           <section className={styles.card} aria-label="Danh sách phiên thi">
@@ -541,6 +599,7 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
               )}
               {!isLoading && !loadError && history.length === 0 && (
                 <div className={styles.feedbackState}>
+                  <Inbox className={styles.emptyIcon} size={32} aria-hidden="true" />
                   <p className={styles.emptyReviewNotice}>Chưa có bài thi nào. Hãy bắt đầu một phòng thi để xem kết quả tại đây.</p>
                   <Link className="btn" href="/subjects">Bắt đầu thi thử</Link>
                 </div>
@@ -552,7 +611,15 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
                     return (
                       <li key={item.id} className={styles.historyItem}>
                         <div><strong>{room?.subject_code ?? 'Môn thi'}</strong><span>{room?.name ?? 'Phiên thi'} · {formatHanoiDateTime(item.submitted_at ?? item.started_at)}</span></div>
-                        <b>{typeof item.score === 'number' ? `${item.score.toFixed(2)} / ${item.max_score}` : item.status}</b>
+                        {typeof item.score === 'number' ? (
+                          <b>{item.score.toFixed(2)} / {item.max_score}</b>
+                        ) : (
+                          <span
+                            className={`badge ${item.status === 'submitted' ? 'badge-warning' : 'badge-info'}`}
+                          >
+                            {STATUS_VN[item.status] ?? item.status}
+                          </span>
+                        )}
                         <Link className="btn outline small" href={`/result/${item.id}`}>Xem chi tiết</Link>
                       </li>
                     );
@@ -569,20 +636,7 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
   return (
     <div className={styles.screen}>
       <StudentNav />
-      <div className={styles.pageTools}>
-        <button
-          className="theme-toggle"
-          type="button"
-          aria-label={theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
-          aria-pressed={theme === 'dark'}
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        >
-          <span className="icon">
-            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-          </span>
-          <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
-        </button>
-      </div>
+      {accountTools}
       <h1 className={styles.title} id="result-title">Kết quả phiên thi</h1>
       <main id="main" tabIndex={-1} className={styles.center} aria-labelledby="result-title">
         <div className={styles.mainLayout}>
@@ -653,12 +707,15 @@ export default function ResultPage({ sessionId }: { sessionId?: string }) {
                     </div>
                     <div className={styles.heroRow}>
                       <span>
-                        Tổng điểm:{' '}
+                        Điểm thô:{' '}
                         <strong>
                           {typeof score === 'number'
                             ? `${score.toFixed(2)} / ${maxScore}`
                             : 'Đang chấm…'}
                         </strong>
+                        {typeof score === 'number' ? (
+                          <span className={styles.heroScaleNote}> — vòng tròn ở trên là điểm quy về thang 10</span>
+                        ) : null}
                       </span>
                     </div>
                   </div>

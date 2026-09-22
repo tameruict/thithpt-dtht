@@ -205,29 +205,32 @@ export default function RoomKeyPage({ roomId }: { roomId?: string }) {
 
   return (
     <div className={styles.container}>
-      <div className={styles.logoArea}>
-        <div className={styles.logoText}>BỘ GIÁO DỤC VÀ ĐÀO TẠO</div>
-        <div className={styles.logoSub}>KỲ THI TỐT NGHIỆP THPT QUỐC GIA</div>
-      </div>
-
-      <div className={styles.orbStage} aria-hidden="true">
-        <span className={styles.orbitRing} />
-        <span className={styles.orbitRingAlt} />
-        <div className={styles.energyOrb}>
-          <span className={styles.orbGrid} />
-          <span className={styles.orbLightning} />
-          <span className={styles.orbCore} />
+      <header className={styles.topbar}>
+        <div className={styles.topbarInner}>
+          <span className={styles.crest} aria-hidden="true">THPT</span>
+          <div>
+            <p className={styles.brandTitle}>Kỳ thi tốt nghiệp THPT Quốc gia</p>
+            <p className={styles.brandSub}>Vào phòng thi trực tuyến</p>
+          </div>
         </div>
-      </div>
+      </header>
 
-      <div className={styles.card}>
+      <div className={styles.cardWrap}>
+      <main id="main" tabIndex={-1} className={styles.card}>
         <h1 className={styles.title}>Sẵn sàng vào thi</h1>
         <p className={styles.subtitle}>
           Bấm bắt đầu để vào phòng thi. Hệ thống sẽ dùng lượt thi miễn phí của bạn,
           hết lượt miễn phí sẽ tự dùng lượt trong gói đã mua.
         </p>
 
-        {selectedRoom ? (
+        {isLoadingRoom && !selectedRoom ? (
+          <div className={styles.selectionSummary} role="status" aria-live="polite" aria-busy="true">
+            <span className={styles.visuallyHidden}>Đang tải thông tin phòng thi…</span>
+            <div className={styles.skeletonLine} style={{ width: '40%' }} aria-hidden="true" />
+            <div className={styles.skeletonLine} style={{ width: '75%', height: 16 }} aria-hidden="true" />
+            <div className={styles.skeletonLine} style={{ width: '60%' }} aria-hidden="true" />
+          </div>
+        ) : selectedRoom ? (
           <div className={styles.selectionSummary}>
             <span>{selectedRoom.subjectName}</span>
             <strong>{selectedRoom.name}</strong>
@@ -319,6 +322,7 @@ export default function RoomKeyPage({ roomId }: { roomId?: string }) {
             &larr; Quay lại chọn môn và phòng thi
           </Link>
         </div>
+      </main>
       </div>
     </div>
   );

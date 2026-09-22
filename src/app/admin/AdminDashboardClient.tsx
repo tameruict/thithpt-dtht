@@ -2111,7 +2111,7 @@ export default function AdminDashboardClient() {
               type="button"
               role="tab"
               aria-selected={activeTab === tab.id}
-              aria-controls={tab.hash.slice(1)}
+              aria-controls={activeTab === tab.id ? tab.hash.slice(1) : undefined}
               tabIndex={activeTab === tab.id ? 0 : -1}
               id={`admin-tab-${tab.id}`}
               className={`${styles.tab} ${activeTab === tab.id ? styles.tabActive : ''}`}

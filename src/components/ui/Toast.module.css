@@ -99,7 +99,8 @@
 @media (max-width: 640px) {
   .container {
     right: 12px;
-    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    /* Nổi phía trên StudentNav bottom bar (~62px) để không đè lên nhau. */
+    bottom: calc(var(--bottom-nav-height) + 12px + env(safe-area-inset-bottom, 0px));
     left: 12px;
     align-items: flex-start;
     max-width: none;

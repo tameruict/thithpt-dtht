@@ -80,7 +80,7 @@
   background: var(--header-gradient);
   color: #FFFFFF;
   font-size: 17px;
-  font-weight: 850;
+  font-weight: 800;
   text-align: center;
 }
 
@@ -120,7 +120,7 @@
 .historyItem strong,
 .historyItem span { display: block; }
 .historyItem strong { color: var(--text); font-size: 15px; font-weight: 900; }
-.historyItem span { margin-top: 3px; color: var(--muted); font-size: 12px; }
+.historyItem span { margin-top: 3px; color: var(--muted); font-size: 13px; }
 .historyItem b { color: var(--primary); font-size: 15px; white-space: nowrap; }
 
 @media (max-width: 640px) {
@@ -133,7 +133,7 @@
   margin: 0 0 20px;
   color: var(--text);
   font-size: 19px;
-  font-weight: 850;
+  font-weight: 800;
 }
 
 .errorText {
@@ -247,6 +247,13 @@
   font-weight: 900;
 }
 
+/* Chú thích phân biệt 2 thang điểm (P2-2). */
+.heroScaleNote {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .heroDot {
   display: inline-block;
   width: 10px;
@@ -334,7 +341,7 @@
 .breakdownItem:nth-child(4) { animation-delay: .24s; }
 
 .breakdownType {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: .04em;
@@ -376,7 +383,7 @@
 
 .breakdownCount {
   margin-top: 6px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   font-weight: 700;
 }
@@ -726,6 +733,12 @@
   justify-items: center;
   gap: 12px;
   text-align: center;
+}
+
+/* Minh họa mờ cho empty state (P2-5). */
+.emptyIcon {
+  color: var(--muted);
+  opacity: .5;
 }
 
 .feedbackState .errorText,

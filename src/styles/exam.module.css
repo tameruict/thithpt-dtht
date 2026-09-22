@@ -25,7 +25,7 @@
   justify-content: space-between;
   gap: 18px;
   padding: 9px 18px 9px 22px;
-  border-bottom: 3px solid var(--warning);
+  border-bottom: 3px solid var(--border);
   background: var(--header-gradient);
   color: #fff;
   box-shadow: 0 12px 28px color-mix(in srgb, var(--header) 28%, transparent);
@@ -33,7 +33,7 @@
 
 .candidateLine {
   font-size: 16px;
-  font-weight: 850;
+  font-weight: 800;
   line-height: 1.25;
 }
 
@@ -75,6 +75,14 @@
   box-shadow: 0 0 12px color-mix(in srgb, var(--warning) 24%, transparent);
 }
 
+/* Nhãn phi-màu đi kèm icon cảnh báo (bổ trợ cho tín hiệu màu của timer). */
+.timerLabel {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+
 .timerCritical {
   border-color: color-mix(in srgb, var(--danger) 80%, transparent);
   background: color-mix(in srgb, var(--danger) 40%, transparent);
@@ -113,7 +121,8 @@
 
 .fullscreenPrompt {
   position: fixed;
-  bottom: 18px;
+  /* Nổi phía trên dải nút câu hỏi (questionNav) để không che nút. */
+  bottom: calc(var(--exam-nav-height) + 12px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 55;
@@ -329,7 +338,7 @@
   height: 9px;
   border-radius: 50%;
   background: var(--success);
-  box-shadow: 0 0 0 4px rgba(34, 197, 94, .18);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 18%, transparent);
 }
 
 .submitBtn {
@@ -404,7 +413,15 @@
   margin-right: 7px;
   color: var(--muted);
   font-size: 13px;
-  font-weight: 850;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* Gợi ý phím tắt (P3-3) — ẩn trên màn hẹp để tránh chật toolbar. */
+.shortcutHint {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -412,7 +429,7 @@
   min-width: 48px;
   color: var(--muted);
   text-align: center;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 800;
 }
 
@@ -492,8 +509,8 @@
   padding-top: 14px;
   border-top: 1px solid var(--border);
   color: var(--muted);
-  font-size: 12px;
-  font-weight: 750;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .errorText {
@@ -503,7 +520,7 @@
   background: color-mix(in srgb, var(--danger) 10%, transparent);
   color: var(--danger);
   font-size: 13px;
-  font-weight: 850;
+  font-weight: 800;
 }
 
 .questionPanel {
@@ -589,7 +606,7 @@
 .questionTitle {
   margin: 0 0 12px;
   color: var(--text);
-  font-weight: 850;
+  font-weight: 800;
   line-height: 1.5;
 }
 
@@ -635,111 +652,6 @@
   color: var(--warning);
 }
 
-.answers {
-  display: grid;
-  gap: 8px;
-}
-
-.answerOption {
-  width: fit-content;
-  min-width: min(340px, 100%);
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 8px 10px 8px 6px;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: background .14s ease, color .14s ease;
-}
-
-.answerOption:hover {
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
-}
-
-[data-theme="dark"] .answerOption:hover {
-  background: color-mix(in srgb, var(--accent-soft) 78%, var(--bg-question));
-}
-
-.answerOption:has(input:checked) {
-  background: color-mix(in srgb, var(--primary) 12%, transparent);
-  color: var(--text);
-}
-
-[data-theme="dark"] .answerOption:has(input:checked) {
-  background: var(--accent-soft);
-  color: var(--text-primary);
-}
-
-.answerOption input {
-  width: 18px;
-  height: 18px;
-  margin: 2px 0 0;
-  accent-color: var(--primary);
-  flex: 0 0 auto;
-}
-
-.trueFalseList {
-  display: grid;
-  gap: 10px;
-}
-
-.trueFalseItem {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--surface-soft) 84%, var(--surface));
-}
-
-.trueFalseItem label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text);
-  font-size: calc(var(--answer-font) - 2px);
-  font-weight: 800;
-}
-
-.trueFalseItem input {
-  accent-color: var(--primary);
-}
-
-.textAnswer {
-  width: 100%;
-  min-height: 42px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--input);
-  color: var(--text);
-  font: inherit;
-  line-height: 1.5;
-}
-
-.textAnswer:focus {
-  outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 4px var(--ring);
-}
-
-.floatingActions {
-  position: fixed;
-  right: 18px;
-  bottom: calc(var(--exam-nav-height) + 4px);
-  z-index: 18;
-  display: flex;
-  gap: 8px;
-  padding: 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  box-shadow: var(--shadow-soft);
-  backdrop-filter: blur(4px);
-}
-
 .questionNav {
   position: fixed;
   left: 0;
@@ -779,7 +691,7 @@
   background: var(--surface-soft);
   color: var(--muted);
   font-size: 12px;
-  font-weight: 850;
+  font-weight: 800;
 }
 
 .qNumber.current {
@@ -920,6 +832,11 @@
     display: none;
   }
 
+  .timerLabel,
+  .shortcutHint {
+    display: none;
+  }
+
   .timer {
     min-height: 38px;
     padding-inline: 10px;
@@ -959,20 +876,6 @@
     padding: 15px 48px 16px 14px;
   }
 
-  .trueFalseItem {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: start;
-  }
-
-  .trueFalseItem > span {
-    grid-column: 1 / -1;
-  }
-
-  .floatingActions {
-    right: 10px;
-    padding: 6px;
-  }
-
   .questionNav {
     gap: 6px;
     padding: 7px 10px calc(7px + env(safe-area-inset-bottom, 0px));
@@ -982,6 +885,42 @@
     width: 40px;
     height: 40px;
     flex-basis: 40px;
+  }
+}
+
+/* 375px: 4 control trên header dễ tràn — thu gọn khoảng cách & nút icon. */
+@media (max-width: 400px) {
+  .header {
+    gap: 8px;
+    padding: 10px 10px;
+  }
+
+  .headerRight {
+    gap: 5px;
+  }
+
+  .timer {
+    padding-inline: 8px;
+    font-size: 15px;
+  }
+
+  .submitBtn {
+    padding-inline: 10px;
+    font-size: 12px;
+  }
+
+  .headerIconBtn {
+    width: 34px;
+    height: 34px;
+  }
+}
+
+/* Touch target ≥44px trên mọi thiết bị cảm ứng (kể cả tablet ≥640px). */
+@media (pointer: coarse) {
+  .qNumber {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
   }
 }
 

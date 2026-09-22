@@ -87,6 +87,7 @@ function ExamTimerBadge({
   const timeLeft = useCountdown(deadlineMs, durationSeconds);
   const expiredRef = useRef(false);
   const timerWarning = timeLeft <= 60 ? 'critical' : timeLeft <= 300 ? 'warning' : 'normal';
+  const isUrgent = timerWarning !== 'normal';
 
   useEffect(() => {
     if (timeLeft === 0 && !expiredRef.current) {
@@ -101,9 +102,18 @@ function ExamTimerBadge({
       role="timer"
       aria-live={timerWarning === 'normal' ? 'off' : 'assertive'}
       aria-atomic="true"
-      aria-label={`Thời gian còn lại ${formatTime(timeLeft)}`}
+      aria-label={`Thời gian còn lại ${formatTime(timeLeft)}${isUrgent ? ', sắp hết giờ' : ''}`}
     >
-      <Timer size={18} aria-hidden="true" /> <span aria-hidden="true">{formatTime(timeLeft)}</span>
+      {/* Tín hiệu phi-màu: icon đổi Timer → AlertTriangle + nhãn text khi sắp hết giờ. */}
+      {isUrgent ? (
+        <AlertTriangle size={18} aria-hidden="true" />
+      ) : (
+        <Timer size={18} aria-hidden="true" />
+      )}{' '}
+      <span aria-hidden="true">{formatTime(timeLeft)}</span>
+      {isUrgent ? (
+        <span className={styles.timerLabel} aria-hidden="true">Sắp hết giờ</span>
+      ) : null}
     </div>
   );
 }
@@ -873,6 +883,9 @@ export default function ExamPage({
           </button>
         </div>
         <div className={styles.toolbarGroup}>
+          <span className={styles.shortcutHint} aria-hidden="true">
+            Phím tắt: N/P chuyển câu · M đánh dấu · 1–4 chọn đáp án
+          </span>
           <span className={styles.answeredCount} role="status" aria-live="polite">
             Đã trả lời: {answeredCount} / {totalQuestions}
             {markedQuestions.length > 0 && ` · ${markedQuestions.length} đánh dấu`}

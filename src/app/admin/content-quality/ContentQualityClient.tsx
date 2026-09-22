@@ -1,7 +1,6 @@
 'use client';
 
 import { useDeferredValue, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Check, ChevronLeft, ChevronRight, Inbox, Search, X } from 'lucide-react';
 import { resolveContentReview } from './actions';
@@ -106,7 +105,6 @@ export default function ContentQualityClient({ reviews }: { reviews: ContentRevi
           <p>Admin · Chất lượng nội dung</p>
           <h1>Duyệt Markdown + KaTeX</h1>
         </div>
-        <Link href="/admin">Về Dashboard</Link>
       </header>
 
       <AdminSuiteNav active="content" />
@@ -184,7 +182,7 @@ export default function ContentQualityClient({ reviews }: { reviews: ContentRevi
                 <button type="button" disabled={busy} onClick={() => resolve(review, 'reject')} aria-label={`Từ chối đề xuất ${review.question_code}`}>
                   <X size={16} aria-hidden="true" /> {busy ? 'Đang xử lý...' : 'Từ chối'}
                 </button>
-                <button type="button" disabled={busy} onClick={() => resolve(review, 'approve')} aria-label={`Áp dụng đề xuất ${review.question_code}`}>
+                <button type="button" className={styles.primaryAction} disabled={busy} onClick={() => resolve(review, 'approve')} aria-label={`Áp dụng đề xuất ${review.question_code}`}>
                   <Check size={16} aria-hidden="true" /> {busy ? 'Đang xử lý...' : 'Áp dụng'}
                 </button>
               </div>

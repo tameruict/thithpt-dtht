@@ -27,8 +27,14 @@ export default function RegisterPage() {
   const [message, setMessage] = useState('');
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const router = useRouter();
   const login = useExamStore((state) => state.login);
+
+  // Inline validation nhẹ: chỉ báo khi trường có nội dung nhưng chưa hợp lệ,
+  // không thay đổi logic submit (submit vẫn kiểm tra đầy đủ như cũ).
+  const emailInvalid = email.trim().length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const passwordShort = password.length > 0 && password.length < MIN_PASSWORD_LENGTH;
 
   const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -111,6 +117,43 @@ export default function RegisterPage() {
     }
   };
 
+  const handleGoogleRegister = async () => {
+    setError('');
+    setMessage('');
+
+    if (!hasSupabaseEnv()) {
+      setError('Chưa cấu hình Supabase. Hãy thêm .env.local trước khi đăng ký.');
+      return;
+    }
+
+    setGoogleLoading(true);
+
+    try {
+      const callbackUrl = new URL('/auth/confirm', window.location.origin);
+      callbackUrl.searchParams.set('next', '/subjects');
+
+      const supabase = createClient();
+      const { error: authError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: callbackUrl.toString(),
+        },
+      });
+
+      if (authError) {
+        setError(translateAuthError(authError.message));
+        setGoogleLoading(false);
+      }
+    } catch (googleError) {
+      setError(
+        googleError instanceof Error
+          ? translateAuthError(googleError.message)
+          : 'Không thể đăng ký bằng Google. Vui lòng thử lại.',
+      );
+      setGoogleLoading(false);
+    }
+  };
+
   return (
     <div className={styles.container}>
       <header className={styles.topbar}>
@@ -126,9 +169,9 @@ export default function RegisterPage() {
       <div className={styles.main}>
         <section className={styles.heroPanel} aria-labelledby="register-hero-title">
           <span className={styles.heroKicker}>Thí sinh mới</span>
-          <h1 id="register-hero-title" className={styles.heroTitle}>
+          <h2 id="register-hero-title" className={styles.heroTitle}>
             Một tài khoản cho mọi môn thi
-          </h1>
+          </h2>
           <p className={styles.heroText}>
             Họ tên dùng để in số báo danh và bảng điểm. Email dùng để đăng nhập và
             khôi phục mật khẩu. Mật khẩu tối thiểu {MIN_PASSWORD_LENGTH} ký tự.
@@ -187,9 +230,16 @@ export default function RegisterPage() {
                 placeholder="nhap-email@example.com"
                 autoComplete="email"
                 value={email}
+                aria-invalid={emailInvalid}
+                aria-describedby={emailInvalid ? 'register-email-error' : undefined}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
+            {emailInvalid ? (
+              <p id="register-email-error" className={styles.fieldError} role="alert">
+                Email chưa đúng định dạng, ví dụ: ten@example.com
+              </p>
+            ) : null}
           </div>
 
           <div className={styles.formGroup}>
@@ -205,7 +255,8 @@ export default function RegisterPage() {
                 className={styles.input}
                 placeholder="Tạo mật khẩu"
                 autoComplete="new-password"
-                aria-describedby="register-password-hint"
+                aria-invalid={passwordShort}
+                aria-describedby={passwordShort ? 'register-password-error' : 'register-password-hint'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
@@ -219,7 +270,13 @@ export default function RegisterPage() {
                 {showPassword ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
               </button>
             </div>
-            <p id="register-password-hint" className={styles.fieldHint}>Tối thiểu {MIN_PASSWORD_LENGTH} ký tự.</p>
+            {passwordShort ? (
+              <p id="register-password-error" className={styles.fieldError} role="alert">
+                Còn thiếu {MIN_PASSWORD_LENGTH - password.length} ký tự (tối thiểu {MIN_PASSWORD_LENGTH}).
+              </p>
+            ) : (
+              <p id="register-password-hint" className={styles.fieldHint}>Tối thiểu {MIN_PASSWORD_LENGTH} ký tự.</p>
+            )}
           </div>
 
           <CaptchaChallenge onToken={setCaptchaToken} />
@@ -228,10 +285,35 @@ export default function RegisterPage() {
             {message && <p className={`${styles.errorText} ${styles.successText}`} role="status">{message}</p>}
           </div>
 
-          <button type="submit" className={styles.submitBtn} disabled={loading}>
+          <button
+            type="submit"
+            className={styles.submitBtn}
+            disabled={loading || googleLoading}
+            aria-busy={loading}
+          >
             {loading ? 'Đang tạo tài khoản...' : 'Đăng ký'}
           </button>
         </form>
+
+        <div className={styles.authDivider} aria-hidden="true">
+          <span>hoặc</span>
+        </div>
+
+        <button
+          type="button"
+          className={styles.googleBtn}
+          onClick={handleGoogleRegister}
+          disabled={loading || googleLoading}
+          aria-busy={googleLoading}
+        >
+          <svg className={styles.googleIcon} viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.4-.19-2.07H12v3.92h5.38a4.6 4.6 0 0 1-2 3.02v2.54h3.24c1.9-1.75 2.98-4.33 2.98-7.41Z" />
+            <path fill="#34A853" d="M12 22c2.7 0 4.97-.9 6.62-2.36l-3.24-2.54c-.9.6-2.05.96-3.38.96-2.6 0-4.81-1.76-5.6-4.13H3.05v2.62A10 10 0 0 0 12 22Z" />
+            <path fill="#FBBC05" d="M6.4 13.93A6.02 6.02 0 0 1 6.08 12c0-.67.12-1.32.32-1.93V7.45H3.05A10 10 0 0 0 2 12c0 1.61.39 3.14 1.05 4.55l3.35-2.62Z" />
+            <path fill="#EA4335" d="M12 5.94c1.47 0 2.79.5 3.83 1.5l2.87-2.87A9.64 9.64 0 0 0 12 2a10 10 0 0 0-8.95 5.45l3.35 2.62c.79-2.37 3-4.13 5.6-4.13Z" />
+          </svg>
+          <span>{googleLoading ? 'Đang chuyển tới Google...' : 'Tiếp tục với Google'}</span>
+        </button>
         </main>
       </div>
     </div>

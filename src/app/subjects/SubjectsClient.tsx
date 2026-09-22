@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { FileText, KeyRound, LogOut, Moon, ShieldCheck, Sun, Ticket } from 'lucide-react';
+import { FileText, Inbox, KeyRound, LogOut, Moon, ShieldCheck, Sun, Ticket } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { hasSupabaseEnv } from '@/lib/supabase/env';
 import {
@@ -183,14 +183,7 @@ export default function SubjectsClient({
     <div className={styles.screen}>
       <StudentNav />
       <div className={styles.pageTools}>
-        <button
-          className={`btn outline small ${styles.profileButton}`}
-          type="button"
-          onClick={() => router.push('/profile', { transitionTypes: ['nav-forward'] })}
-        >
-          <div className={styles.avatar} aria-hidden="true">{candidateInfo.name.charAt(0)}</div>
-          <span>Profile</span>
-        </button>
+        {/* Hồ sơ đã có trong StudentNav → pageTools chỉ giữ hành động tài khoản. */}
         <button
           className="btn outline small"
           type="button"
@@ -434,6 +427,7 @@ export default function SubjectsClient({
               ) : null}
               {!isLoading && subjects.length === 0 && !displayLoadError ? (
                 <div className={styles.emptyState}>
+                  <Inbox className={styles.emptyIcon} size={32} aria-hidden="true" />
                   <p>Cơ sở dữ liệu chưa có môn thi đang hoạt động.</p>
                 </div>
               ) : null}
@@ -503,6 +497,7 @@ export default function SubjectsClient({
               ) : null}
               {!isLoading && rooms.length === 0 && !displayLoadError ? (
                 <div className={styles.emptyState}>
+                  <Inbox className={styles.emptyIcon} size={32} aria-hidden="true" />
                   <p>Cơ sở dữ liệu chưa có phòng thi nào đang mở.</p>
                 </div>
               ) : null}

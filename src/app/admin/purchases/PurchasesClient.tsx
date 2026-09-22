@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
 import { ChevronLeft, ChevronRight, Download, Inbox, Play, RefreshCw, RotateCcw, Search, ShieldAlert, BadgeCheck } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { showToast } from '@/components/ui/Toast';
@@ -75,8 +74,11 @@ export default function PurchasesClient() {
   const [revokeReason, setRevokeReason] = useState('');
   const [revoking, setRevoking] = useState(false);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [manualOrder, setManualOrder] = useState<{ id: string; paymentCode: string } | null>(null);
   const revokeInputRef = useRef<HTMLInputElement>(null);
   const revokeTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const manualConfirmRef = useRef<HTMLButtonElement>(null);
+  const manualTriggerRef = useRef<HTMLButtonElement | null>(null);
   const deferredSearch = useDeferredValue(search);
 
   const load = useCallback(async () => {
@@ -134,6 +136,16 @@ export default function PurchasesClient() {
     if (revoking) return;
     setRevokeId(null);
     window.setTimeout(() => revokeTriggerRef.current?.focus(), 0);
+  };
+
+  useEffect(() => {
+    if (manualOrder) manualConfirmRef.current?.focus();
+  }, [manualOrder]);
+
+  const closeManualDialog = () => {
+    if (confirmingId) return;
+    setManualOrder(null);
+    window.setTimeout(() => manualTriggerRef.current?.focus(), 0);
   };
 
   // UI search phục vụ lọc server-side sau này; hiện giữ query cũ + lọc client.
@@ -195,10 +207,7 @@ export default function PurchasesClient() {
     await load();
   };
 
-  const confirmManual = async (orderId: string, paymentCode: string) => {
-    if (!window.confirm(`Xác nhận đã nhận tiền Zalo/CK cho đơn ${paymentCode}? Key sẽ được cấp ngay.`)) {
-      return;
-    }
+  const confirmManual = async (orderId: string) => {
     setConfirmingId(orderId);
     setFeedback('');
     try {
@@ -217,6 +226,8 @@ export default function PurchasesClient() {
       showToast('Không xác nhận được đơn.', 'error');
     } finally {
       setConfirmingId(null);
+      setManualOrder(null);
+      window.setTimeout(() => manualTriggerRef.current?.focus(), 0);
       await load();
     }
   };
@@ -322,8 +333,6 @@ export default function PurchasesClient() {
             <Play size={15} aria-hidden="true" />
             {polling ? 'Đang đồng bộ...' : 'Đồng bộ ThueAPIBank ngay'}
           </button>
-          <Link href="/admin/key-products">Gói key</Link>
-          <Link href="/admin">Dashboard</Link>
         </div>
       </div>
 
@@ -351,16 +360,16 @@ export default function PurchasesClient() {
         </div>
       </section>
 
-      <section className={styles.providerStatus} aria-label="Thống kê đơn">
-        <div>
+      <section className={styles.kpiGrid} aria-label="Thống kê đơn">
+        <div className={styles.kpi}>
           <span>Chờ CK / Đã nhận tiền</span>
           <strong>{stats.pending} / {stats.paid}</strong>
         </div>
-        <div>
+        <div className={styles.kpi}>
           <span>Đã cấp key</span>
           <strong>{stats.fulfilled}</strong>
         </div>
-        <div>
+        <div className={styles.kpi}>
           <span>Doanh thu đã cấp (VND)</span>
           <strong>{stats.revenue.toLocaleString('vi-VN')}</strong>
         </div>
@@ -452,7 +461,10 @@ export default function PurchasesClient() {
                     <td className={styles.rowActions}>
                       <button
                         type="button"
-                        onClick={() => void confirmManual(order.id, order.payment_code)}
+                        onClick={(event) => {
+                          manualTriggerRef.current = event.currentTarget;
+                          setManualOrder({ id: order.id, paymentCode: order.payment_code });
+                        }}
                         disabled={order.status !== 'pending' || confirmingId === order.id}
                         title="Xác nhận đã nhận tiền (Zalo/thủ công) và cấp key"
                         aria-label={`Xác nhận thanh toán đơn ${order.payment_code}`}
@@ -536,6 +548,70 @@ export default function PurchasesClient() {
           </div>
         ) : null}
       </section>
+
+      {manualOrder ? (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="manual-confirm-title"
+          aria-describedby="manual-confirm-desc"
+          className={styles.dialogOverlay}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeManualDialog();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              closeManualDialog();
+              return;
+            }
+            if (event.key !== 'Tab') return;
+            const controls = Array.from(
+              event.currentTarget.querySelectorAll<HTMLElement>(
+                'button:not(:disabled), input:not(:disabled), [href], [tabindex]:not([tabindex="-1"])',
+              ),
+            );
+            const first = controls[0];
+            const last = controls[controls.length - 1];
+            if (!first || !last) return;
+            if (event.shiftKey && document.activeElement === first) {
+              event.preventDefault();
+              last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+              event.preventDefault();
+              first.focus();
+            }
+          }}
+        >
+          <div className={`${styles.card} ${styles.dialog}`}>
+            <h2 id="manual-confirm-title">Xác nhận đã nhận tiền?</h2>
+            <p id="manual-confirm-desc" className={styles.hint}>
+              Xác nhận đã nhận tiền Zalo/CK cho đơn <strong>{manualOrder.paymentCode}</strong>.
+              Key sẽ được cấp ngay và không thể hoàn tác.
+            </p>
+            <div className={styles.dialogActions}>
+              <button
+                className="btn secondary small"
+                type="button"
+                onClick={closeManualDialog}
+                disabled={confirmingId === manualOrder.id}
+              >
+                Hủy
+              </button>
+              <button
+                ref={manualConfirmRef}
+                className="btn small"
+                type="button"
+                onClick={() => void confirmManual(manualOrder.id)}
+                disabled={confirmingId === manualOrder.id}
+              >
+                <BadgeCheck size={15} aria-hidden="true" />
+                {confirmingId === manualOrder.id ? 'Đang cấp key...' : 'Xác nhận & cấp key'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {revokeId ? (
         <div

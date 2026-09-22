@@ -113,6 +113,39 @@
   color: var(--text);
 }
 
+/* KPI thống nhất cho các trang con admin — số lớn dễ quét như dashboard. */
+.kpiGrid {
+  max-width: 1200px;
+  margin: 0 auto 20px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.kpi {
+  display: grid;
+  gap: 6px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: var(--shadow-soft);
+}
+
+.kpi span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.kpi strong {
+  color: var(--text);
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
 .adminGrid {
   max-width: 1200px;
   margin: 0 auto;
@@ -589,7 +622,8 @@
     flex-wrap: wrap;
   }
 
-  .providerStatus {
+  .providerStatus,
+  .kpiGrid {
     grid-template-columns: 1fr;
   }
 

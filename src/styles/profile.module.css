@@ -167,7 +167,7 @@
 .submitBtn {
   width: 100%;
   margin-top: 10px;
-  min-height: 42px;
+  min-height: var(--control-height);
 }
 
 .feedback {
@@ -195,72 +195,6 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
-}
-
-.subsectionTitle {
-  margin: 0 0 8px;
-  color: var(--muted);
-  font-size: 14px;
-  font-weight: 900;
-}
-
-.subsectionTitle.spaced {
-  margin-top: 24px;
-}
-
-.keyList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0;
-}
-
-.keyStat {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  margin-bottom: 12px;
-  padding: 13px 15px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--surface-soft) 84%, var(--surface));
-}
-
-.keyStat .code {
-  color: var(--primary);
-  font-size: 15px;
-  font-weight: 900;
-}
-
-.keyStat .attempts {
-  color: var(--success);
-  font-size: 13px;
-  font-weight: 850;
-}
-
-.keyStat.used {
-  opacity: .72;
-}
-
-.keyStat.used .code {
-  color: var(--muted);
-}
-
-.keyStat.used .attempts {
-  color: var(--danger);
-}
-
-.keyActions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.keyActions :global(.btn) {
-  text-decoration: none;
-  white-space: nowrap;
 }
 
 .table {
@@ -312,59 +246,6 @@
   color: var(--muted);
   font-size: 12px;
   font-weight: 750;
-}
-
-.sectionHeader {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
-}
-
-.muted {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.purchaseList {
-  display: grid;
-  gap: 10px;
-  margin: 16px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.purchaseRow {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 12px;
-  align-items: center;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-}
-
-.purchaseRow > div {
-  display: grid;
-  gap: 4px;
-}
-
-.purchaseRow span {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.purchaseAmount {
-  color: var(--primary);
-  font-weight: 800;
-}
-
-.purchaseStatus {
-  color: var(--success);
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
 }
 
 .visuallyHidden {

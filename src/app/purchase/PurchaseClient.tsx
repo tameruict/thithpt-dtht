@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { Check, Copy, ExternalLink, MessageCircle, RefreshCw, ShieldCheck } from 'lucide-react';
+import { Check, Copy, ExternalLink, Loader2, MessageCircle, RefreshCw, ShieldCheck } from 'lucide-react';
 import { showToast } from '@/components/ui/Toast';
 import { createPurchaseOrder } from './actions';
 import { createClient } from '@/lib/supabase/client';
@@ -25,8 +25,9 @@ export type PurchaseProduct = {
 
 export const PURCHASE_SCOPE_LABEL = 'Dùng cho tất cả phòng thi và tự luyện';
 
-// TẠM THỜI: chưa gắn QR code payment, học viên liên hệ Zalo để mua key phòng thi.
-// Khi bật lại thanh toán tự động, chỉ cần hiện lại QR VietQR (buildVietQrUrl/qrUrl).
+// Thanh toán tự động qua VietQR (buildVietQrUrl/qrUrl) đã bật: học viên quét QR để
+// chuyển khoản đúng số tiền + nội dung, hệ thống tự cấp key qua webhook/đối soát.
+// Zalo bên dưới chỉ là kênh hỗ trợ thủ công khi cần.
 export const ZALO_LINK = 'https://zalo.me/0862370152';
 export const ZALO_DISPLAY = 'zalo.me/0862370152';
 export const ZALO_QR_URL =
@@ -396,17 +397,35 @@ export default function PurchaseClient({
         <div className={styles.grid}>
           <section className={styles.card} aria-label="Chọn gói key">
             <h2>Chọn gói</h2>
-            <div className={styles.products} role="group" aria-label="Danh sách gói key">
-              {products.map((product) => (
+            <div className={styles.products} role="radiogroup" aria-label="Danh sách gói key">
+              {products.map((product, index) => (
                 <button
                   type="button"
                   key={product.id}
-                  aria-pressed={selectedProduct === product.id}
+                  role="radio"
+                  aria-checked={selectedProduct === product.id}
+                  id={'purchase-product-' + product.id}
+                  tabIndex={
+                    selectedProduct === product.id || (!selected && index === 0) ? 0 : -1
+                  }
                   className={
                     styles.product +
                     (selectedProduct === product.id ? ' ' + styles.selected : '')
                   }
                   onClick={() => setSelectedProduct(product.id)}
+                  onKeyDown={(event) => {
+                    let dir = 0;
+                    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') dir = 1;
+                    else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') dir = -1;
+                    else return;
+                    event.preventDefault();
+                    const nextIndex = (index + dir + products.length) % products.length;
+                    const nextProduct = products[nextIndex];
+                    setSelectedProduct(nextProduct.id);
+                    window.requestAnimationFrame(() =>
+                      document.getElementById('purchase-product-' + nextProduct.id)?.focus(),
+                    );
+                  }}
                 >
                   <span>
                     <strong>{product.name}</strong>
@@ -458,13 +477,62 @@ export default function PurchaseClient({
                 tạo key mới.
               </small>
             </div>
+            {selected ? (
+              <div className={styles.orderSummary} aria-live="polite">
+                <div className={styles.summaryRow}>
+                  <span>Gói đã chọn</span>
+                  <strong>{selected.name}</strong>
+                </div>
+                <div className={styles.summaryRow}>
+                  <span>Số lượt</span>
+                  <strong>
+                    {selected.attempt_count} lượt ·{' '}
+                    {selected.valid_days
+                      ? 'hạn ' + selected.valid_days + ' ngày'
+                      : 'không giới hạn hạn dùng'}
+                  </strong>
+                </div>
+                {coupon.trim() ? (
+                  <div className={styles.summaryRow}>
+                    <span>Mã giảm giá</span>
+                    <strong>{coupon.trim()} — áp dụng khi tạo đơn</strong>
+                  </div>
+                ) : null}
+                {targetKeyCode.trim() ? (
+                  <div className={styles.summaryRow}>
+                    <span>Gia hạn key</span>
+                    <strong>{targetKeyCode.trim()}</strong>
+                  </div>
+                ) : null}
+                <div className={styles.summaryRow + ' ' + styles.summaryTotal}>
+                  <span>Tổng thanh toán</span>
+                  <span className={styles.total}>
+                    {selected.price_amount.toLocaleString('vi-VN')} ₫
+                  </span>
+                </div>
+                {coupon.trim() ? (
+                  <small className={styles.muted}>
+                    Số tiền cuối cùng (sau giảm giá) sẽ hiển thị trên đơn ngay khi
+                    tạo.
+                  </small>
+                ) : null}
+              </div>
+            ) : null}
             <button
               type="button"
-              className="btn"
+              className={'btn ' + styles.submitBtn}
               onClick={handleCreateOrder}
               disabled={!selected || isSubmitting}
+              aria-busy={isSubmitting}
             >
-              {isSubmitting ? 'Đang tạo đơn...' : 'Tạo đơn chuyển khoản'}
+              {isSubmitting ? (
+                <>
+                  <Loader2 size={16} className={styles.spinner} aria-hidden="true" />
+                  Đang tạo đơn...
+                </>
+              ) : (
+                'Tạo đơn chuyển khoản'
+              )}
             </button>
             <div className={styles.zaloBox}>
               <p className={styles.muted}>

@@ -170,14 +170,6 @@
   min-height: 52px;
 }
 
-.balanceWarn {
-  flex: 1 1 100%;
-  margin: 0;
-  color: var(--warning);
-  font-size: 13px;
-  font-weight: 800;
-}
-
 .error {
   margin-top: 16px;
   padding: 12px 14px;

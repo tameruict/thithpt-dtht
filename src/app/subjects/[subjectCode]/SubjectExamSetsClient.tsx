@@ -1,12 +1,13 @@
 ﻿'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, FileText, Moon, Sun } from 'lucide-react';
+import { ArrowLeft, FileText, Inbox, KeyRound, LogOut, Moon, Sun } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { hasSupabaseEnv } from '@/lib/supabase/env';
 import {
+  clearReferenceCache,
   fetchSubjectWithRooms,
   formatPriceVnd,
   type ExamRoomSummary,
@@ -27,11 +28,26 @@ export default function SubjectExamSetsClient({
   const theme = useExamStore((state) => state.theme);
   const setTheme = useExamStore((state) => state.setTheme);
   const selectExamSet = useExamStore((state) => state.selectExamSet);
+  const logout = useExamStore((state) => state.logout);
   const [subject, setSubject] = useState<SubjectSummary | null>(null);
   const [rooms, setRooms] = useState<ExamRoomSummary[]>([]);
   const [isLoading, setIsLoading] = useState(hasConfiguredSupabase);
   const [loadError, setLoadError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const handleLogout = useCallback(async () => {
+    setLoggingOut(true);
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      clearReferenceCache();
+      logout();
+      router.push('/', { transitionTypes: ['nav-back'] });
+    } catch {
+      setLoggingOut(false);
+    }
+  }, [logout, router]);
 
   useEffect(() => {
     if (!hasConfiguredSupabase) return;
@@ -80,6 +96,14 @@ export default function SubjectExamSetsClient({
       <StudentNav />
       <div className={styles.pageTools}>
         <button
+          className="btn outline small"
+          type="button"
+          onClick={() => router.push('/purchase', { transitionTypes: ['nav-forward'] })}
+        >
+          <KeyRound size={15} />
+          <span>Mua thêm lượt</span>
+        </button>
+        <button
           className="theme-toggle"
           type="button"
           aria-label={theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
@@ -90,6 +114,15 @@ export default function SubjectExamSetsClient({
             {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
           </span>
           <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+        </button>
+        <button
+          className={`btn outline small ${styles.profileButton}`}
+          type="button"
+          onClick={handleLogout}
+          disabled={loggingOut}
+        >
+          <LogOut size={15} />
+          <span>{loggingOut ? 'Đang đăng xuất...' : 'Đăng xuất'}</span>
         </button>
       </div>
 
@@ -145,6 +178,7 @@ export default function SubjectExamSetsClient({
           ) : null}
           {!isLoading && rooms.length === 0 && !displayLoadError ? (
             <div className={styles.emptyState}>
+              <Inbox className={styles.emptyIcon} size={32} aria-hidden="true" />
               <p>Cơ sở dữ liệu chưa có phòng thi đang mở cho môn này.</p>
               <Link className="btn outline small" href="/subjects">Chọn môn khác</Link>
             </div>

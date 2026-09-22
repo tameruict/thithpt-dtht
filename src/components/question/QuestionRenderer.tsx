@@ -191,7 +191,7 @@ const ShortAnswerInput = memo(function ShortAnswerInput({
       </div>
       {!disabled ? (
         <p className={styles.shortAnswerHint}>
-          Tối đa 4 ký tự. Phần thập phân dùng dấu phẩy (,).
+          Tối đa 4 ký tự. Dùng dấu phẩy hoặc dấu chấm cho phần thập phân.
         </p>
       ) : null}
     </div>
@@ -233,7 +233,15 @@ function getCachedValidation(value: string) {
   return result;
 }
 
-export const MathText = memo(function MathText({ value }: { value: string }) {
+export const MathText = memo(function MathText({
+  value,
+  showErrorText = true,
+}: {
+  value: string;
+  /** Ẩn dòng chữ báo lỗi khi đang làm bài (chỉ giữ gạch chân + tooltip) để
+   * không làm học sinh hoang mang giữa giờ thi. Vẫn hiện khi xem lại/kết quả. */
+  showErrorText?: boolean;
+}) {
   const validation = useMemo(() => getCachedValidation(value), [value]);
   const errorSummary = validation.issues
     .filter((issue) => issue.severity === 'error')
@@ -260,7 +268,7 @@ export const MathText = memo(function MathText({ value }: { value: string }) {
       >
         {validation.normalized}
       </ReactMarkdown>
-      {!validation.valid ? (
+      {!validation.valid && showErrorText ? (
         <span className={styles.mathError} role="status" aria-live="polite">
           Công thức cần được quản trị viên kiểm tra.
         </span>
@@ -319,6 +327,9 @@ function QuestionRendererInner({
 }: QuestionRendererProps) {
   const showPrompt = section !== 'answer';
   const showAnswer = section !== 'prompt';
+  // Chỉ hiện chữ báo lỗi công thức khi xem lại/kết quả (section 'all'),
+  // ẩn khi đang thi (prompt/answer) để tránh gây lo lắng giữa giờ.
+  const showMathErrorText = section === 'all';
 
   return (
     <div className={styles.renderer}>
@@ -326,7 +337,7 @@ function QuestionRendererInner({
         <>
           <div className={styles.heading}>
             <strong>Câu {question.displayNo}.</strong>{' '}
-            <MathText value={question.content} />
+            <MathText value={question.content} showErrorText={showMathErrorText} />
           </div>
 
           {question.maxPoints !== undefined ? (
@@ -369,7 +380,7 @@ function QuestionRendererInner({
               <span className={styles.optionBody}>
                 <div>
                   <strong>{option.label}.</strong>{' '}
-                  <MathText value={option.content} />
+                  <MathText value={option.content} showErrorText={showMathErrorText} />
                 </div>
                 {option.imageUrl ? (
                   <QuestionImage
@@ -397,7 +408,7 @@ function QuestionRendererInner({
             >
               <div>
                 {item.label ? <strong>{item.label}) </strong> : null}
-                <MathText value={item.content} />
+                <MathText value={item.content} showErrorText={showMathErrorText} />
               </div>
               {showSolutions ? (
                 <em>{item.correct ? 'Đúng' : 'Sai'}</em>
