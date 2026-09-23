@@ -113,7 +113,7 @@ export function buildVietQrUrl(
     encodeURIComponent(bankCode) +
     '-' +
     encodeURIComponent(bankAccount) +
-    '-compact2.png?' +
+    '-qr_only.png?' +
     params.toString()
   );
 }

@@ -31,7 +31,7 @@ describe('VietQR checkout URL', () => {
     const parsed = new URL(qrUrl);
 
     expect(parsed.origin).toBe('https://img.vietqr.io');
-    expect(parsed.pathname).toBe('/image/MBBANK-0123456789-compact2.png');
+    expect(parsed.pathname).toBe('/image/MBBANK-0123456789-qr_only.png');
     expect([...parsed.searchParams.entries()]).toEqual([
       ['amount', '125000'],
       ['addInfo', 'THPT ABC 123'],
