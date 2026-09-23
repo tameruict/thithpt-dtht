@@ -25,6 +25,36 @@ export type PurchaseProduct = {
 
 export const PURCHASE_SCOPE_LABEL = 'Dùng cho tất cả phòng thi và tự luyện';
 
+// Gói "làm lại vĩnh viễn" được seed với attempt_count rất lớn (>= ngưỡng dưới) để
+// biểu diễn "không giới hạn lượt". Hiển thị chữ thay vì con số 999999 khó hiểu.
+export const UNLIMITED_ATTEMPT_THRESHOLD = 100000;
+
+export function describePurchaseAttempts(attemptCount: number): string {
+  if (attemptCount >= UNLIMITED_ATTEMPT_THRESHOLD) {
+    return 'Không giới hạn lượt làm lại';
+  }
+  return attemptCount + ' lượt';
+}
+
+export function describePurchaseValidity(validDays: number | null): string {
+  if (!validDays) return 'không giới hạn hạn dùng';
+  if (validDays % 365 === 0) {
+    const years = validDays / 365;
+    return 'hạn ' + years + ' năm';
+  }
+  return 'hạn ' + validDays + ' ngày';
+}
+
+export function describePurchaseTerms(
+  product: Pick<PurchaseProduct, 'attempt_count' | 'valid_days'>,
+): string {
+  return (
+    describePurchaseAttempts(product.attempt_count) +
+    ' · ' +
+    describePurchaseValidity(product.valid_days)
+  );
+}
+
 // Thanh toán tự động qua VietQR (buildVietQrUrl/qrUrl) đã bật: học viên quét QR để
 // chuyển khoản đúng số tiền + nội dung, hệ thống tự cấp key qua webhook/đối soát.
 // Zalo bên dưới chỉ là kênh hỗ trợ thủ công khi cần.
@@ -410,6 +440,9 @@ export default function PurchaseClient({
                   }
                   className={
                     styles.product +
+                    (product.attempt_count >= UNLIMITED_ATTEMPT_THRESHOLD
+                      ? ' ' + styles.featured
+                      : '') +
                     (selectedProduct === product.id ? ' ' + styles.selected : '')
                   }
                   onClick={() => setSelectedProduct(product.id)}
@@ -428,13 +461,13 @@ export default function PurchaseClient({
                   }}
                 >
                   <span>
-                    <strong>{product.name}</strong>
-                    <small>
-                      {product.attempt_count} lượt ·{' '}
-                      {product.valid_days
-                        ? 'hạn ' + product.valid_days + ' ngày'
-                        : 'không giới hạn hạn dùng'}
-                    </small>
+                    <strong>
+                      {product.name}
+                      {product.attempt_count >= UNLIMITED_ATTEMPT_THRESHOLD ? (
+                        <span className={styles.badge}>🔥 Đáng mua nhất</span>
+                      ) : null}
+                    </strong>
+                    <small>{describePurchaseTerms(product)}</small>
                     <small>{PURCHASE_SCOPE_LABEL}</small>
                   </span>
                   <b>{product.price_amount.toLocaleString('vi-VN')} ₫</b>
@@ -485,12 +518,7 @@ export default function PurchaseClient({
                 </div>
                 <div className={styles.summaryRow}>
                   <span>Số lượt</span>
-                  <strong>
-                    {selected.attempt_count} lượt ·{' '}
-                    {selected.valid_days
-                      ? 'hạn ' + selected.valid_days + ' ngày'
-                      : 'không giới hạn hạn dùng'}
-                  </strong>
+                  <strong>{describePurchaseTerms(selected)}</strong>
                 </div>
                 {coupon.trim() ? (
                   <div className={styles.summaryRow}>

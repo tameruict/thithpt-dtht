@@ -151,6 +151,30 @@
   box-shadow: 0 0 0 2px var(--ring);
 }
 
+.featured {
+  border-color: color-mix(in srgb, var(--primary) 70%, var(--border));
+  background: color-mix(in srgb, var(--primary-soft) 35%, transparent);
+}
+
+.featured:hover {
+  background: color-mix(in srgb, var(--primary-soft) 60%, transparent);
+}
+
+.badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.6;
+  letter-spacing: .2px;
+  white-space: nowrap;
+  color: #fff;
+  background: linear-gradient(135deg, #f97316, #ef4444);
+  vertical-align: middle;
+}
+
 .error {
   color: var(--danger);
   margin: 14px 0 0;

@@ -9,6 +9,7 @@ vi.mock('@/lib/supabase/client', () => ({
 
 import {
   buildVietQrUrl,
+  describePurchaseTerms,
   PURCHASE_SCOPE_LABEL,
   purchaseErrorLabel,
   purchaseOrderStatusLabel,
@@ -45,6 +46,21 @@ describe('VietQR checkout URL', () => {
         { amount: 10, currency: 'USD', paymentCode: 'THPTABC123456789' },
       ),
     ).toBe('');
+  });
+
+  it('describes an unlimited-retake 1-year bundle in words, not raw numbers', () => {
+    expect(describePurchaseTerms({ attempt_count: 999999, valid_days: 365 })).toBe(
+      'Không giới hạn lượt làm lại · hạn 1 năm',
+    );
+  });
+
+  it('keeps finite bundles as attempt counts and day-based validity', () => {
+    expect(describePurchaseTerms({ attempt_count: 10, valid_days: 30 })).toBe(
+      '10 lượt · hạn 30 ngày',
+    );
+    expect(describePurchaseTerms({ attempt_count: 5, valid_days: null })).toBe(
+      '5 lượt · không giới hạn hạn dùng',
+    );
   });
 
   it('localizes terminal order states and actionable checkout errors', () => {
