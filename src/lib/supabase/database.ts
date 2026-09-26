@@ -12,7 +12,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.17"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -48,6 +48,104 @@ export type Database = {
           request_id?: string | null
         }
         Relationships: []
+      }
+      coupons: {
+        Row: {
+          code: string
+          created_at: string
+          discount_type: string
+          discount_value: number
+          id: string
+          is_active: boolean
+          max_discount: number | null
+          max_uses: number | null
+          min_order_amount: number
+          name: string
+          per_user_limit: number
+          updated_at: string
+          used_count: number
+          valid_from: string | null
+          valid_to: string | null
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          discount_type: string
+          discount_value: number
+          id?: string
+          is_active?: boolean
+          max_discount?: number | null
+          max_uses?: number | null
+          min_order_amount?: number
+          name?: string
+          per_user_limit?: number
+          updated_at?: string
+          used_count?: number
+          valid_from?: string | null
+          valid_to?: string | null
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          discount_type?: string
+          discount_value?: number
+          id?: string
+          is_active?: boolean
+          max_discount?: number | null
+          max_uses?: number | null
+          min_order_amount?: number
+          name?: string
+          per_user_limit?: number
+          updated_at?: string
+          used_count?: number
+          valid_from?: string | null
+          valid_to?: string | null
+        }
+        Relationships: []
+      }
+      entitlements: {
+        Row: {
+          expires_at: string | null
+          granted_at: string
+          id: string
+          kind: string
+          metadata: Json
+          revoked_at: string | null
+          scope: string
+          source_order_id: string | null
+          user_id: string
+        }
+        Insert: {
+          expires_at?: string | null
+          granted_at?: string
+          id?: string
+          kind: string
+          metadata?: Json
+          revoked_at?: string | null
+          scope?: string
+          source_order_id?: string | null
+          user_id: string
+        }
+        Update: {
+          expires_at?: string | null
+          granted_at?: string
+          id?: string
+          kind?: string
+          metadata?: Json
+          revoked_at?: string | null
+          scope?: string
+          source_order_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "entitlements_source_order_id_fkey"
+            columns: ["source_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       exam_blueprint_section_rules: {
         Row: {
@@ -420,6 +518,8 @@ export type Database = {
           activated_at: string | null
           assigned_to: string | null
           batch_id: string | null
+          bound_at: string | null
+          bound_device_hash: string | null
           code: string
           created_at: string
           deleted_at: string | null
@@ -440,6 +540,8 @@ export type Database = {
           activated_at?: string | null
           assigned_to?: string | null
           batch_id?: string | null
+          bound_at?: string | null
+          bound_device_hash?: string | null
           code: string
           created_at?: string
           deleted_at?: string | null
@@ -460,6 +562,8 @@ export type Database = {
           activated_at?: string | null
           assigned_to?: string | null
           batch_id?: string | null
+          bound_at?: string | null
+          bound_device_hash?: string | null
           code?: string
           created_at?: string
           deleted_at?: string | null
@@ -1015,7 +1119,7 @@ export type Database = {
       }
       exam_session_questions: {
         Row: {
-          blueprint_section_id: string
+          blueprint_section_id: string | null
           created_at: string
           display_no: string | null
           id: string
@@ -1026,7 +1130,7 @@ export type Database = {
           session_id: string
         }
         Insert: {
-          blueprint_section_id: string
+          blueprint_section_id?: string | null
           created_at?: string
           display_no?: string | null
           id?: string
@@ -1037,7 +1141,7 @@ export type Database = {
           session_id: string
         }
         Update: {
-          blueprint_section_id?: string
+          blueprint_section_id?: string | null
           created_at?: string
           display_no?: string | null
           id?: string
@@ -1091,7 +1195,8 @@ export type Database = {
           client_info: Json
           created_at: string
           due_at: string | null
-          exam_room_id: string
+          exam_id: string | null
+          exam_room_id: string | null
           grading_error: string | null
           grading_status: Database["public"]["Enums"]["exam_grading_status"]
           id: string
@@ -1113,11 +1218,12 @@ export type Database = {
           client_info?: Json
           created_at?: string
           due_at?: string | null
-          exam_room_id: string
+          exam_id?: string | null
+          exam_room_id?: string | null
           grading_error?: string | null
           grading_status?: Database["public"]["Enums"]["exam_grading_status"]
           id?: string
-          key_id: string | null
+          key_id?: string | null
           max_score?: number
           paper_id?: string | null
           score?: number | null
@@ -1135,7 +1241,8 @@ export type Database = {
           client_info?: Json
           created_at?: string
           due_at?: string | null
-          exam_room_id?: string
+          exam_id?: string | null
+          exam_room_id?: string | null
           grading_error?: string | null
           grading_status?: Database["public"]["Enums"]["exam_grading_status"]
           id?: string
@@ -1153,6 +1260,13 @@ export type Database = {
           violation_count?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "exam_sessions_exam_id_fkey"
+            columns: ["exam_id"]
+            isOneToOne: false
+            referencedRelation: "exams"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "exam_sessions_exam_room_id_fkey"
             columns: ["exam_room_id"]
@@ -1247,6 +1361,9 @@ export type Database = {
           id: string
           metadata: Json
           organization: string | null
+          province: string | null
+          source_kind: string
+          source_slug: string | null
           source_type: string
           subject_code: string
           title: string
@@ -1258,6 +1375,9 @@ export type Database = {
           id?: string
           metadata?: Json
           organization?: string | null
+          province?: string | null
+          source_kind?: string
+          source_slug?: string | null
           source_type?: string
           subject_code: string
           title: string
@@ -1269,6 +1389,9 @@ export type Database = {
           id?: string
           metadata?: Json
           organization?: string | null
+          province?: string | null
+          source_kind?: string
+          source_slug?: string | null
           source_type?: string
           subject_code?: string
           title?: string
@@ -1290,6 +1413,120 @@ export type Database = {
           },
           {
             foreignKeyName: "exam_sources_subject_code_fkey"
+            columns: ["subject_code"]
+            isOneToOne: false
+            referencedRelation: "v_question_bank_stats"
+            referencedColumns: ["subject_code"]
+          },
+        ]
+      }
+      exams: {
+        Row: {
+          answer_key_confidence: string
+          blueprint_id: string | null
+          code: string
+          content_hash: string
+          created_at: string
+          drive_file_id: string | null
+          duration_minutes: number
+          exam_kind: string
+          has_official_key: boolean
+          id: string
+          is_free: boolean
+          metadata: Json
+          question_count: number
+          r2_archive_key: string | null
+          round: number | null
+          search_vector: unknown
+          source_docx_path: string | null
+          source_id: string | null
+          status: string
+          subject_code: string
+          title: string
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          answer_key_confidence?: string
+          blueprint_id?: string | null
+          code: string
+          content_hash: string
+          created_at?: string
+          drive_file_id?: string | null
+          duration_minutes: number
+          exam_kind?: string
+          has_official_key?: boolean
+          id?: string
+          is_free?: boolean
+          metadata?: Json
+          question_count?: number
+          r2_archive_key?: string | null
+          round?: number | null
+          search_vector?: unknown
+          source_docx_path?: string | null
+          source_id?: string | null
+          status?: string
+          subject_code: string
+          title: string
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          answer_key_confidence?: string
+          blueprint_id?: string | null
+          code?: string
+          content_hash?: string
+          created_at?: string
+          drive_file_id?: string | null
+          duration_minutes?: number
+          exam_kind?: string
+          has_official_key?: boolean
+          id?: string
+          is_free?: boolean
+          metadata?: Json
+          question_count?: number
+          r2_archive_key?: string | null
+          round?: number | null
+          search_vector?: unknown
+          source_docx_path?: string | null
+          source_id?: string | null
+          status?: string
+          subject_code?: string
+          title?: string
+          updated_at?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "exams_blueprint_id_fkey"
+            columns: ["blueprint_id"]
+            isOneToOne: false
+            referencedRelation: "exam_blueprint_score_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "exams_blueprint_id_fkey"
+            columns: ["blueprint_id"]
+            isOneToOne: false
+            referencedRelation: "exam_blueprints"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "exams_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "exam_sources"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "exams_subject_code_fkey"
+            columns: ["subject_code"]
+            isOneToOne: false
+            referencedRelation: "subjects"
+            referencedColumns: ["code"]
+          },
+          {
+            foreignKeyName: "exams_subject_code_fkey"
             columns: ["subject_code"]
             isOneToOne: false
             referencedRelation: "v_question_bank_stats"
@@ -1424,6 +1661,69 @@ export type Database = {
         }
         Relationships: []
       }
+      key_topups: {
+        Row: {
+          added_attempts: number
+          created_at: string
+          extended_days: number | null
+          id: string
+          key_id: string
+          order_id: string
+        }
+        Insert: {
+          added_attempts: number
+          created_at?: string
+          extended_days?: number | null
+          id?: string
+          key_id: string
+          order_id: string
+        }
+        Update: {
+          added_attempts?: number
+          created_at?: string
+          extended_days?: number | null
+          id?: string
+          key_id?: string
+          order_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "key_topups_key_id_fkey"
+            columns: ["key_id"]
+            isOneToOne: false
+            referencedRelation: "admin_exam_key_overview"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "key_topups_key_id_fkey"
+            columns: ["key_id"]
+            isOneToOne: false
+            referencedRelation: "exam_keys"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "key_topups_key_id_fkey"
+            columns: ["key_id"]
+            isOneToOne: false
+            referencedRelation: "v_exam_key_balances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "key_topups_key_id_fkey"
+            columns: ["key_id"]
+            isOneToOne: false
+            referencedRelation: "v_exam_keys_effective"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "key_topups_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: true
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       knowledge_fields: {
         Row: {
           created_at: string
@@ -1487,6 +1787,36 @@ export type Database = {
             referencedColumns: ["subject_code"]
           },
         ]
+      }
+      ocr_import_staging: {
+        Row: {
+          created_at: string
+          id: number
+          imported_at: string | null
+          payload: Json
+          result: Json | null
+          seq: number | null
+          subject_code: string
+        }
+        Insert: {
+          created_at?: string
+          id?: never
+          imported_at?: string | null
+          payload: Json
+          result?: Json | null
+          seq?: number | null
+          subject_code: string
+        }
+        Update: {
+          created_at?: string
+          id?: never
+          imported_at?: string | null
+          payload?: Json
+          result?: Json | null
+          seq?: number | null
+          subject_code?: string
+        }
+        Relationships: []
       }
       payment_events: {
         Row: {
@@ -1710,14 +2040,17 @@ export type Database = {
       purchase_orders: {
         Row: {
           amount: number
+          coupon_code: string | null
           created_at: string
           currency: string
+          discount_amount: number
           expires_at: string | null
           failed_at: string | null
           failure_code: string | null
           fulfilled_at: string | null
           id: string
           idempotency_key: string
+          original_amount: number | null
           paid_at: string | null
           payment_code: string
           product_id: string | null
@@ -1726,18 +2059,22 @@ export type Database = {
           provider_order_ref: string | null
           status: string
           student_id: string
+          target_key_id: string | null
           updated_at: string
         }
         Insert: {
           amount: number
+          coupon_code?: string | null
           created_at?: string
           currency?: string
+          discount_amount?: number
           expires_at?: string | null
           failed_at?: string | null
           failure_code?: string | null
           fulfilled_at?: string | null
           id?: string
           idempotency_key: string
+          original_amount?: number | null
           paid_at?: string | null
           payment_code: string
           product_id?: string | null
@@ -1746,18 +2083,22 @@ export type Database = {
           provider_order_ref?: string | null
           status?: string
           student_id: string
+          target_key_id?: string | null
           updated_at?: string
         }
         Update: {
           amount?: number
+          coupon_code?: string | null
           created_at?: string
           currency?: string
+          discount_amount?: number
           expires_at?: string | null
           failed_at?: string | null
           failure_code?: string | null
           fulfilled_at?: string | null
           id?: string
           idempotency_key?: string
+          original_amount?: number | null
           paid_at?: string | null
           payment_code?: string
           product_id?: string | null
@@ -1766,6 +2107,7 @@ export type Database = {
           provider_order_ref?: string | null
           status?: string
           student_id?: string
+          target_key_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -1781,6 +2123,34 @@ export type Database = {
             columns: ["student_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_target_key_fkey"
+            columns: ["target_key_id"]
+            isOneToOne: false
+            referencedRelation: "admin_exam_key_overview"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_target_key_fkey"
+            columns: ["target_key_id"]
+            isOneToOne: false
+            referencedRelation: "exam_keys"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_target_key_fkey"
+            columns: ["target_key_id"]
+            isOneToOne: false
+            referencedRelation: "v_exam_key_balances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_target_key_fkey"
+            columns: ["target_key_id"]
+            isOneToOne: false
+            referencedRelation: "v_exam_keys_effective"
             referencedColumns: ["id"]
           },
         ]
@@ -2528,6 +2898,45 @@ export type Database = {
           },
         ]
       }
+      question_solutions: {
+        Row: {
+          created_at: string
+          explanation: string | null
+          question_id: string
+          steps: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          explanation?: string | null
+          question_id: string
+          steps?: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          explanation?: string | null
+          question_id?: string
+          steps?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "question_solutions_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: true
+            referencedRelation: "questions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "question_solutions_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: true
+            referencedRelation: "v_question_full"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       question_source_links: {
         Row: {
           created_at: string
@@ -2740,6 +3149,7 @@ export type Database = {
           created_by: string | null
           deleted_at: string | null
           difficulty: number
+          exam_id: string | null
           explanation: string | null
           group_id: string | null
           id: string
@@ -2750,6 +3160,8 @@ export type Database = {
           knowledge_field_id: number | null
           mc_select_count: number
           metadata: Json
+          order_in_exam: number | null
+          part: string | null
           r2_asset_id: string | null
           reviewed_at: string | null
           reviewed_by: string | null
@@ -2772,6 +3184,7 @@ export type Database = {
           created_by?: string | null
           deleted_at?: string | null
           difficulty: number
+          exam_id?: string | null
           explanation?: string | null
           group_id?: string | null
           id?: string
@@ -2782,6 +3195,8 @@ export type Database = {
           knowledge_field_id?: number | null
           mc_select_count?: number
           metadata?: Json
+          order_in_exam?: number | null
+          part?: string | null
           r2_asset_id?: string | null
           reviewed_at?: string | null
           reviewed_by?: string | null
@@ -2804,6 +3219,7 @@ export type Database = {
           created_by?: string | null
           deleted_at?: string | null
           difficulty?: number
+          exam_id?: string | null
           explanation?: string | null
           group_id?: string | null
           id?: string
@@ -2814,6 +3230,8 @@ export type Database = {
           knowledge_field_id?: number | null
           mc_select_count?: number
           metadata?: Json
+          order_in_exam?: number | null
+          part?: string | null
           r2_asset_id?: string | null
           reviewed_at?: string | null
           reviewed_by?: string | null
@@ -2832,6 +3250,13 @@ export type Database = {
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "questions_exam_id_fkey"
+            columns: ["exam_id"]
+            isOneToOne: false
+            referencedRelation: "exams"
             referencedColumns: ["id"]
           },
           {
@@ -3145,6 +3570,8 @@ export type Database = {
           current_key_id: string | null
           date_of_birth: string | null
           district_name: string | null
+          free_exam_quota: number
+          free_exam_used: number
           full_name: string | null
           gender: string | null
           id: string
@@ -3159,6 +3586,8 @@ export type Database = {
           current_key_id?: string | null
           date_of_birth?: string | null
           district_name?: string | null
+          free_exam_quota?: number
+          free_exam_used?: number
           full_name?: string | null
           gender?: string | null
           id: string
@@ -3173,6 +3602,8 @@ export type Database = {
           current_key_id?: string | null
           date_of_birth?: string | null
           district_name?: string | null
+          free_exam_quota?: number
+          free_exam_used?: number
           full_name?: string | null
           gender?: string | null
           id?: string
@@ -3264,7 +3695,10 @@ export type Database = {
           created_at: string
           default_duration_minutes: number
           deleted_at: string | null
+          display_order: number
           exam_group: string
+          exam_template: string
+          family: string
           icon_url: string | null
           is_active: boolean
           is_compulsory: boolean
@@ -3279,7 +3713,10 @@ export type Database = {
           created_at?: string
           default_duration_minutes: number
           deleted_at?: string | null
+          display_order?: number
           exam_group: string
+          exam_template?: string
+          family?: string
           icon_url?: string | null
           is_active?: boolean
           is_compulsory?: boolean
@@ -3294,7 +3731,10 @@ export type Database = {
           created_at?: string
           default_duration_minutes?: number
           deleted_at?: string | null
+          display_order?: number
           exam_group?: string
+          exam_template?: string
+          family?: string
           icon_url?: string | null
           is_active?: boolean
           is_compulsory?: boolean
@@ -4108,6 +4548,19 @@ export type Database = {
         Args: { p_key_code: string; p_subject_code?: string }
         Returns: Json
       }
+      admin_reset_key_device: { Args: { p_key_id: string }; Returns: Json }
+      apply_answer_key: {
+        Args: {
+          p_answer: Json
+          p_audit?: Json
+          p_confidence?: string
+          p_evidence?: string
+          p_needs_human_check?: boolean
+          p_question_id: string
+          p_source?: string
+        }
+        Returns: Json
+      }
       apply_question_content_review: {
         Args: { p_action: string; p_review_id: string }
         Returns: undefined
@@ -4133,7 +4586,12 @@ export type Database = {
         Returns: Json
       }
       create_purchase_order: {
-        Args: { p_idempotency_key: string; p_product_id: string }
+        Args: {
+          p_coupon_code?: string
+          p_idempotency_key: string
+          p_product_id: string
+          p_target_key_id?: string
+        }
         Returns: Json
       }
       expire_overdue_exam_sessions: { Args: never; Returns: number }
@@ -4211,6 +4669,7 @@ export type Database = {
         Returns: Json
       }
       get_active_session: { Args: never; Returns: Json }
+      get_attempt_status: { Args: never; Returns: Json }
       get_exam_results: {
         Args: {
           p_exam_room_id?: string
@@ -4261,26 +4720,26 @@ export type Database = {
         Args: { p_after?: string; p_limit?: number; p_status?: string }
         Returns: Json
       }
+      get_room_leaderboard: {
+        Args: { p_limit?: number; p_room_id: string }
+        Returns: Json
+      }
       get_session_review: { Args: { p_session_id: string }; Returns: Json }
       get_session_review_core_20260821: {
         Args: { p_session_id: string }
         Returns: Json
       }
       get_subjects_dashboard: { Args: never; Returns: Json }
+      get_user_access: { Args: never; Returns: Json }
       grade_essay_answer: {
         Args: { p_answer_id: string; p_points: number }
         Returns: number
       }
+      import_ocr_exam: { Args: { payload: Json }; Returns: Json }
       join_exam: {
         Args: {
           p_code: string
-          p_exam_room_id?: string
-          p_subject_code?: string
-        }
-        Returns: string
-      }
-      start_free_exam_session: {
-        Args: {
+          p_device_hash?: string
           p_exam_room_id?: string
           p_subject_code?: string
         }
@@ -4310,9 +4769,20 @@ export type Database = {
         Args: { p_session_id: string; p_type?: string }
         Returns: number
       }
+      retract_inferred_answer_key: {
+        Args: { p_audit?: Json; p_question_id: string; p_reason: string }
+        Returns: Json
+      }
       revoke_purchase_order: {
         Args: { p_order_id: string; p_reason: string }
         Returns: Json
+      }
+      run_ocr_import_staging: {
+        Args: never
+        Returns: {
+          result: Json
+          staging_id: number
+        }[]
       }
       save_session_answers: {
         Args: { p_answers: Json; p_session_id: string }
@@ -4345,6 +4815,11 @@ export type Database = {
           subject_code: string
           type: Database["public"]["Enums"]["question_type"]
         }[]
+      }
+      start_exam_session: { Args: { p_exam_id: string }; Returns: Json }
+      start_free_exam_session: {
+        Args: { p_exam_room_id?: string; p_subject_code?: string }
+        Returns: string
       }
       start_practice_session: {
         Args: {
@@ -4395,12 +4870,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4424,11 +4899,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4449,11 +4924,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4474,11 +4949,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -4491,11 +4966,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
