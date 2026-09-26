@@ -98,8 +98,8 @@ export async function createPurchaseOrder(
   const { data, error } = await supabase.rpc('create_purchase_order', {
     p_product_id: productId,
     p_idempotency_key: idempotencyKey,
-    p_coupon_code: normalizedCoupon ? normalizedCoupon : null,
-    p_target_key_id: targetKeyId ?? null,
+    p_coupon_code: normalizedCoupon ? normalizedCoupon : undefined,
+    p_target_key_id: targetKeyId ?? undefined,
   });
 
   if (error) {
