@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Clock, FileQuestion, Inbox, Sparkles } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
@@ -69,37 +69,40 @@ export default function DeThiClient() {
     return () => window.clearTimeout(timer);
   }, [searchInput]);
 
-  useEffect(() => {
-    let mounted = true;
+  // requestIdRef bỏ qua kết quả của các lần gọi cũ hơn khi bộ lọc đổi liên
+  // tục (thay cho cờ "mounted" cục bộ) — cho phép tách phần gọi API ra
+  // useCallback riêng, tránh gọi setState trực tiếp trong thân effect.
+  const latestRequestIdRef = useRef(0);
+
+  const loadExamBank = useCallback(async () => {
+    const requestId = ++latestRequestIdRef.current;
     setLoading(true);
     setError('');
 
-    fetchExamBank(supabase, {
-      subjectCode: subjectCode || undefined,
-      year: year ? Number(year) : undefined,
-      isFree: freeOnly ? true : undefined,
-      search: search || undefined,
-      page,
-      pageSize: PAGE_SIZE,
-    })
-      .then((result) => {
-        if (!mounted) return;
-        setItems(result.items);
-        setTotal(result.total);
-      })
-      .catch((loadError: unknown) => {
-        if (mounted) {
-          setError(getSupabaseErrorMessage(loadError, 'Không tải được danh sách đề thi.'));
-        }
-      })
-      .finally(() => {
-        if (mounted) setLoading(false);
+    try {
+      const result = await fetchExamBank(supabase, {
+        subjectCode: subjectCode || undefined,
+        year: year ? Number(year) : undefined,
+        isFree: freeOnly ? true : undefined,
+        search: search || undefined,
+        page,
+        pageSize: PAGE_SIZE,
       });
-
-    return () => {
-      mounted = false;
-    };
+      if (latestRequestIdRef.current !== requestId) return;
+      setItems(result.items);
+      setTotal(result.total);
+    } catch (loadError) {
+      if (latestRequestIdRef.current !== requestId) return;
+      setError(getSupabaseErrorMessage(loadError, 'Không tải được danh sách đề thi.'));
+    } finally {
+      if (latestRequestIdRef.current === requestId) setLoading(false);
+    }
   }, [supabase, subjectCode, year, freeOnly, search, page]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadExamBank(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadExamBank]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
