@@ -138,8 +138,8 @@ describe('createPurchaseOrder checkout guards', () => {
     expect(rpc).toHaveBeenCalledWith('create_purchase_order', {
       p_product_id: productId,
       p_idempotency_key: idempotencyKey,
-      p_coupon_code: null,
-      p_target_key_id: null,
+      p_coupon_code: undefined,
+      p_target_key_id: undefined,
     });
   });
 
@@ -160,8 +160,8 @@ describe('createPurchaseOrder checkout guards', () => {
     expect(rpc).toHaveBeenCalledWith('create_purchase_order', {
       p_product_id: productId,
       p_idempotency_key: idempotencyKey,
-      p_coupon_code: null,
-      p_target_key_id: null,
+      p_coupon_code: undefined,
+      p_target_key_id: undefined,
     });
   });
 });
