@@ -278,7 +278,7 @@ export default function ExamPageClient({
     }
 
     if (!currentSessionId) {
-      router.push('/subjects');
+      router.push('/de-thi');
     }
   }, [candidateInfo, currentSessionId, hasHydrated, router]);
 

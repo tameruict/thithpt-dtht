@@ -372,7 +372,7 @@ export default function ResultPageClient({ sessionId }: { sessionId?: string }) 
   const currentSessionId = sessionId;
   const supabase = useMemo(() => createClient(), []);
   const [review, setReview] = useState<SessionReview | null>(null);
-  const [history, setHistory] = useState<Array<{ id: string; status: string; score: number | null; max_score: number; started_at: string; submitted_at: string | null; exam_rooms?: { name: string; subject_code: string } | { name: string; subject_code: string }[] | null }>>([]);
+  const [history, setHistory] = useState<Array<{ id: string; status: string; score: number | null; max_score: number; started_at: string; submitted_at: string | null; exam_rooms?: { name: string; subject_code: string } | { name: string; subject_code: string }[] | null; exams?: { title: string; subject_code: string } | { title: string; subject_code: string }[] | null }>>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isScoring, setIsScoring] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -406,7 +406,7 @@ export default function ResultPageClient({ sessionId }: { sessionId?: string }) 
       }
       const { data, error } = await supabase
         .from('exam_sessions')
-        .select('id,status,score,max_score,started_at,submitted_at,exam_rooms(name,subject_code)')
+        .select('id,status,score,max_score,started_at,submitted_at,exam_rooms(name,subject_code),exams(title,subject_code)')
         .eq('student_id', authData.user.id)
         .order('started_at', { ascending: false })
         .limit(50);
@@ -521,7 +521,7 @@ export default function ResultPageClient({ sessionId }: { sessionId?: string }) 
 
   const handleFinish = () => {
     finishSession();
-    router.push('/subjects');
+    router.push('/de-thi');
   };
 
   const handleRetry = () => {
@@ -601,16 +601,17 @@ export default function ResultPageClient({ sessionId }: { sessionId?: string }) 
                 <div className={styles.feedbackState}>
                   <Inbox className={styles.emptyIcon} size={32} aria-hidden="true" />
                   <p className={styles.emptyReviewNotice}>Chưa có bài thi nào. Hãy bắt đầu một phòng thi để xem kết quả tại đây.</p>
-                  <Link className="btn" href="/subjects">Bắt đầu thi thử</Link>
+                  <Link className="btn" href="/de-thi">Bắt đầu thi thử</Link>
                 </div>
               )}
               {!isLoading && !loadError && history.length > 0 && (
                 <ul className={styles.historyList}>
                   {history.map((item) => {
                     const room = Array.isArray(item.exam_rooms) ? item.exam_rooms[0] : item.exam_rooms;
+                    const exam = Array.isArray(item.exams) ? item.exams[0] : item.exams;
                     return (
                       <li key={item.id} className={styles.historyItem}>
-                        <div><strong>{room?.subject_code ?? 'Môn thi'}</strong><span>{room?.name ?? 'Phiên thi'} · {formatHanoiDateTime(item.submitted_at ?? item.started_at)}</span></div>
+                        <div><strong>{room?.subject_code ?? exam?.subject_code ?? 'Môn thi'}</strong><span>{room?.name ?? exam?.title ?? 'Phiên thi'} · {formatHanoiDateTime(item.submitted_at ?? item.started_at)}</span></div>
                         {typeof item.score === 'number' ? (
                           <b>{item.score.toFixed(2)} / {item.max_score}</b>
                         ) : (
