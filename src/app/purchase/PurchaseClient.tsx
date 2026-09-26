@@ -4,11 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { Check, Copy, ExternalLink, Loader2, MessageCircle, RefreshCw, ShieldCheck } from 'lucide-react';
+import { Check, Copy, ExternalLink, Loader2, MessageCircle, Minus, RefreshCw, ShieldCheck } from 'lucide-react';
 import { showToast } from '@/components/ui/Toast';
 import { createPurchaseOrder } from './actions';
 import { createClient } from '@/lib/supabase/client';
-import { maskKey } from '@/lib/device';
+import { formatPriceVnd } from '@/lib/supabase/exam-data';
+import { formatHanoiDate } from '@/lib/datetime';
 import styles from '@/styles/purchase.module.css';
 import StudentNav from '@/components/ui/StudentNav';
 
@@ -16,25 +17,21 @@ export type PurchaseProduct = {
   id: string;
   code: string;
   name: string;
-  product_kind: 'bundle';
-  attempt_count: number;
+  product_kind: 'subscription';
   price_amount: number;
   currency: string;
+  // Cột DB có giá trị dummy (999999, "không giới hạn lượt") cho gói subscription
+  // — không còn ý nghĩa nghiệp vụ, KHÔNG hiển thị ra UI.
   valid_days: number | null;
 };
 
+export type CurrentAccess = {
+  is_vip: boolean;
+  plan_code: string | null;
+  expires_at: string | null;
+};
+
 export const PURCHASE_SCOPE_LABEL = 'Dùng cho tất cả phòng thi và tự luyện';
-
-// Gói "làm lại vĩnh viễn" được seed với attempt_count rất lớn (>= ngưỡng dưới) để
-// biểu diễn "không giới hạn lượt". Hiển thị chữ thay vì con số 999999 khó hiểu.
-export const UNLIMITED_ATTEMPT_THRESHOLD = 100000;
-
-export function describePurchaseAttempts(attemptCount: number): string {
-  if (attemptCount >= UNLIMITED_ATTEMPT_THRESHOLD) {
-    return 'Không giới hạn lượt làm lại';
-  }
-  return attemptCount + ' lượt';
-}
 
 export function describePurchaseValidity(validDays: number | null): string {
   if (!validDays) return 'không giới hạn hạn dùng';
@@ -42,17 +39,49 @@ export function describePurchaseValidity(validDays: number | null): string {
     const years = validDays / 365;
     return 'hạn ' + years + ' năm';
   }
+  if (validDays % 7 === 0 && validDays < 30) {
+    return 'hạn ' + validDays / 7 + ' tuần';
+  }
   return 'hạn ' + validDays + ' ngày';
 }
 
-export function describePurchaseTerms(
-  product: Pick<PurchaseProduct, 'attempt_count' | 'valid_days'>,
+/** Giá quy đổi theo ngày, dùng để so sánh giá trị giữa các gói (đồng/ngày). */
+export function getPricePerDay(
+  product: Pick<PurchaseProduct, 'price_amount' | 'valid_days'>,
+): number | null {
+  if (!product.valid_days || product.valid_days <= 0) return null;
+  return product.price_amount / product.valid_days;
+}
+
+export function formatPricePerDay(
+  product: Pick<PurchaseProduct, 'price_amount' | 'valid_days'>,
 ): string {
-  return (
-    describePurchaseAttempts(product.attempt_count) +
-    ' · ' +
-    describePurchaseValidity(product.valid_days)
-  );
+  const perDay = getPricePerDay(product);
+  if (perDay == null) return '';
+  return '~' + Math.round(perDay).toLocaleString('vi-VN') + 'đ/ngày';
+}
+
+/** Gói tháng là "phổ biến nhất" theo mặc định; nếu bảng giá đổi tên/mã, rơi về gói ở giữa. */
+export function getPopularProductId(products: PurchaseProduct[]): string | null {
+  const monthly = products.find((product) => product.code === 'VIP-MONTH');
+  if (monthly) return monthly.id;
+  if (products.length === 0) return null;
+  const sorted = [...products].sort((a, b) => a.price_amount - b.price_amount);
+  return sorted[Math.floor(sorted.length / 2)]?.id ?? null;
+}
+
+/** "Tiết kiệm nhất" = giá/ngày thấp nhất trong các gói đang mở bán. */
+export function getBestValueProductId(products: PurchaseProduct[]): string | null {
+  let bestId: string | null = null;
+  let bestPerDay = Infinity;
+  for (const product of products) {
+    const perDay = getPricePerDay(product);
+    if (perDay != null && perDay < bestPerDay) {
+      bestPerDay = perDay;
+      bestId = product.id;
+    }
+  }
+  return bestId;
 }
 
 // Thanh toán tự động qua VietQR (buildVietQrUrl/qrUrl) đã bật: học viên quét QR để
@@ -70,7 +99,7 @@ export function purchaseOrderStatusLabel(status: string) {
   switch (status) {
     case 'pending': return 'Chờ chuyển khoản';
     case 'paid': return 'Đã nhận tiền';
-    case 'fulfilled': return 'Đã cấp key';
+    case 'fulfilled': return 'Đã kích hoạt VIP';
     case 'expired': return 'Đã hết hạn';
     case 'failed': return 'Cần kiểm tra';
     case 'revoked': return 'Đã thu hồi';
@@ -80,9 +109,9 @@ export function purchaseOrderStatusLabel(status: string) {
 
 export function purchaseErrorLabel(error: string) {
   const labels: Record<string, string> = {
-    CHECKOUT_DISABLED: 'Kênh mua key đang tạm đóng.',
+    CHECKOUT_DISABLED: 'Kênh mua VIP đang tạm đóng.',
     CHECKOUT_CONFIGURATION_INVALID: 'Kênh thanh toán chưa sẵn sàng.',
-    NOT_AUTHENTICATED: 'Vui lòng đăng nhập trước khi mua key.',
+    NOT_AUTHENTICATED: 'Vui lòng đăng nhập trước khi mua VIP.',
     PRODUCT_NOT_AVAILABLE: 'Gói này đã ngừng bán. Hãy chọn gói khác.',
     PRODUCT_LOOKUP_FAILED: 'Chưa tải được thông tin gói. Vui lòng thử lại.',
     PAYMENT_CURRENCY_UNSUPPORTED: 'Gói thanh toán phải sử dụng VND.',
@@ -96,10 +125,6 @@ export function purchaseErrorLabel(error: string) {
     COUPON_MIN_ORDER_NOT_MET: 'Đơn chưa đủ giá trị tối thiểu để dùng mã này.',
     COUPON_PER_USER_LIMIT: 'Bạn đã dùng mã này rồi.',
     COUPON_DISCOUNT_TOO_HIGH: 'Mã giảm giá vượt quá giá trị đơn.',
-    TARGET_KEY_NOT_FOUND: 'Không tìm thấy key cần gia hạn.',
-    TARGET_KEY_NOT_OWNED: 'Key gia hạn không thuộc tài khoản này.',
-    TARGET_KEY_REVOKED: 'Key gia hạn đã bị thu hồi.',
-    TARGET_KEY_INVALID: 'Key gia hạn không hợp lệ.',
   };
   return labels[error] ?? error;
 }
@@ -116,13 +141,13 @@ type OrderState = {
   currency: string;
   status: string;
   expiresAt: string | null;
-  keyCode: string | null;
 };
 
 export type PurchaseClientProps = {
   products: PurchaseProduct[];
   enabled: boolean;
   bankDetails: CheckoutBankDetails | null;
+  currentAccess: CurrentAccess | null;
 };
 
 export function buildVietQrUrl(
@@ -148,39 +173,75 @@ export function buildVietQrUrl(
   );
 }
 
+type FeatureValue = true | false | string;
+
+const FEATURE_ROWS: Array<{ label: string; free: FeatureValue; vip: FeatureValue }> = [
+  { label: 'Xem danh sách đề thi', free: true, vip: true },
+  { label: 'Làm đề miễn phí (3 đề/môn)', free: true, vip: true },
+  { label: 'Làm toàn bộ đề trong kho', free: false, vip: true },
+  { label: 'Chấm điểm tự động', free: true, vip: true },
+  { label: 'Xem lời giải chi tiết', free: 'Giới hạn', vip: 'Đầy đủ' },
+  { label: 'Làm lại không giới hạn', free: false, vip: true },
+];
+
+function FeatureCell({ value }: { value: FeatureValue }) {
+  if (typeof value === 'string') return <span>{value}</span>;
+  return value ? (
+    <Check size={16} className={styles.featureYes} aria-label="Có" />
+  ) : (
+    <Minus size={16} className={styles.featureNo} aria-label="Không" />
+  );
+}
+
+function FeatureComparisonTable() {
+  return (
+    <section className={styles.compareCard} aria-label="So sánh Free và VIP">
+      <h2>Free vs VIP — bạn được gì thêm?</h2>
+      <div className={styles.compareTable} role="table">
+        <div className={styles.compareRow + ' ' + styles.compareHead} role="row">
+          <span role="columnheader">Tính năng</span>
+          <span role="columnheader">Free</span>
+          <span role="columnheader">VIP</span>
+        </div>
+        {FEATURE_ROWS.map((row) => (
+          <div className={styles.compareRow} role="row" key={row.label}>
+            <span role="cell">{row.label}</span>
+            <span role="cell" className={styles.compareCell}>
+              <FeatureCell value={row.free} />
+            </span>
+            <span role="cell" className={styles.compareCell + ' ' + styles.compareCellVip}>
+              <FeatureCell value={row.vip} />
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function PurchaseClient({
   products,
   enabled,
   bankDetails,
+  currentAccess,
 }: PurchaseClientProps) {
   const router = useRouter();
   const [order, setOrder] = useState<OrderState | null>(null);
   const [selectedProduct, setSelectedProduct] = useState(products[0]?.id ?? '');
   const [coupon, setCoupon] = useState('');
-  const [targetKeyCode, setTargetKeyCode] = useState('');
-
-  // Prefill ?topup=BUY-... tu trang profile (khong dung useSearchParams de khoi can Suspense).
-  useEffect(() => {
-    try {
-      const topup = new URLSearchParams(window.location.search).get('topup');
-      if (topup) {
-        // Defer the prefill update so the effect only bridges URL state into React.
-        window.setTimeout(() => setTargetKeyCode(topup.toUpperCase()), 0);
-      }
-    } catch {
-      // bo qua
-    }
-  }, []);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [copied, setCopied] = useState('');
-  const [keyRevealed, setKeyRevealed] = useState(false);
+  const [access, setAccess] = useState<CurrentAccess | null>(currentAccess);
 
   const selected = useMemo(
     () => products.find((product) => product.id === selectedProduct) ?? null,
     [products, selectedProduct],
   );
+
+  const popularId = useMemo(() => getPopularProductId(products), [products]);
+  const bestValueId = useMemo(() => getBestValueProductId(products), [products]);
 
   const refreshOrder = useCallback(async () => {
     if (!order) return;
@@ -194,41 +255,6 @@ export default function PurchaseClient({
         .maybeSingle();
       if (!latest) return;
 
-      let keyCode = order.keyCode;
-      if (latest.status === 'fulfilled') {
-        const { data: key } = await supabase
-          .from('exam_keys')
-          .select('code')
-          .eq('source_order_id', order.orderId)
-          .maybeSingle();
-        if (key?.code) {
-          keyCode = key.code;
-        } else {
-          // Top-up: key cu, tra qua key_topups (cast any vi type gen chua co bang moi).
-          // key_topups is newer than the generated Supabase schema; keep this
-          // narrow escape hatch local to the optional top-up lookup.
-          const { data: topup } = await (supabase as unknown as {
-            from: (table: string) => {
-              select: (columns: string) => {
-                eq: (column: string, value: string) => {
-                  maybeSingle: () => Promise<{ data: unknown }>;
-                };
-              };
-            };
-          }).from('key_topups')
-            .select('key_id,exam_keys!inner(code)')
-            .eq('order_id', order.orderId)
-            .maybeSingle();
-          const topupKey = topup as unknown as {
-            exam_keys: { code: string } | { code: string }[];
-          } | null;
-          const topupCode = Array.isArray(topupKey?.exam_keys)
-            ? topupKey?.exam_keys[0]?.code
-            : topupKey?.exam_keys?.code;
-          if (topupCode) keyCode = topupCode;
-        }
-      }
-
       setOrder((current) =>
         current
           ? {
@@ -237,10 +263,18 @@ export default function PurchaseClient({
               amount: latest.amount,
               currency: latest.currency,
               expiresAt: latest.expires_at,
-              keyCode,
             }
           : current,
       );
+
+      if (latest.status === 'fulfilled') {
+        // Gói VIP được cấp qua entitlements (không sinh exam_key) — đọc lại
+        // hạn VIP mới nhất để hiện đúng ngày hết hạn sau khi cộng dồn.
+        const { data: latestAccess } = await supabase.rpc('get_user_access');
+        if (latestAccess && typeof latestAccess === 'object') {
+          setAccess(latestAccess as CurrentAccess);
+        }
+      }
     } finally {
       setIsRefreshing(false);
     }
@@ -319,36 +353,14 @@ export default function PurchaseClient({
     if (!selected) return;
     setIsSubmitting(true);
     setFeedback('');
-    setKeyRevealed(false);
     const idempotencyKey =
       typeof window !== 'undefined' && window.crypto?.randomUUID
         ? window.crypto.randomUUID()
         : 'order-' + Date.now() + '-' + Math.random().toString(36).slice(2);
-    // Top-up: nhap ma key cu (VD BUY-...) de cong luot vao key do thay vi tao key moi.
-    let targetKeyId: string | undefined;
-    const trimmedTopup = targetKeyCode.trim().toUpperCase();
-    if (trimmedTopup) {
-      try {
-        const supabase = createClient();
-        const { data: found } = await supabase
-          .from('exam_keys')
-          .select('id')
-          .eq('code', trimmedTopup)
-          .maybeSingle();
-        const foundId = (found as { id?: string } | null)?.id;
-        if (!foundId) {
-          setFeedback(purchaseErrorLabel('TARGET_KEY_NOT_FOUND'));
-          setIsSubmitting(false);
-          return;
-        }
-        targetKeyId = foundId;
-      } catch {
-        setFeedback('Không thể kiểm tra key gia hạn. Vui lòng thử lại.');
-        setIsSubmitting(false);
-        return;
-      }
-    }
     const couponCode = coupon.trim().toUpperCase() || undefined;
+    // Gói VIP theo thời gian không gắn với 1 key cụ thể (khác cơ chế top-up key
+    // cũ) — luôn truyền undefined, cộng dồn hạn VIP được xử lý ở backend.
+    const targetKeyId = undefined;
     try {
       const result = await createPurchaseOrder(selected.id, idempotencyKey, couponCode, targetKeyId);
       if (!result.ok) {
@@ -364,7 +376,7 @@ export default function PurchaseClient({
                 setFeedback(purchaseErrorLabel('PAYMENT_CURRENCY_UNSUPPORTED'));
                 return;
               }
-              setOrder({ ...retry.order, keyCode: null });
+              setOrder(retry.order);
               showToast('Đã tạo đơn. Vui lòng chuyển khoản đúng nội dung.', 'success');
               return;
             }
@@ -384,10 +396,7 @@ export default function PurchaseClient({
         setFeedback(purchaseErrorLabel('PAYMENT_CURRENCY_UNSUPPORTED'));
         return;
       }
-      setOrder({
-        ...result.order,
-        keyCode: null,
-      });
+      setOrder(result.order);
       showToast('Đã tạo đơn. Vui lòng chuyển khoản đúng nội dung.', 'success');
     } catch {
       setFeedback('Không thể tạo đơn. Vui lòng thử lại.');
@@ -398,18 +407,19 @@ export default function PurchaseClient({
 
   // VietQR tu dong (mo lai) + Zalo fallback giu nguyen.
   const qrUrl = order && bankDetails ? buildVietQrUrl(bankDetails, order) : '';
+  const submitLabel = access?.is_vip ? 'Gia hạn thêm' : 'Mua ngay';
 
   return (
     <main className={styles.page} id="main">
       <StudentNav />
       <div className={styles.header}>
         <div>
-          <p className={styles.eyebrow}>THANH TOÁN KEY</p>
-          <h1>Mua key luyện tập và thi</h1>
+          <p className={styles.eyebrow}>GÓI VIP</p>
+          <h1>Mở khóa toàn bộ kho đề thi THPT 2026</h1>
           <p>
-            Mỗi key dùng chung số lượt cho thi chính thức và tự luyện, được cấp
-            sau khi hệ thống xác nhận đúng giao dịch ThueAPIBank. Cần hỗ trợ
-            nhanh? Nhắn Zalo bên dưới.
+            Chọn gói VIP theo thời gian phù hợp, thanh toán tự động qua QR
+            ngân hàng — hệ thống kích hoạt ngay khi xác nhận đúng giao dịch
+            ThueAPIBank. Cần hỗ trợ nhanh? Nhắn Zalo bên dưới.
           </p>
         </div>
         <div className={styles.links}>
@@ -418,372 +428,361 @@ export default function PurchaseClient({
         </div>
       </div>
 
+      {access?.is_vip ? (
+        <section className={styles.vipBanner} role="status">
+          <ShieldCheck size={20} />
+          <div>
+            <strong>
+              Bạn đang là VIP{access.plan_code ? ' (gói ' + access.plan_code + ')' : ''}
+            </strong>
+            <p>
+              Hết hạn ngày <strong>{formatHanoiDate(access.expires_at)}</strong>.
+              Mua thêm gói bên dưới để gia hạn — thời gian được cộng dồn vào
+              hạn hiện tại.
+            </p>
+          </div>
+        </section>
+      ) : null}
+
       {!enabled ? (
         <section className={styles.notice}>
           <h2>Thanh toán đang tạm đóng</h2>
-          <p>Quản trị viên chưa bật cấu hình mua key.</p>
+          <p>Quản trị viên chưa bật cấu hình mua VIP.</p>
         </section>
       ) : (
-        <div className={styles.grid}>
-          <section className={styles.card} aria-label="Chọn gói key">
-            <h2>Chọn gói</h2>
-            <div className={styles.products} role="radiogroup" aria-label="Danh sách gói key">
-              {products.map((product, index) => (
-                <button
-                  type="button"
-                  key={product.id}
-                  role="radio"
-                  aria-checked={selectedProduct === product.id}
-                  id={'purchase-product-' + product.id}
-                  tabIndex={
-                    selectedProduct === product.id || (!selected && index === 0) ? 0 : -1
-                  }
-                  className={
-                    styles.product +
-                    (product.attempt_count >= UNLIMITED_ATTEMPT_THRESHOLD
-                      ? ' ' + styles.featured
-                      : '') +
-                    (selectedProduct === product.id ? ' ' + styles.selected : '')
-                  }
-                  onClick={() => setSelectedProduct(product.id)}
-                  onKeyDown={(event) => {
-                    let dir = 0;
-                    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') dir = 1;
-                    else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') dir = -1;
-                    else return;
-                    event.preventDefault();
-                    const nextIndex = (index + dir + products.length) % products.length;
-                    const nextProduct = products[nextIndex];
-                    setSelectedProduct(nextProduct.id);
-                    window.requestAnimationFrame(() =>
-                      document.getElementById('purchase-product-' + nextProduct.id)?.focus(),
-                    );
-                  }}
-                >
-                  <span>
-                    <strong>
-                      {product.name}
-                      {product.attempt_count >= UNLIMITED_ATTEMPT_THRESHOLD ? (
-                        <span className={styles.badge}>🔥 Đáng mua nhất</span>
-                      ) : null}
-                    </strong>
-                    <small>{describePurchaseTerms(product)}</small>
-                    <small>{PURCHASE_SCOPE_LABEL}</small>
-                  </span>
-                  <b>{product.price_amount.toLocaleString('vi-VN')} ₫</b>
-                </button>
-              ))}
-            </div>
-            {products.length === 0 ? (
-              <p className={styles.muted}>Chưa có gói nào đang mở bán.</p>
-            ) : null}
-            <div className={styles.formRow}>
-              <label className={styles.fieldLabel} htmlFor="purchase-coupon">
-                Mã giảm giá (nếu có, VD: THPT30)
-              </label>
-              <input
-                id="purchase-coupon"
-                className={styles.textInput}
-                value={coupon}
-                onChange={(e) => setCoupon(e.target.value.toUpperCase())}
-                placeholder="THPT30"
-                autoComplete="off"
-                spellCheck={false}
-                maxLength={32}
-              />
-            </div>
-            <div className={styles.formRow}>
-              <label className={styles.fieldLabel} htmlFor="purchase-topup">
-                Gia hạn key cũ (tùy chọn — nhập mã key VD: BUY-...)
-              </label>
-              <input
-                id="purchase-topup"
-                className={styles.textInput}
-                value={targetKeyCode}
-                onChange={(e) => setTargetKeyCode(e.target.value.toUpperCase())}
-                placeholder="Để trống = cấp key mới"
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <small className={styles.muted}>
-                Nhập mã key đang dùng để cộng lượt + gia hạn vào key đó thay vì
-                tạo key mới.
-              </small>
-            </div>
-            {selected ? (
-              <div className={styles.orderSummary} aria-live="polite">
-                <div className={styles.summaryRow}>
-                  <span>Gói đã chọn</span>
-                  <strong>{selected.name}</strong>
-                </div>
-                <div className={styles.summaryRow}>
-                  <span>Số lượt</span>
-                  <strong>{describePurchaseTerms(selected)}</strong>
-                </div>
-                {coupon.trim() ? (
+        <>
+          <div className={styles.grid}>
+            <section className={styles.card} aria-label="Chọn gói VIP">
+              <h2>Chọn gói VIP</h2>
+              <div className={styles.products} role="radiogroup" aria-label="Danh sách gói VIP">
+                {products.map((product, index) => {
+                  const isPopular = product.id === popularId;
+                  const isBestValue = product.id === bestValueId;
+                  const perDay = formatPricePerDay(product);
+                  return (
+                    <button
+                      type="button"
+                      key={product.id}
+                      role="radio"
+                      aria-checked={selectedProduct === product.id}
+                      id={'purchase-product-' + product.id}
+                      tabIndex={
+                        selectedProduct === product.id || (!selected && index === 0) ? 0 : -1
+                      }
+                      className={
+                        styles.product +
+                        ((isPopular || isBestValue) ? ' ' + styles.featured : '') +
+                        (selectedProduct === product.id ? ' ' + styles.selected : '')
+                      }
+                      onClick={() => setSelectedProduct(product.id)}
+                      onKeyDown={(event) => {
+                        let dir = 0;
+                        if (event.key === 'ArrowDown' || event.key === 'ArrowRight') dir = 1;
+                        else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') dir = -1;
+                        else return;
+                        event.preventDefault();
+                        const nextIndex = (index + dir + products.length) % products.length;
+                        const nextProduct = products[nextIndex];
+                        setSelectedProduct(nextProduct.id);
+                        window.requestAnimationFrame(() =>
+                          document.getElementById('purchase-product-' + nextProduct.id)?.focus(),
+                        );
+                      }}
+                    >
+                      <span>
+                        <strong>
+                          {product.name}
+                          {isPopular ? (
+                            <span className={styles.badge}>Phổ biến nhất</span>
+                          ) : null}
+                          {isBestValue ? (
+                            <span className={styles.badge}>Tiết kiệm nhất</span>
+                          ) : null}
+                        </strong>
+                        <small>{describePurchaseValidity(product.valid_days)}</small>
+                        {perDay ? <small>Chỉ {perDay}</small> : null}
+                        <small>{PURCHASE_SCOPE_LABEL}</small>
+                      </span>
+                      <b>{formatPriceVnd(product.price_amount)}</b>
+                    </button>
+                  );
+                })}
+              </div>
+              {products.length === 0 ? (
+                <p className={styles.muted}>Chưa có gói nào đang mở bán.</p>
+              ) : null}
+              <div className={styles.formRow}>
+                <label className={styles.fieldLabel} htmlFor="purchase-coupon">
+                  Mã giảm giá (nếu có, VD: THPT30)
+                </label>
+                <input
+                  id="purchase-coupon"
+                  className={styles.textInput}
+                  value={coupon}
+                  onChange={(e) => setCoupon(e.target.value.toUpperCase())}
+                  placeholder="THPT30"
+                  autoComplete="off"
+                  spellCheck={false}
+                  maxLength={32}
+                />
+              </div>
+              {selected ? (
+                <div className={styles.orderSummary} aria-live="polite">
                   <div className={styles.summaryRow}>
-                    <span>Mã giảm giá</span>
-                    <strong>{coupon.trim()} — áp dụng khi tạo đơn</strong>
+                    <span>Gói đã chọn</span>
+                    <strong>{selected.name}</strong>
                   </div>
-                ) : null}
-                {targetKeyCode.trim() ? (
                   <div className={styles.summaryRow}>
-                    <span>Gia hạn key</span>
-                    <strong>{targetKeyCode.trim()}</strong>
+                    <span>Thời hạn</span>
+                    <strong>{describePurchaseValidity(selected.valid_days)}</strong>
                   </div>
-                ) : null}
-                <div className={styles.summaryRow + ' ' + styles.summaryTotal}>
-                  <span>Tổng thanh toán</span>
-                  <span className={styles.total}>
-                    {selected.price_amount.toLocaleString('vi-VN')} ₫
-                  </span>
-                </div>
-                {coupon.trim() ? (
-                  <small className={styles.muted}>
-                    Số tiền cuối cùng (sau giảm giá) sẽ hiển thị trên đơn ngay khi
-                    tạo.
-                  </small>
-                ) : null}
-              </div>
-            ) : null}
-            <button
-              type="button"
-              className={'btn ' + styles.submitBtn}
-              onClick={handleCreateOrder}
-              disabled={!selected || isSubmitting}
-              aria-busy={isSubmitting}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 size={16} className={styles.spinner} aria-hidden="true" />
-                  Đang tạo đơn...
-                </>
-              ) : (
-                'Tạo đơn chuyển khoản'
-              )}
-            </button>
-            <div className={styles.zaloBox}>
-              <p className={styles.muted}>
-                Quét QR Zalo hoặc bấm nút bên dưới để nhắn tin mua key
-                {selected
-                  ? ' — nhớ báo tên gói đã chọn'
-                  : ''}.
-              </p>
-              <div className={styles.zaloActions}>
-                <a
-                  className="btn"
-                  href={ZALO_LINK}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <MessageCircle size={16} />
-                  Liên hệ Zalo mua key
-                </a>
-                <button
-                  type="button"
-                  className="btn outline"
-                  onClick={() => void copyValue(ZALO_LINK, 'zalo')}
-                >
-                  {copied === 'zalo' ? 'Đã copy link' : 'Copy link Zalo'}
-                </button>
-              </div>
-            </div>
-            {feedback ? <p className={styles.error} role="alert">{feedback}</p> : null}
-          </section>
-
-          {order ? (
-            <section className={styles.card} aria-label="Thông tin đơn" aria-live="polite">
-              <div className={styles.orderHeader}>
-                <div>
-                  <h2>{purchaseOrderStatusLabel(order.status)}</h2>
-                  <small>{order.orderId}</small>
-                </div>
-                <button
-                  type="button"
-                  className={styles.refresh}
-                  onClick={() => void refreshOrder()}
-                  disabled={isRefreshing}
-                  aria-label="Làm mới trạng thái đơn"
-                >
-                  <RefreshCw size={16} />
-                </button>
-              </div>
-              {order.status === 'fulfilled' && order.keyCode ? (
-                <div className={styles.success}>
-                  <Check size={20} />
-                  <div>
-                    <strong>Đã cấp key</strong>
-                    <code>{keyRevealed ? order.keyCode : maskKey(order.keyCode)}</code>
-                    <div className={styles.zaloActions}>
-                      <button
-                        type="button"
-                        onClick={() => setKeyRevealed((v) => !v)}
-                      >
-                        {keyRevealed ? 'Ẩn key' : 'Hiện key'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void copyValue(order.keyCode!, 'key')}
-                      >
-                        {copied === 'key' ? 'Đã copy' : 'Copy key'}
-                      </button>
+                  {coupon.trim() ? (
+                    <div className={styles.summaryRow}>
+                      <span>Mã giảm giá</span>
+                      <strong>{coupon.trim()} — áp dụng khi tạo đơn</strong>
                     </div>
-                    <small className={styles.muted}>
-                      Key gắn với tài khoản + thiết bị của bạn. Đừng chia sẻ.
-                    </small>
-                  </div>
-                  <Link href="/subjects">Đi đến môn thi</Link>
-                </div>
-              ) : TERMINAL_ORDER_STATUSES.has(order.status) ? (
-                <div className={styles.terminalOrder} role="status">
-                  <ShieldCheck size={22} />
-                  <div>
-                    <strong>{purchaseOrderStatusLabel(order.status)}</strong>
-                    <p>
-                      Đơn không còn nhận thanh toán. Hãy tạo đơn mới và dùng đúng nội dung chuyển khoản.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className={styles.transfer}>
-                    {qrUrl ? (
-                      <Image
-                        src={qrUrl}
-                        alt="QR chuyển khoản mua key"
-                        width={220}
-                        height={220}
-                        unoptimized
-                      />
-                    ) : null}
-                    <div className={styles.transferDetails}>
-                      <InfoRow
-                        label="Ngân hàng"
-                        value={bankDetails?.bankCode ?? ''}
-                      />
-                      <InfoRow
-                        label="Số tài khoản"
-                        value={bankDetails?.bankAccount ?? ''}
-                        onCopy={() =>
-                          void copyValue(bankDetails?.bankAccount ?? '', 'account')
-                        }
-                        copied={copied === 'account'}
-                      />
-                      <InfoRow
-                        label="Số tiền"
-                        value={order.amount.toLocaleString('vi-VN') + ' ' + order.currency}
-                        onCopy={() =>
-                          void copyValue(String(order.amount), 'amount')
-                        }
-                        copied={copied === 'amount'}
-                      />
-                      <InfoRow
-                        label="Nội dung"
-                        value={order.paymentCode}
-                        onCopy={() =>
-                          void copyValue(order.paymentCode, 'content')
-                        }
-                        copied={copied === 'content'}
-                      />
-                    </div>
-                  </div>
-                  <p className={styles.pending}>
-                    Xác nhận tức thì khi nhận được tiền (webhook), đồng thời hệ
-                    thống tự đối soát mỗi 4 giây. Chuyển đúng số tiền và giữ
-                    nguyên nội dung thanh toán.
-                  </p>
-                  {countdown ? (
-                    <p className={styles.expiry} aria-live="off">
-                      Đơn còn hiệu lực: <strong>{countdown}</strong>
-                    </p>
                   ) : null}
+                  <div className={styles.summaryRow + ' ' + styles.summaryTotal}>
+                    <span>Tổng thanh toán</span>
+                    <span className={styles.total}>
+                      {formatPriceVnd(selected.price_amount)}
+                    </span>
+                  </div>
+                  {coupon.trim() ? (
+                    <small className={styles.muted}>
+                      Số tiền cuối cùng (sau giảm giá) sẽ hiển thị trên đơn ngay khi
+                      tạo.
+                    </small>
+                  ) : null}
+                </div>
+              ) : null}
+              <button
+                type="button"
+                className={'btn ' + styles.submitBtn}
+                onClick={handleCreateOrder}
+                disabled={!selected || isSubmitting}
+                aria-busy={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 size={16} className={styles.spinner} aria-hidden="true" />
+                    Đang tạo đơn...
+                  </>
+                ) : (
+                  submitLabel
+                )}
+              </button>
+              <div className={styles.zaloBox}>
+                <p className={styles.muted}>
+                  Quét QR Zalo hoặc bấm nút bên dưới để nhắn tin mua VIP
+                  {selected
+                    ? ' — nhớ báo tên gói đã chọn'
+                    : ''}.
+                </p>
+                <div className={styles.zaloActions}>
+                  <a
+                    className="btn"
+                    href={ZALO_LINK}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <MessageCircle size={16} />
+                    Liên hệ Zalo mua VIP
+                  </a>
                   <button
                     type="button"
                     className="btn outline"
+                    onClick={() => void copyValue(ZALO_LINK, 'zalo')}
+                  >
+                    {copied === 'zalo' ? 'Đã copy link' : 'Copy link Zalo'}
+                  </button>
+                </div>
+              </div>
+              {feedback ? <p className={styles.error} role="alert">{feedback}</p> : null}
+            </section>
+
+            {order ? (
+              <section className={styles.card} aria-label="Thông tin đơn" aria-live="polite">
+                <div className={styles.orderHeader}>
+                  <div>
+                    <h2>{purchaseOrderStatusLabel(order.status)}</h2>
+                    <small>{order.orderId}</small>
+                  </div>
+                  <button
+                    type="button"
+                    className={styles.refresh}
                     onClick={() => void refreshOrder()}
                     disabled={isRefreshing}
+                    aria-label="Làm mới trạng thái đơn"
                   >
                     <RefreshCw size={16} />
-                    {isRefreshing ? 'Đang kiểm tra...' : 'Đã chuyển, kiểm tra ngay'}
                   </button>
-                  <div className={styles.zaloBox} style={{ marginTop: 16 }}>
-                    <p className={styles.muted} style={{ margin: 0 }}>
-                      Chuyển khoản khó? Quét QR Zalo hoặc nhắn tin để được hỗ
-                      trợ mua key thủ công.
+                </div>
+                {order.status === 'fulfilled' ? (
+                  <div className={styles.success}>
+                    <Check size={20} />
+                    <div>
+                      <strong>Đã kích hoạt VIP</strong>
+                      <p className={styles.muted} style={{ margin: 0 }}>
+                        Hết hạn ngày <strong>{formatHanoiDate(access?.expires_at ?? null)}</strong>.
+                        Vào ngay để làm bài không giới hạn.
+                      </p>
+                    </div>
+                    <Link href="/subjects">Đi đến môn thi</Link>
+                  </div>
+                ) : TERMINAL_ORDER_STATUSES.has(order.status) ? (
+                  <div className={styles.terminalOrder} role="status">
+                    <ShieldCheck size={22} />
+                    <div>
+                      <strong>{purchaseOrderStatusLabel(order.status)}</strong>
+                      <p>
+                        Đơn không còn nhận thanh toán. Hãy tạo đơn mới và dùng đúng nội dung chuyển khoản.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className={styles.transfer}>
+                      {qrUrl ? (
+                        <Image
+                          src={qrUrl}
+                          alt="QR chuyển khoản mua VIP"
+                          width={220}
+                          height={220}
+                          unoptimized
+                        />
+                      ) : null}
+                      <div className={styles.transferDetails}>
+                        <InfoRow
+                          label="Ngân hàng"
+                          value={bankDetails?.bankCode ?? ''}
+                        />
+                        <InfoRow
+                          label="Số tài khoản"
+                          value={bankDetails?.bankAccount ?? ''}
+                          onCopy={() =>
+                            void copyValue(bankDetails?.bankAccount ?? '', 'account')
+                          }
+                          copied={copied === 'account'}
+                        />
+                        <InfoRow
+                          label="Số tiền"
+                          value={order.amount.toLocaleString('vi-VN') + ' ' + order.currency}
+                          onCopy={() =>
+                            void copyValue(String(order.amount), 'amount')
+                          }
+                          copied={copied === 'amount'}
+                        />
+                        <InfoRow
+                          label="Nội dung"
+                          value={order.paymentCode}
+                          onCopy={() =>
+                            void copyValue(order.paymentCode, 'content')
+                          }
+                          copied={copied === 'content'}
+                        />
+                      </div>
+                    </div>
+                    <p className={styles.pending}>
+                      Xác nhận tức thì khi nhận được tiền (webhook), đồng thời hệ
+                      thống tự đối soát mỗi 4 giây. Chuyển đúng số tiền và giữ
+                      nguyên nội dung thanh toán.
                     </p>
+                    {countdown ? (
+                      <p className={styles.expiry} aria-live="off">
+                        Đơn còn hiệu lực: <strong>{countdown}</strong>
+                      </p>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="btn outline"
+                      onClick={() => void refreshOrder()}
+                      disabled={isRefreshing}
+                    >
+                      <RefreshCw size={16} />
+                      {isRefreshing ? 'Đang kiểm tra...' : 'Đã chuyển, kiểm tra ngay'}
+                    </button>
+                    <div className={styles.zaloBox} style={{ marginTop: 16 }}>
+                      <p className={styles.muted} style={{ margin: 0 }}>
+                        Chuyển khoản khó? Quét QR Zalo hoặc nhắn tin để được hỗ
+                        trợ mua VIP thủ công.
+                      </p>
+                      <div className={styles.zaloActions}>
+                        <a
+                          className="btn outline"
+                          href={ZALO_LINK}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <MessageCircle size={16} />
+                          Nhắn Zalo hỗ trợ
+                        </a>
+                        <button
+                          type="button"
+                          className="btn outline"
+                          onClick={() => void copyValue(ZALO_LINK, 'zalo-qr')}
+                        >
+                          {copied === 'zalo-qr' ? 'Đã copy' : 'Copy link Zalo'}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </section>
+            ) : (
+              <section className={styles.card + ' ' + styles.instructions}>
+                <MessageCircle size={28} />
+                <h2>Thanh toán tự động + hỗ trợ Zalo</h2>
+                <p>
+                  Chọn gói, nhập mã giảm giá (nếu có), tạo đơn rồi quét QR chuyển
+                  khoản. Hệ thống chủ động đối soát ThueAPIBank. Cần hỗ trợ thủ
+                  công? Quét QR Zalo bên dưới.
+                </p>
+                <div className={styles.transfer} style={{ marginTop: 18 }}>
+                  <Image
+                    src={ZALO_QR_URL}
+                    alt="QR Zalo liên hệ mua VIP phòng thi"
+                    width={220}
+                    height={220}
+                    unoptimized
+                  />
+                  <div className={styles.transferDetails}>
+                    <InfoRow
+                      label="Zalo"
+                      value={ZALO_DISPLAY}
+                      onCopy={() =>
+                        void copyValue(ZALO_LINK, 'zalo-info')
+                      }
+                      copied={copied === 'zalo-info'}
+                    />
                     <div className={styles.zaloActions}>
                       <a
-                        className="btn outline"
+                        className="btn"
                         href={ZALO_LINK}
                         target="_blank"
                         rel="noopener noreferrer"
                       >
                         <MessageCircle size={16} />
-                        Nhắn Zalo hỗ trợ
+                        Mở Zalo
                       </a>
-                      <button
-                        type="button"
-                        className="btn outline"
-                        onClick={() => void copyValue(ZALO_LINK, 'zalo-qr')}
+                      <a
+                        className={styles.zaloLink}
+                        href={ZALO_LINK}
+                        target="_blank"
+                        rel="noopener noreferrer"
                       >
-                        {copied === 'zalo-qr' ? 'Đã copy' : 'Copy link Zalo'}
-                      </button>
+                        {ZALO_LINK}
+                        <ExternalLink size={14} />
+                      </a>
                     </div>
                   </div>
-                </>
-              )}
-            </section>
-          ) : (
-            <section className={styles.card + ' ' + styles.instructions}>
-              <MessageCircle size={28} />
-              <h2>Thanh toán tự động + hỗ trợ Zalo</h2>
-              <p>
-                Chọn gói, nhập mã giảm giá (nếu có), tạo đơn rồi quét QR chuyển
-                khoản. Hệ thống chủ động đối soát ThueAPIBank. Cần hỗ trợ thủ
-                công? Quét QR Zalo bên dưới.
-              </p>
-              <div className={styles.transfer} style={{ marginTop: 18 }}>
-                <Image
-                  src={ZALO_QR_URL}
-                  alt="QR Zalo liên hệ mua key phòng thi"
-                  width={220}
-                  height={220}
-                  unoptimized
-                />
-                <div className={styles.transferDetails}>
-                  <InfoRow
-                    label="Zalo"
-                    value={ZALO_DISPLAY}
-                    onCopy={() =>
-                      void copyValue(ZALO_LINK, 'zalo-info')
-                    }
-                    copied={copied === 'zalo-info'}
-                  />
-                  <div className={styles.zaloActions}>
-                    <a
-                      className="btn"
-                      href={ZALO_LINK}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <MessageCircle size={16} />
-                      Mở Zalo
-                    </a>
-                    <a
-                      className={styles.zaloLink}
-                      href={ZALO_LINK}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {ZALO_LINK}
-                      <ExternalLink size={14} />
-                    </a>
-                  </div>
                 </div>
-              </div>
-            </section>
-          )}
-        </div>
+              </section>
+            )}
+          </div>
+
+          <FeatureComparisonTable />
+        </>
       )}
     </main>
   );
