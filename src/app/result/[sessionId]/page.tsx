@@ -24,6 +24,6 @@ export default async function SessionResultPage({
     .eq('student_id', user.id)
     .maybeSingle();
 
-  if (!session) redirect('/subjects');
+  if (!session) redirect('/de-thi');
   return <ResultPageClient sessionId={sessionId} />;
 }

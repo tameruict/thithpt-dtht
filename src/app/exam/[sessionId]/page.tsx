@@ -29,7 +29,7 @@ export default async function SessionExamPage({
     loadCandidateProfile(supabase, user),
   ]);
 
-  if (!session) redirect('/subjects');
+  if (!session) redirect('/de-thi');
   if (session.status !== 'in_progress') redirect(`/result/${sessionId}`);
   const candidate: CandidateInfo = {
     code: profile.code,

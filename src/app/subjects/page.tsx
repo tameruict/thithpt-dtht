@@ -1,24 +1,8 @@
-import { requireUser } from '@/lib/supabase/session';
-import { loadCandidateProfile } from '@/lib/supabase/user-profile';
-import type { CandidateInfo } from '@/store/useExamStore';
-import SubjectsClient from './SubjectsClient';
+import { redirect } from 'next/navigation';
 
-export const dynamic = 'force-dynamic';
-
-export default async function SubjectsPage() {
-  const { supabase, user } = await requireUser();
-  const profile = await loadCandidateProfile(supabase, user);
-  const candidate: CandidateInfo = {
-    code: profile.code,
-    name: profile.name,
-    school: profile.school,
-    dob: profile.dob,
-    gender: profile.gender,
-    province: profile.province,
-    district: profile.district,
-    phone: profile.phone,
-    session: null,
-  };
-
-  return <SubjectsClient initialCandidate={candidate} />;
+// The old subject -> room -> key flow moved to /de-thi (ngân hàng đề thi):
+// học sinh xem thẳng danh sách đề đã publish thay vì chọn môn rồi vào phòng.
+// Giữ route này lại làm redirect để các link/bookmark cũ không bị vỡ.
+export default function SubjectsPage() {
+  redirect('/de-thi');
 }
