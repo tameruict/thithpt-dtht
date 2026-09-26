@@ -549,6 +549,104 @@ export async function fetchSubjectWithRooms(
   return { subject, rooms };
 }
 
+/**
+ * Điểm cao nhất của thí sinh hiện tại theo từng phòng thi (đề). Dùng để hiển thị
+ * "đã làm / chưa làm" và điểm trên danh sách đề. Dữ liệu CÁ NHÂN nên KHÔNG cache.
+ */
+export type RoomScore = {
+  bestScore: number; // điểm cao nhất đạt được
+  maxScore: number; // thang điểm của lần thi đạt điểm cao nhất
+  attempts: number; // số lần thi đã hoàn thành
+  lastSubmittedAt: string | null;
+  bestSessionId: string; // id phiên của lần thi điểm cao nhất (để xem lại)
+};
+
+type StudentSessionRow = {
+  id: string;
+  exam_room_id: string | null;
+  score: number | string | null;
+  max_score: number | string | null;
+  submitted_at: string | null;
+  status: string | null;
+};
+
+/**
+ * Lấy điểm cao nhất mỗi phòng của thí sinh đang đăng nhập. Chỉ tính các lần thi
+ * đã hoàn thành (score khác null — đã nộp/hết giờ/đã chấm). Trả Map rỗng nếu
+ * chưa đăng nhập. Lỗi được ném ra để caller tự bắt.
+ */
+export async function fetchStudentRoomScores(
+  supabase: AppSupabaseClient,
+): Promise<Map<string, RoomScore>> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const result = new Map<string, RoomScore>();
+  if (!user) return result;
+
+  const { data, error } = await supabase
+    .from('exam_sessions')
+    .select('id,exam_room_id,score,max_score,submitted_at,status')
+    .eq('student_id', user.id);
+
+  if (error) throw error;
+
+  const rows = (data ?? []) as unknown as StudentSessionRow[];
+
+  // Mốc nộp của chính lần thi tốt nhất — tách khỏi lastSubmittedAt (mốc muộn
+  // nhất mọi lần) để tie-break "điểm bằng nhau → lấy lần nộp muộn hơn" chuẩn xác.
+  const bestSubmittedAt = new Map<string, string | null>();
+
+  for (const row of rows) {
+    if (row.score === null || row.score === undefined) continue; // chưa hoàn thành
+    if (!row.exam_room_id) continue;
+
+    const score = Number(row.score);
+    const maxScore = Number(row.max_score ?? 10);
+    const submittedAt = row.submitted_at ?? null;
+    const existing = result.get(row.exam_room_id);
+
+    if (!existing) {
+      result.set(row.exam_room_id, {
+        bestScore: score,
+        maxScore,
+        attempts: 1,
+        lastSubmittedAt: submittedAt,
+        bestSessionId: row.id,
+      });
+      bestSubmittedAt.set(row.exam_room_id, submittedAt);
+      continue;
+    }
+
+    existing.attempts += 1;
+
+    // lastSubmittedAt = mốc nộp muộn nhất trong các lần đã hoàn thành.
+    if (
+      submittedAt &&
+      (!existing.lastSubmittedAt || submittedAt > existing.lastSubmittedAt)
+    ) {
+      existing.lastSubmittedAt = submittedAt;
+    }
+
+    // best = điểm cao nhất; hòa điểm thì lấy lần nộp muộn hơn.
+    const prevBestAt = bestSubmittedAt.get(row.exam_room_id) ?? null;
+    const isHigher = score > existing.bestScore;
+    const isTieButNewer =
+      score === existing.bestScore &&
+      !!submittedAt &&
+      (!prevBestAt || submittedAt >= prevBestAt);
+    if (isHigher || isTieButNewer) {
+      existing.bestScore = score;
+      existing.maxScore = maxScore;
+      existing.bestSessionId = row.id;
+      bestSubmittedAt.set(row.exam_room_id, submittedAt);
+    }
+  }
+
+  return result;
+}
+
 export async function fetchExamRoomById(
   supabase: AppSupabaseClient,
   roomId: string,
