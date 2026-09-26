@@ -80,7 +80,10 @@ export async function createPurchaseOrder(
   if (product.currency !== 'VND') {
     return { ok: false, error: 'PAYMENT_CURRENCY_UNSUPPORTED' };
   }
-  if (product.product_kind !== 'bundle') {
+  // Gói lượt (bundle, đã archive) và gói VIP theo thời gian (subscription) đều
+  // đi qua cùng luồng QR/đối soát này; các product_kind khác (exam/practice
+  // đơn lẻ...) không được bán qua kênh này.
+  if (product.product_kind !== 'bundle' && product.product_kind !== 'subscription') {
     return { ok: false, error: 'PRODUCT_SCOPE_UNSUPPORTED' };
   }
 

@@ -4267,6 +4267,7 @@ export type Database = {
         Returns: Json
       }
       get_subjects_dashboard: { Args: never; Returns: Json }
+      get_user_access: { Args: never; Returns: Json }
       grade_essay_answer: {
         Args: { p_answer_id: string; p_points: number }
         Returns: number

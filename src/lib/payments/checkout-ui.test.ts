@@ -9,20 +9,47 @@ vi.mock('@/lib/supabase/client', () => ({
 
 import {
   buildVietQrUrl,
-  describePurchaseTerms,
-  formatPurchaseCountdown,
-  getRecommendedProductId,
-  getSavingsPercent,
+  describePurchaseValidity,
+  formatPricePerDay,
+  getBestValueProductId,
+  getPopularProductId,
   PURCHASE_SCOPE_LABEL,
   purchaseErrorLabel,
   purchaseOrderStatusLabel,
+  type PurchaseProduct,
 } from '../../app/purchase/PurchaseClient';
+
+const VIP_WEEK: PurchaseProduct = {
+  id: '11111111-1111-4111-8111-111111111111',
+  code: 'VIP-WEEK',
+  name: 'Gói VIP Tuần',
+  product_kind: 'subscription',
+  price_amount: 29000,
+  currency: 'VND',
+  valid_days: 7,
+};
+const VIP_MONTH: PurchaseProduct = {
+  id: '22222222-2222-4222-8222-222222222222',
+  code: 'VIP-MONTH',
+  name: 'Gói VIP Tháng',
+  product_kind: 'subscription',
+  price_amount: 79000,
+  currency: 'VND',
+  valid_days: 30,
+};
+const VIP_YEAR: PurchaseProduct = {
+  id: '33333333-3333-4333-8333-333333333333',
+  code: 'VIP-YEAR',
+  name: 'Gói VIP Năm',
+  product_kind: 'subscription',
+  price_amount: 199000,
+  currency: 'VND',
+  valid_days: 365,
+};
 
 describe('VietQR checkout URL', () => {
   it('labels every paid key as usable for exams and practice', () => {
-    expect(PURCHASE_SCOPE_LABEL).toBe(
-      'Dùng chung cho tất cả phòng thi; khu tự luyện vẫn miễn phí',
-    );
+    expect(PURCHASE_SCOPE_LABEL).toBe('Dùng cho tất cả phòng thi và tự luyện');
   });
 
   it('uses normalized bank/account path and only amount/addInfo query fields', () => {
@@ -53,72 +80,32 @@ describe('VietQR checkout URL', () => {
     ).toBe('');
   });
 
-  it('describes an unlimited-retake 1-year bundle in words, not raw numbers', () => {
-    expect(describePurchaseTerms({ attempt_count: 999999, valid_days: 365 })).toBe(
-      'Không giới hạn lượt làm lại · hạn 1 năm',
-    );
-  });
-
-  it('keeps finite bundles as attempt counts and day-based validity', () => {
-    expect(describePurchaseTerms({ attempt_count: 10, valid_days: 30 })).toBe(
-      '10 lượt · hạn 30 ngày',
-    );
-    expect(describePurchaseTerms({ attempt_count: 5, valid_days: null })).toBe(
-      '5 lượt · không giới hạn hạn dùng',
-    );
-  });
-
   it('localizes terminal order states and actionable checkout errors', () => {
-    expect(purchaseOrderStatusLabel('fulfilled')).toBe('Đã cấp key');
+    expect(purchaseOrderStatusLabel('fulfilled')).toBe('Đã kích hoạt VIP');
     expect(purchaseOrderStatusLabel('expired')).toBe('Đã hết hạn');
     expect(purchaseErrorLabel('PRODUCT_NOT_AVAILABLE')).toContain('ngừng bán');
   });
+});
 
-  it('counts down the 10-minute QR window and stops at zero', () => {
-    const createdAt = Date.parse('2026-09-23T05:00:00.000Z');
-    const expiresAt = '2026-09-23T05:10:00.000Z';
-
-    expect(formatPurchaseCountdown(expiresAt, createdAt)).toBe('10:00');
-    expect(formatPurchaseCountdown(expiresAt, createdAt + 9 * 60_000 + 59_000)).toBe('00:01');
-    expect(formatPurchaseCountdown(expiresAt, createdAt + 10 * 60_000)).toBe('00:00');
+describe('VIP subscription plan helpers', () => {
+  it('describes validity in weeks/months/years instead of raw day counts', () => {
+    expect(describePurchaseValidity(7)).toBe('hạn 1 tuần');
+    expect(describePurchaseValidity(30)).toBe('hạn 30 ngày');
+    expect(describePurchaseValidity(365)).toBe('hạn 1 năm');
+    expect(describePurchaseValidity(null)).toBe('không giới hạn hạn dùng');
   });
 
-  it('recommends the revenue-focused middle plan and calculates honest savings', () => {
-    const products = [
-      {
-        id: 'starter',
-        code: 'BUNDLE-10',
-        name: 'Gói Khởi động',
-        product_kind: 'bundle' as const,
-        attempt_count: 10,
-        price_amount: 79000,
-        currency: 'VND',
-        valid_days: 30,
-      },
-      {
-        id: 'growth',
-        code: 'BUNDLE-40',
-        name: 'Gói Tăng tốc',
-        product_kind: 'bundle' as const,
-        attempt_count: 40,
-        price_amount: 149000,
-        currency: 'VND',
-        valid_days: 120,
-      },
-      {
-        id: 'vip',
-        code: 'VIP-1Y',
-        name: 'Gói Chinh phục',
-        product_kind: 'bundle' as const,
-        attempt_count: 999999,
-        price_amount: 299000,
-        currency: 'VND',
-        valid_days: 365,
-      },
-    ];
+  it('formats a per-day price to highlight the yearly plan value', () => {
+    expect(formatPricePerDay(VIP_WEEK)).toBe('~4.143đ/ngày');
+    expect(formatPricePerDay(VIP_MONTH)).toBe('~2.633đ/ngày');
+    expect(formatPricePerDay(VIP_YEAR)).toBe('~545đ/ngày');
+  });
 
-    expect(getRecommendedProductId(products)).toBe('growth');
-    expect(getSavingsPercent(products[1], products[0])).toBe(53);
-    expect(getSavingsPercent(products[2], products[0])).toBe(0);
+  it('marks the monthly plan as most popular by product code', () => {
+    expect(getPopularProductId([VIP_WEEK, VIP_MONTH, VIP_YEAR])).toBe(VIP_MONTH.id);
+  });
+
+  it('marks the plan with the lowest price/day as best value', () => {
+    expect(getBestValueProductId([VIP_WEEK, VIP_MONTH, VIP_YEAR])).toBe(VIP_YEAR.id);
   });
 });
