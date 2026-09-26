@@ -335,53 +335,7 @@ export function clearReferenceCache() {
   referenceCache.clear();
 }
 
-const PUBLISHED_ROOM_COLUMNS = [
-  'id',
-  'code',
-  'name',
-  'duration_minutes',
-  'status',
-  'price_vnd',
-  'total_attempts_default',
-  'starts_at',
-  'ends_at',
-  'published_at',
-  'blueprint_code',
-  'blueprint_name',
-  'subject_code',
-  'subject_name',
-].join(',');
-
-async function loadPublishedRooms(
-  supabase: AppSupabaseClient,
-  subjectCode?: string,
-): Promise<ExamRoomSummary[]> {
-  let query = supabase
-    .from('v_exam_rooms_full')
-    .select(PUBLISHED_ROOM_COLUMNS)
-    .eq('status', 'published')
-    .order('subject_name', { ascending: true })
-    .order('published_at', { ascending: false });
-
-  if (subjectCode) {
-    query = query.eq('subject_code', subjectCode.toUpperCase());
-  }
-
-  const { data, error } = await query;
-  if (error) throw error;
-
-  return ((data ?? []) as unknown as PublishedRoomRecord[]).map(mapRoom);
-}
-
-export function fetchPublishedRooms(
-  supabase: AppSupabaseClient,
-  subjectCode?: string,
-): Promise<ExamRoomSummary[]> {
-  const key = `rooms:${subjectCode ? subjectCode.toUpperCase() : 'all'}`;
-  return cachedReference(key, () => loadPublishedRooms(supabase, subjectCode));
-}
-
-type SubjectBase = Omit<SubjectSummary, 'openRoomCount'>;
+export type SubjectBase = Omit<SubjectSummary, 'openRoomCount'>;
 
 function mapSubjectBase(record: SubjectRecord): SubjectBase {
   return {
@@ -422,23 +376,6 @@ async function loadActiveSubjects(
   if (error) throw error;
 
   return ((data ?? []) as unknown as SubjectRecord[]).map(mapSubjectBase);
-}
-
-/**
- * Tải MỘT lần cả môn thi và phòng đã mở, rồi tính số phòng/môn ngay trên
- * client. Dùng cho các đường đi cần dữ liệu môn+phòng (đã cache 60s). Trang
- * /subjects nay gọi fetchSubjectsDashboard (gộp luôn profile + phiên dở vào 1
- * RPC); hàm này giữ lại cho các consumer khác.
- */
-export async function fetchSubjectsAndRooms(
-  supabase: AppSupabaseClient,
-): Promise<{ subjects: SubjectSummary[]; rooms: ExamRoomSummary[] }> {
-  const [subjectBases, rooms] = await Promise.all([
-    cachedReference('subjects:active', () => loadActiveSubjects(supabase)),
-    fetchPublishedRooms(supabase),
-  ]);
-
-  return { subjects: attachRoomCounts(subjectBases, rooms), rooms };
 }
 
 export type SubjectsDashboard = {
@@ -528,123 +465,6 @@ async function loadSubjectsDashboard(
     role: payload.profile?.role ?? null,
     activeSession: mapActiveSession(payload.active_session),
   };
-}
-
-export async function fetchSubjectWithRooms(
-  supabase: AppSupabaseClient,
-  subjectCode: string,
-) {
-  const normalizedCode = subjectCode.toUpperCase();
-  const dashboard = await fetchSubjectsDashboard(supabase);
-  const rooms = dashboard.rooms.filter(
-    (room) => room.subjectCode === normalizedCode,
-  );
-  const subjectRecord = dashboard.subjects.find(
-    (subject) => subject.code === normalizedCode,
-  );
-  const subject = subjectRecord
-    ? { ...subjectRecord, openRoomCount: rooms.length }
-    : null;
-
-  return { subject, rooms };
-}
-
-/**
- * Điểm cao nhất của thí sinh hiện tại theo từng phòng thi (đề). Dùng để hiển thị
- * "đã làm / chưa làm" và điểm trên danh sách đề. Dữ liệu CÁ NHÂN nên KHÔNG cache.
- */
-export type RoomScore = {
-  bestScore: number; // điểm cao nhất đạt được
-  maxScore: number; // thang điểm của lần thi đạt điểm cao nhất
-  attempts: number; // số lần thi đã hoàn thành
-  lastSubmittedAt: string | null;
-  bestSessionId: string; // id phiên của lần thi điểm cao nhất (để xem lại)
-};
-
-type StudentSessionRow = {
-  id: string;
-  exam_room_id: string | null;
-  score: number | string | null;
-  max_score: number | string | null;
-  submitted_at: string | null;
-  status: string | null;
-};
-
-/**
- * Lấy điểm cao nhất mỗi phòng của thí sinh đang đăng nhập. Chỉ tính các lần thi
- * đã hoàn thành (score khác null — đã nộp/hết giờ/đã chấm). Trả Map rỗng nếu
- * chưa đăng nhập. Lỗi được ném ra để caller tự bắt.
- */
-export async function fetchStudentRoomScores(
-  supabase: AppSupabaseClient,
-): Promise<Map<string, RoomScore>> {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const result = new Map<string, RoomScore>();
-  if (!user) return result;
-
-  const { data, error } = await supabase
-    .from('exam_sessions')
-    .select('id,exam_room_id,score,max_score,submitted_at,status')
-    .eq('student_id', user.id);
-
-  if (error) throw error;
-
-  const rows = (data ?? []) as unknown as StudentSessionRow[];
-
-  // Mốc nộp của chính lần thi tốt nhất — tách khỏi lastSubmittedAt (mốc muộn
-  // nhất mọi lần) để tie-break "điểm bằng nhau → lấy lần nộp muộn hơn" chuẩn xác.
-  const bestSubmittedAt = new Map<string, string | null>();
-
-  for (const row of rows) {
-    if (row.score === null || row.score === undefined) continue; // chưa hoàn thành
-    if (!row.exam_room_id) continue;
-
-    const score = Number(row.score);
-    const maxScore = Number(row.max_score ?? 10);
-    const submittedAt = row.submitted_at ?? null;
-    const existing = result.get(row.exam_room_id);
-
-    if (!existing) {
-      result.set(row.exam_room_id, {
-        bestScore: score,
-        maxScore,
-        attempts: 1,
-        lastSubmittedAt: submittedAt,
-        bestSessionId: row.id,
-      });
-      bestSubmittedAt.set(row.exam_room_id, submittedAt);
-      continue;
-    }
-
-    existing.attempts += 1;
-
-    // lastSubmittedAt = mốc nộp muộn nhất trong các lần đã hoàn thành.
-    if (
-      submittedAt &&
-      (!existing.lastSubmittedAt || submittedAt > existing.lastSubmittedAt)
-    ) {
-      existing.lastSubmittedAt = submittedAt;
-    }
-
-    // best = điểm cao nhất; hòa điểm thì lấy lần nộp muộn hơn.
-    const prevBestAt = bestSubmittedAt.get(row.exam_room_id) ?? null;
-    const isHigher = score > existing.bestScore;
-    const isTieButNewer =
-      score === existing.bestScore &&
-      !!submittedAt &&
-      (!prevBestAt || submittedAt >= prevBestAt);
-    if (isHigher || isTieButNewer) {
-      existing.bestScore = score;
-      existing.maxScore = maxScore;
-      existing.bestSessionId = row.id;
-      bestSubmittedAt.set(row.exam_room_id, submittedAt);
-    }
-  }
-
-  return result;
 }
 
 export async function fetchExamRoomById(
@@ -1088,4 +908,234 @@ export async function fetchSessionReview(
     },
     questions,
   };
+}
+
+/* ─── Ngân hàng đề thi (/de-thi) ─────────────────────────────────────────
+ * Thay thế luồng chọn môn -> phòng thi -> nhập mã cũ: học sinh xem thẳng
+ * danh sách đề đã publish trong bảng `exams`, lọc theo môn/năm, xem chi
+ * tiết rồi bấm "Làm bài" để tạo phiên trực tiếp (không qua phòng/mã). */
+
+export type ExamBankFilter = {
+  subjectCode?: string;
+  year?: number;
+  isFree?: boolean;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+type ExamBankRecord = {
+  id: string;
+  code: string;
+  subject_code: string;
+  title: string;
+  year: number;
+  round: number | null;
+  exam_kind: string;
+  duration_minutes: number;
+  question_count: number;
+  has_official_key: boolean;
+  is_free: boolean;
+  status: string;
+};
+
+export type ExamBankItem = {
+  id: string;
+  code: string;
+  subjectCode: string;
+  subjectName: string;
+  title: string;
+  year: number;
+  round: number | null;
+  examKind: string;
+  durationMinutes: number;
+  questionCount: number;
+  hasOfficialKey: boolean;
+  isFree: boolean;
+};
+
+export type ExamBankPage = {
+  items: ExamBankItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+const EXAM_BANK_COLUMNS =
+  'id,code,subject_code,title,year,round,exam_kind,duration_minutes,question_count,has_official_key,is_free,status';
+
+const EXAM_BANK_DEFAULT_PAGE_SIZE = 20;
+
+function mapExamBankItem(
+  record: ExamBankRecord,
+  subjectNames: Map<string, string>,
+): ExamBankItem {
+  return {
+    id: record.id,
+    code: record.code,
+    subjectCode: record.subject_code,
+    subjectName: subjectNames.get(record.subject_code) ?? record.subject_code,
+    title: record.title,
+    year: record.year,
+    round: record.round,
+    examKind: record.exam_kind,
+    durationMinutes: record.duration_minutes,
+    questionCount: record.question_count,
+    hasOfficialKey: record.has_official_key,
+    isFree: record.is_free,
+  };
+}
+
+async function loadSubjectNameMap(
+  supabase: AppSupabaseClient,
+): Promise<Map<string, string>> {
+  const subjects = await fetchActiveSubjects(supabase);
+  return new Map(subjects.map((subject) => [subject.code, subject.name]));
+}
+
+/** Danh sách môn đang hoạt động (code + tên), dùng cho bộ lọc /de-thi. Cache
+ * chung key với loadSubjectsDashboard nên không bắn thêm request nếu trang
+ * khác đã tải. */
+export async function fetchActiveSubjects(
+  supabase: AppSupabaseClient,
+): Promise<SubjectBase[]> {
+  return cachedReference('subjects:active', () => loadActiveSubjects(supabase));
+}
+
+/**
+ * Tải danh sách đề thi đã publish (bảng `exams`), có lọc theo môn/năm/miễn phí
+ * và tìm theo tên/mã, phân trang. Dữ liệu công khai (RLS `exams_public_read`:
+ * status='published') nên không cần đăng nhập để xem danh sách.
+ */
+export async function fetchExamBank(
+  supabase: AppSupabaseClient,
+  filters: ExamBankFilter = {},
+): Promise<ExamBankPage> {
+  const page = filters.page && filters.page > 0 ? filters.page : 1;
+  const pageSize =
+    filters.pageSize && filters.pageSize > 0
+      ? filters.pageSize
+      : EXAM_BANK_DEFAULT_PAGE_SIZE;
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = supabase
+    .from('exams')
+    .select(EXAM_BANK_COLUMNS, { count: 'exact' })
+    .eq('status', 'published');
+
+  if (filters.subjectCode) {
+    query = query.eq('subject_code', filters.subjectCode.toUpperCase());
+  }
+  if (typeof filters.year === 'number') {
+    query = query.eq('year', filters.year);
+  }
+  if (typeof filters.isFree === 'boolean') {
+    query = query.eq('is_free', filters.isFree);
+  }
+  if (filters.search && filters.search.trim().length > 0) {
+    const term = filters.search.trim().replace(/[%_]/g, '');
+    query = query.or(`title.ilike.%${term}%,code.ilike.%${term}%`);
+  }
+
+  const { data, error, count } = await query
+    .order('year', { ascending: false })
+    .order('title', { ascending: true })
+    .range(from, to);
+
+  if (error) throw error;
+
+  const subjectNames = await loadSubjectNameMap(supabase);
+  const records = (data ?? []) as unknown as ExamBankRecord[];
+
+  return {
+    items: records.map((record) => mapExamBankItem(record, subjectNames)),
+    total: count ?? records.length,
+    page,
+    pageSize,
+  };
+}
+
+export type ExamBankDetail = ExamBankItem & {
+  answerKeyConfidence: string | null;
+};
+
+/**
+ * Chi tiết 1 đề thi theo id, chỉ trả về nếu đã publish. Trả null nếu không
+ * tìm thấy (VD: id sai hoặc đề chưa/không còn published) để trang gọi tự
+ * hiển thị "không tìm thấy đề thi" thay vì ném lỗi.
+ */
+export async function fetchExamDetail(
+  supabase: AppSupabaseClient,
+  examId: string,
+): Promise<ExamBankDetail | null> {
+  const { data, error } = await supabase
+    .from('exams')
+    .select(`${EXAM_BANK_COLUMNS},answer_key_confidence`)
+    .eq('id', examId)
+    .eq('status', 'published')
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  const record = data as unknown as ExamBankRecord & {
+    answer_key_confidence: string | null;
+  };
+  const subjectNames = await loadSubjectNameMap(supabase);
+
+  return {
+    ...mapExamBankItem(record, subjectNames),
+    answerKeyConfidence: record.answer_key_confidence,
+  };
+}
+
+export type UserAccess = {
+  isVip: boolean;
+  planCode: string | null;
+  expiresAt: string | null;
+};
+
+/**
+ * Trạng thái VIP của người dùng hiện tại, qua RPC get_user_access. Dùng để
+ * hiển thị badge VIP và quyết định có cần nhắc nâng cấp trước khi bấm "Làm
+ * bài" các đề is_free=false hay không (RPC start_exam_session vẫn là nguồn
+ * xác thực cuối cùng — hàm này chỉ phục vụ hiển thị UI).
+ */
+export async function getUserAccess(
+  supabase: AppSupabaseClient,
+): Promise<UserAccess> {
+  const { data, error } = await supabase.rpc('get_user_access');
+  if (error) throw error;
+  const row = (data ?? {}) as {
+    is_vip?: boolean;
+    plan_code?: string | null;
+    expires_at?: string | null;
+  };
+  return {
+    isVip: Boolean(row.is_vip),
+    planCode: row.plan_code ?? null,
+    expiresAt: row.expires_at ?? null,
+  };
+}
+
+/**
+ * Tạo phiên thi trực tiếp cho 1 đề trong ngân hàng đề, qua RPC
+ * start_exam_session. Lỗi được ném NGUYÊN VĂN (không bọc thông điệp) để UI
+ * phân biệt được các mã lỗi nghiệp vụ: NOT_AUTHENTICATED, EXAM_NOT_AVAILABLE,
+ * UPGRADE_REQUIRED — và hiển thị hành động phù hợp (VD: dẫn tới /purchase).
+ */
+export async function startExamSession(
+  supabase: AppSupabaseClient,
+  examId: string,
+): Promise<{ sessionId: string }> {
+  const { data, error } = await supabase.rpc('start_exam_session', {
+    p_exam_id: examId,
+  });
+  if (error) throw error;
+  const row = (data ?? {}) as { session_id?: string };
+  if (!row.session_id) {
+    throw new Error('Không tạo được phiên thi.');
+  }
+  return { sessionId: row.session_id };
 }
