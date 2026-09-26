@@ -1,4 +1,4 @@
-import { Be_Vietnam_Pro, JetBrains_Mono } from 'next/font/google';
+import localFont from 'next/font/local';
 import type { Metadata } from 'next';
 import './globals.css';
 import 'katex/dist/katex.min.css';
@@ -6,16 +6,32 @@ import AppProviders from '@/components/providers/AppProviders';
 
 // Chỉ tải 3 weights thực sự dùng (400 body · 600 semibold · 800 heading).
 // Trước đây tải 6 weights (~2x dung lượng font chặn FCP).
-const beVietnam = Be_Vietnam_Pro({
-  subsets: ['latin', 'vietnamese'],
-  weight: ['400', '600', '800'],
+const beVietnam = localFont({
+  src: [
+    {
+      path: './fonts/BeVietnamPro-Regular.ttf',
+      weight: '400',
+      style: 'normal',
+    },
+    {
+      path: './fonts/BeVietnamPro-SemiBold.ttf',
+      weight: '600',
+      style: 'normal',
+    },
+    {
+      path: './fonts/BeVietnamPro-ExtraBold.ttf',
+      weight: '800',
+      style: 'normal',
+    },
+  ],
   display: 'swap',
   variable: '--font-ui',
 });
 
-const jetBrainsMono = JetBrains_Mono({
-  subsets: ['latin'],
-  weight: ['400', '600'],
+const jetBrainsMono = localFont({
+  src: './fonts/JetBrainsMono-Variable.ttf',
+  weight: '100 800',
+  style: 'normal',
   display: 'swap',
   variable: '--font-mono',
 });
@@ -41,11 +57,10 @@ export default function RootLayout({
       lang="vi"
       data-theme="light"
       data-scroll-behavior="smooth"
+      className={`${beVietnam.variable} ${jetBrainsMono.variable}`}
       suppressHydrationWarning
     >
-      <body className={`${beVietnam.variable} ${jetBrainsMono.variable}`}>
-        <AppProviders>{children}</AppProviders>
-      </body>
+      <body><AppProviders>{children}</AppProviders></body>
     </html>
   );
 }

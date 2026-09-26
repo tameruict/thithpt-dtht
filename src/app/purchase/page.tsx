@@ -7,6 +7,7 @@ import {
 import { createClient } from '@/lib/supabase/server';
 import PurchaseClient, {
   type CheckoutBankDetails,
+  type CurrentAccess,
   type PurchaseProduct,
 } from './PurchaseClient';
 
@@ -37,21 +38,32 @@ export default async function PurchasePage() {
   const { data } = checkoutReady
     ? await supabase
         .from('key_products')
-        .select(
-          'id,code,name,product_kind,attempt_count,price_amount,currency,valid_days',
-        )
+        .select('id,code,name,product_kind,price_amount,currency,valid_days')
         .eq('is_active', true)
-        .eq('product_kind', 'bundle')
+        .eq('product_kind', 'subscription')
         .eq('currency', 'VND')
         .is('archived_at', null)
         .order('price_amount', { ascending: true })
     : { data: [] };
+
+  // Đã login (redirect ở trên nếu chưa) — hỏi backend user có đang là VIP còn hạn
+  // không để hiện banner + đổi copy nút "Mua ngay" -> "Gia hạn thêm".
+  let currentAccess: CurrentAccess | null = null;
+  try {
+    const { data: accessData } = await supabase.rpc('get_user_access');
+    if (accessData && typeof accessData === 'object') {
+      currentAccess = accessData as CurrentAccess;
+    }
+  } catch {
+    currentAccess = null;
+  }
 
   return (
     <PurchaseClient
       products={(data ?? []) as PurchaseProduct[]}
       enabled={checkoutReady}
       bankDetails={bankDetails}
+      currentAccess={currentAccess}
     />
   );
 }

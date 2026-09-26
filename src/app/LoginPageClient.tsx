@@ -26,7 +26,7 @@ function getPostLoginPath() {
 
   return redirect?.startsWith('/') && !redirect.startsWith('//')
     ? redirect
-    : '/subjects';
+    : '/de-thi';
 }
 
 function getOAuthErrorFromUrl() {

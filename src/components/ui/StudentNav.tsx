@@ -6,7 +6,7 @@ import { BookOpen, ClipboardCheck, UserRound } from 'lucide-react';
 import styles from './StudentNav.module.css';
 
 const items = [
-  { href: '/subjects', label: 'Thi thử', hint: 'Chọn môn và phòng thi', Icon: ClipboardCheck },
+  { href: '/de-thi', label: 'Thi thử', hint: 'Ngân hàng đề thi', Icon: ClipboardCheck },
   { href: '/result', label: 'Kết quả', hint: 'Xem lịch sử làm bài', Icon: BookOpen },
   { href: '/profile', label: 'Hồ sơ', hint: 'Thông tin tài khoản', Icon: UserRound },
 ] as const;
@@ -25,8 +25,10 @@ export default function StudentNav() {
             const active =
               pathname === href ||
               pathname.startsWith(`${href}/`) ||
-              (href === '/subjects' &&
-                (pathname === '/join' ||
+              (href === '/de-thi' &&
+                (pathname === '/subjects' ||
+                  pathname.startsWith('/subjects/') ||
+                  pathname === '/join' ||
                   pathname.startsWith('/join/') ||
                   pathname === '/exam' ||
                   pathname.startsWith('/exam/') ||

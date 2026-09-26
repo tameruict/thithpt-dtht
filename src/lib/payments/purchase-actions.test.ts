@@ -24,7 +24,7 @@ const idempotencyKey = 'checkout-test-123';
 
 function createSupabaseMock(
   currency: string,
-  productKind: 'bundle' | 'exam' | 'practice' = 'bundle',
+  productKind: 'bundle' | 'subscription' | 'exam' | 'practice' = 'bundle',
 ) {
   const query = {
     select: vi.fn(),
@@ -135,6 +135,28 @@ describe('createPurchaseOrder checkout guards', () => {
     });
     expect(mocks.getPaymentConfig).toHaveBeenCalledOnce();
     expect(mocks.getPaymentPollFunctionConfig).toHaveBeenCalledOnce();
+    expect(rpc).toHaveBeenCalledWith('create_purchase_order', {
+      p_product_id: productId,
+      p_idempotency_key: idempotencyKey,
+      p_coupon_code: null,
+      p_target_key_id: null,
+    });
+  });
+
+  it('creates an order for a VIP subscription product (time-based, not attempt bundles)', async () => {
+    const { client, rpc } = createSupabaseMock('VND', 'subscription');
+    mocks.createClient.mockResolvedValue(client);
+
+    const result = await createPurchaseOrder(productId, idempotencyKey);
+
+    expect(result).toMatchObject({
+      ok: true,
+      order: {
+        amount: 125000,
+        currency: 'VND',
+        paymentCode: 'THPTABC123456789',
+      },
+    });
     expect(rpc).toHaveBeenCalledWith('create_purchase_order', {
       p_product_id: productId,
       p_idempotency_key: idempotencyKey,

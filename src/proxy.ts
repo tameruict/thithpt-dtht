@@ -7,6 +7,7 @@ import { updateSession } from '@/lib/supabase/proxy';
  */
 const PROTECTED_ROUTES = [
   '/subjects',
+  '/de-thi',
   '/exam',
   '/result',
   '/profile',
