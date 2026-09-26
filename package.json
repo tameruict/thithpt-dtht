@@ -10,7 +10,20 @@
     "test": "vitest run",
     "release:check": "node scripts/release-check.mjs",
     "content:audit": "tsx scripts/audit-math-content.ts",
-    "content:normalize": "tsx scripts/normalize-math-db.ts"
+    "content:normalize": "tsx scripts/normalize-math-db.ts",
+    "answer-key:export": "node --env-file=.env.local scripts/answer-key/export.mjs",
+    "answer-key:match": "node scripts/answer-key/value-match.mjs",
+    "answer-key:llm": "node scripts/answer-key/llm.mjs",
+    "answer-key:merge": "node scripts/answer-key/merge-results.mjs",
+    "answer-key:apply": "node --env-file=.env.local scripts/answer-key/apply.mjs",
+    "answer-key:retract": "node --env-file=.env.local scripts/answer-key/retract.mjs",
+    "answer-key:sample": "node scripts/answer-key/review-sample.mjs",
+    "answer-key:review-context": "node --env-file=.env.local scripts/answer-key/review-context.mjs",
+    "answer-key:agent-review-report": "node scripts/answer-key/agent-review-report.mjs",
+    "answer-key:agent-adjudication": "node scripts/answer-key/agent-adjudication-report.mjs",
+    "answer-key:review": "node scripts/answer-key/review.mjs",
+    "answer-key:qa": "node scripts/answer-key/review-score.mjs",
+    "answer-key:report": "node --env-file=.env.local scripts/answer-key/report.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1095.0",
